@@ -186,7 +186,7 @@ class SegmentEngine(private val scope: CoroutineScope) {
                     intervals = (0 until arr.length()).map { i ->
                         val iv = arr.getJSONObject(i)
                         iv.getLong("start") to iv.getLong("end")
-                    }
+                    }.toMutableList()
                 }
             } catch (_: Exception) { }
         }
