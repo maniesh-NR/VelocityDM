@@ -35,7 +35,7 @@ data class TaskState(
     val url: String,
     val filename: String,
     val dir: File,
-    val size: Long,
+    var size: Long,
     var done: Long = 0,
     var speed: Long = 0,
     var state: String = "queued", // queued|probing|downloading|paused|completed|failed
@@ -125,9 +125,9 @@ class SegmentEngine(private val scope: CoroutineScope) {
             if (size > 0 && ranges) return Probe(size, ranges, etag)
         }
         // fallback ranged GET
-        val b = Request.Builder().url(url).get().header("Range", "bytes=0-0")
-        opts.headers.forEach { (k, v) -> b.header(k, v) }
-        http.newCall(b.build()).execute().use { r ->
+        val b2 = Request.Builder().url(url).get().header("Range", "bytes=0-0")
+        opts.headers.forEach { (k, v) -> b2.header(k, v) }
+        http.newCall(b2.build()).execute().use { r ->
             if (r.code == 206) {
                 val total = r.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull() ?: 0L
                 return Probe(total, true, r.header("ETag"))
@@ -177,7 +177,7 @@ class SegmentEngine(private val scope: CoroutineScope) {
         ctl: File,
     ) {
         // resume state
-        var intervals = listOf(0L to head.size - 1)
+        var intervals = mutableListOf(0L to head.size - 1)
         if (ctl.exists() && part.exists()) {
             try {
                 val st = JSONObject(ctl.readText())
@@ -247,7 +247,7 @@ class SegmentEngine(private val scope: CoroutineScope) {
                                     while (pos <= end) {
                                         if (stop.get()) {
                                             synchronized(lock) { intervals.add(pos to end) }
-                                            return
+                                            return@launch
                                         }
                                         val n = input.read(buf)
                                         if (n <= 0) throw IOException("short body")

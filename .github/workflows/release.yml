@@ -137,7 +137,7 @@ jobs:
             cp win7-target/$arch-pc-windows-gnu/release/velocitydm-nmh.exe stage/
             cp win7/README.md stage/
             cp LICENSE stage/
-            ( cd stage && zip -q "../velocitydm-$V-windows7-$s.zip" . )
+            ( cd stage && zip -qr "../velocitydm-$V-windows7-$s.zip" . )
           done
       - uses: actions/upload-artifact@v4
         with:
@@ -165,10 +165,10 @@ jobs:
           rm -rf stage; mkdir -p stage
           cp target/release/velocitydm target/release/velocitydm-nmh stage/
           cp LICENSE stage/
-          ( cd stage && zip -q "../velocitydm-$V-macos-aarch64.zip" . )
+          ( cd stage && zip -qr "../velocitydm-$V-macos-aarch64.zip" . )
           cp target/x86_64-apple-darwin/release/velocitydm \
              target/x86_64-apple-darwin/release/velocitydm-nmh stage/
-          ( cd stage && zip -q "../velocitydm-$V-macos-x64.zip" . )
+          ( cd stage && zip -qr "../velocitydm-$V-macos-x64.zip" . )
       - uses: actions/upload-artifact@v4
         with:
           name: macos-assets

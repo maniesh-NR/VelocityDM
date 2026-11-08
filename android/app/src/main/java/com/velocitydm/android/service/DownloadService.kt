@@ -22,7 +22,14 @@ class DownloadService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIF_ID, buildNotification(this, null))
+        notify(this, null) // create the channel
+        val n = NotificationCompat.Builder(this, CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("VelocityDM")
+            .setContentText(getString(R.string.notif_channel))
+            .setOngoing(true)
+            .build()
+        startForeground(NOTIF_ID, n)
         // stop ourselves when nothing is running (managed from the ViewModel)
         return START_STICKY
     }

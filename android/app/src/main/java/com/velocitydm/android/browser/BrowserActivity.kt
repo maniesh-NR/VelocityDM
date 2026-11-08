@@ -19,6 +19,7 @@ import androidx.compose.ui.viewinterop.AndroidView
  * (m3u8/mpd/video files) and lists everything found for one-tap download.
  */
 @SuppressLint("SetJavaScriptEnabled")
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserScreen(
     onClose: () -> Unit,
@@ -105,7 +106,7 @@ private class SniffWebViewClient(
         request: WebResourceRequest,
     ): WebResourceResponse? {
         val url = request.url.toString()
-        val mime = request.accept?.lowercase() ?: ""
+        val mime = request.requestHeaders["Accept"]?.lowercase() ?: ""
         classify(url)?.let { kind ->
             if (seen.add(url)) {
                 val title = url.substringAfterLast('/').substringBefore('?').ifBlank { "media" }
