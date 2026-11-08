@@ -168,13 +168,20 @@ jobs:
           docker run --rm -v "$PWD":/io joseluisq/rust-linux-darwin-builder:latest bash -lc '
             set -e
             cd /io
+            # 1) rustc execs "<arch>-apple-darwin<ver>-clang" via PATH; the
+            #    osxcross bin dir must be on it.
+            # 2) the image asks for the arm64e-prefixed linker for
+            #    aarch64-apple-darwin; symlink it to the real aarch64 clang.
+            export PATH=/usr/local/osxcross/target/bin:$PATH
+            for l in /usr/local/osxcross/target/bin/aarch64-apple-darwin*-clang; do
+              [ -e "$l" ] || continue
+              ln -sf "$l" "/usr/local/osxcross/target/bin/arm64e-apple-darwin22.4-clang"
+              break
+            done
             # ring 0.17 invokes the CC_<target> compiler for its C code; without
             # these it picks the host gcc and dies on darwin-only flags.
             for t in x86_64 aarch64; do
               CC=$(ls /usr/local/osxcross/target/bin/${t}-apple-darwin*-clang 2>/dev/null | sort | head -1)
-              if [ -z "$CC" ]; then
-                CC=$(find /usr/local /opt -maxdepth 4 -name "${t}-apple-darwin*-clang" 2>/dev/null | sort | head -1)
-              fi
               if [ -n "$CC" ]; then
                 export CC_${t}_apple_darwin="$CC"
                 export CXX_${t}_apple_darwin="${CC}++"
