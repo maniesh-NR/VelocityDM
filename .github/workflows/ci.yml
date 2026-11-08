@@ -43,6 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
       - run: sudo apt-get update -y && sudo apt-get install -y musl-tools
       - run: cargo test --workspace
 
@@ -52,6 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
       - run: cargo test --workspace
 
   test-macos:
@@ -60,6 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
       - run: cargo test --workspace
 
   win7-payload:
@@ -97,6 +100,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
       - name: build release binaries
         run: cargo build --release
       - name: e2e smoke
