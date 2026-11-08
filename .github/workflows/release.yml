@@ -238,7 +238,7 @@ jobs:
   # ---------- Attach to GitHub releases ----------
   publish:
     name: Attach release assets
-    needs: [ver, linux, windows, win7, macos, android, extensions]
+    needs: [ver, linux, windows, win7, darwin, android, extensions]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-22.04
     steps:
