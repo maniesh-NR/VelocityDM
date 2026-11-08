@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/vdm-core",
+    "crates/vdm-rpc",
+    "crates/velocitydm",
+    "crates/velocitydm-nmh",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+authors = ["VelocityDM contributors"]
+
+# MSRV 1.75 pins for the Windows 7 payload (edition-2021 friendly)
+[workspace.dependencies]
+serde = { version = "=1.0.197", features = ["derive"] }
+serde_json = "=1.0.114"
+sha1 = "=0.10.6"
+sha2 = "=0.10.8"
+md-5 = "=0.10.6"
+aes = "=0.8.4"
+hex = "=0.4.3"
+rustls = { version = "=0.23.5", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "=0.26.1"
+rustls-pki-types = "=1.7.0"
+clap = { version = "=4.5.4", features = ["derive"] }
+eframe = "=0.27.2"
+vdm-core = { path = "crates/vdm-core" }
+vdm-rpc = { path = "crates/vdm-rpc" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

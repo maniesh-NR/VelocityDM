@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=VelocityDM
+GenericName=Download Manager
+Comment=Fast downloads: HTTP/HLS acceleration, BitTorrent, magnet, scheduler
+Exec=velocitydm gui
+Icon=velocitydm
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=download;manager;http;bittorrent;magnet;accelerator;idm;
+StartupWMClass=velocitydm
+MimeType=application/x-bittorrent;x-scheme-handler/magnet;

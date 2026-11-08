@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">VelocityDM</string>
+    <string name="notif_channel">downloads</string>
+    <string name="notif_channel_desc">Active download progress</string>
+</resources>

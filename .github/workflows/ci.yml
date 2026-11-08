@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  format:
+    name: Rust format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal --component rustfmt
+      - name: cargo fmt (workspace)
+        run: cargo fmt --all -- --check
+      - name: cargo fmt (win7 payload)
+        run: cargo fmt --manifest-path win7/Cargo.toml --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal --component clippy
+      - run: sudo apt-get update -y && sudo apt-get install -y musl-tools
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test-ubuntu:
+    name: Test (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - run: sudo apt-get update -y && sudo apt-get install -y musl-tools
+      - run: cargo test --workspace
+
+  test-windows:
+    name: Test (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo test --workspace
+
+  test-macos:
+    name: Test (macos-latest)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo test --workspace
+
+  win7-payload:
+    name: Windows 7 payload (Rust 1.75)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.75.0 --profile minimal
+      - run: rustup target add x86_64-pc-windows-gnu i686-pc-windows-gnu --toolchain 1.75.0
+      - uses: taiki-e/install-action@cargo-zigbuild
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+      - name: build headless payload (x86_64)
+        run: cargo +1.75.0 zigbuild --release -p velocitydm --no-default-features --features tls -p velocitydm-nmh --target x86_64-pc-windows-gnu
+      - name: build headless payload (i686)
+        run: cargo +1.75.0 zigbuild --release -p velocitydm --no-default-features --features tls -p velocitydm-nmh --target i686-pc-windows-gnu
+
+  ext-tests:
+    name: Extension tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: shared-module suite
+        run: node extensions/tests/run-tests.mjs
+      - name: companion suite
+        run: node extension/tests/run.mjs
+
+  e2e:
+    name: End-to-end smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - name: build release binaries
+        run: cargo build --release
+      - name: e2e smoke
+        run: bash scripts/e2e.sh
+      - name: e2e cross-feature
+        run: bash scripts/e2e-cross.sh

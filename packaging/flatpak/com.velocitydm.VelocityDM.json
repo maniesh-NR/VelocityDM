@@ -1,0 +1,35 @@
+{
+  "id": "com.velocitydm.VelocityDM",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "24.08",
+  "sdk": "org.freedesktop.Sdk",
+  "sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
+  "command": "velocitydm",
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=x11",
+    "--socket=wayland",
+    "--device=dri",
+    "--filesystem=home",
+    "--talk-name=org.freedesktop.Notifications"
+  ],
+  "modules": [
+    {
+      "name": "velocitydm",
+      "buildsystem": "simple",
+      "build-options": {
+        "append-path": "/usr/lib/sdk/rust-stable/bin",
+        "env": { "CARGO_HOME": "/run/build/velocitydm/cargo" }
+      },
+      "build-commands": [
+        "cargo build --release --workspace",
+        "install -D -m 0755 target/release/velocitydm /app/bin/velocitydm",
+        "install -D -m 0755 target/release/velocitydm-nmh /app/bin/velocitydm-nmh",
+        "install -D -m 0644 packaging/linux/velocitydm.desktop /app/share/applications/com.velocitydm.VelocityDM.desktop",
+        "install -D -m 0644 packaging/flatpak/com.velocitydm.VelocityDM.metainfo.xml /app/share/metainfo/com.velocitydm.VelocityDM.metainfo.xml"
+      ],
+      "sources": [{ "type": "dir", "path": "../.." }]
+    }
+  ]
+}

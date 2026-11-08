@@ -1,0 +1,16 @@
+[package]
+name = "vdm-rpc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VelocityDM JSON-RPC 2.0 + SSE transport"
+
+[features]
+default = []
+tls = ["vdm-core/tls"]
+
+[dependencies]
+vdm-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }

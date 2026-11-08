@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.velocitydm.VelocityDM</id>
+  <name>VelocityDM</name>
+  <summary>Segmented multi-connection download manager</summary>
+  <metadata_license>FSFAP</metadata_license>
+  <project-license>GPL-3.0-or-later</project-license>
+  <description>
+    <p>VelocityDM is a clean-room download manager: a Rust engine with
+    segmented multi-connection transfers, pause/resume, mirror failover,
+    rate limiting, HLS support, and browser integration through a native
+    messaging host.</p>
+  </description>
+  <launchable type="desktop-id">com.velocitydm.VelocityDM.desktop</launchable>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.0.0" date="2026-11-06">
+      <description><p>Initial release.</p></description>
+    </release>
+  </releases>
+</component>

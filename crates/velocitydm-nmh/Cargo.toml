@@ -1,0 +1,16 @@
+[package]
+name = "velocitydm-nmh"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VelocityDM browser native messaging host"
+
+[[bin]]
+name = "velocitydm-nmh"
+path = "src/main.rs"
+
+[dependencies]
+vdm-core = { workspace = true }
+vdm-rpc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

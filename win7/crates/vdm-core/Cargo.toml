@@ -1,0 +1,28 @@
+[package]
+name = "vdm-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VelocityDM download engine core: HTTP/HLS segmented engine, BitTorrent, scheduler, queue, rate limiting"
+
+[features]
+default = []
+tls = ["dep:rustls", "dep:webpki-roots", "dep:rustls-pki-types"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+md-5 = { workspace = true }
+aes = { workspace = true }
+hex = { workspace = true }
+rustls = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+aes = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }

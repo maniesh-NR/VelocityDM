@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.VelocityDM" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#1C1B1F</item>
+        <item name="android:navigationBarColor">#1C1B1F</item>
+        <item name="android:windowBackground">#1C1B1F</item>
+    </style>
+</resources>

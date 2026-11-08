@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VelocityDM</title>
+<style>
+  :root {
+    --primary: #6750a4; --on-primary: #fff; --surface: #1c1b1f;
+    --container: #2b2930; --text: #e6e0e9; --dim: #cac4d0; --outline: #938f99;
+  }
+  * { box-sizing: border-box; }
+  body {
+    width: 380px; max-height: 560px; overflow-y: auto; margin: 0;
+    font: 13px/1.4 system-ui, sans-serif; background: var(--surface); color: var(--text);
+  }
+  header {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    background: var(--container); position: sticky; top: 0; z-index: 2;
+  }
+  header h1 { font-size: 15px; margin: 0; color: #d0bcff; font-weight: 600; }
+  header .actions { margin-left: auto; display: flex; gap: 6px; }
+  header button, section button {
+    background: var(--primary); color: var(--on-primary); border: 0; border-radius: 16px;
+    padding: 5px 12px; font-size: 12px; cursor: pointer;
+  }
+  header button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--outline); }
+  section { padding: 8px 12px; }
+  h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--dim); margin: 6px 0; font-weight: 600;
+  }
+  .item {
+    background: var(--container); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .item .row1 { display: flex; align-items: center; gap: 6px; }
+  .item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .quality { color: #d0bcff; font-size: 11px; }
+  .item .kind { color: var(--dim); font-size: 10px; border: 1px solid var(--outline); border-radius: 8px; padding: 1px 6px; }
+  .item .url { color: var(--dim); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item button { align-self: flex-start; }
+  .empty { color: var(--dim); font-size: 12px; padding: 6px 2px; }
+  .downloads .state { font-size: 10px; padding: 1px 8px; border-radius: 8px; }
+  .state.downloading { color: #d0bcff; border: 1px solid #d0bcff; }
+  .state.completed { color: #4ee9b0; border: 1px solid #4ee9b0; }
+  .state.paused, .state.queued { color: var(--dim); border: 1px solid var(--outline); }
+  .state.failed { color: #ffb4ab; border: 1px solid #ffb4ab; }
+  .bar { height: 4px; background: #4a4458; border-radius: 2px; overflow: hidden; }
+  .bar > div { height: 100%; background: #d0bcff; }
+  .addrow { display: flex; gap: 6px; }
+  .addrow input {
+    flex: 1; background: var(--container); border: 1px solid var(--outline); color: var(--text);
+    border-radius: 16px; padding: 6px 12px; font-size: 12px;
+  }
+  .grab { text-align: center; }
+  .grab button { width: 100%; }
+  footer { padding: 4px 12px 10px; color: var(--dim); font-size: 10px; text-align: center; }
+  footer a { color: #d0bcff; text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>VelocityDM</h1>
+  <div class="actions">
+    <button class="ghost" id="btn-grab" title="Grab all links on this page">Grab links</button>
+    <button class="ghost" id="btn-options">Settings</button>
+  </div>
+</header>
+
+<section class="addrow">
+  <input id="add-url" type="text" placeholder="Paste URL, magnet: or batch pattern" spellcheck="false">
+  <button id="btn-add">Add</button>
+</section>
+
+<section>
+  <h2>Videos on this page</h2>
+  <div id="videos"></div>
+</section>
+
+<section class="grab">
+  <button id="btn-grab-add" style="display:none">Download all grabbed links</button>
+</section>
+
+<section class="downloads">
+  <h2>Downloads</h2>
+  <div id="downloads"></div>
+</section>
+
+<footer> VelocityDM <span id="version"></span> &middot; <a href="#" id="open-options">options</a> &middot; <a href="#" id="open-gui">open app</a> </footer>
+
+<script src="shared/detector.js"></script>
+<script src="shared/patterns.js"></script>
+<script src="shared/links.js"></script>
+<script src="shared/messaging.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

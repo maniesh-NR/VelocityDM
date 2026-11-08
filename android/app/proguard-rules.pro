@@ -1,0 +1,3 @@
+-keep class com.velocitydm.android.** { *; }
+-dontwarn okhttp3.**
+-dontwarn okio.**

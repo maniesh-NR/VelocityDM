@@ -1,0 +1,30 @@
+app-id: io.github.velocitydm.VelocityDM
+runtime: org.freedesktop.Platform
+runtime-version: "23.08"
+sdk: org.freedesktop.Sdk
+command: velocitydm
+finish-args:
+  - --share=network
+  - --filesystem=xdg-download:rw
+  - --filesystem=home:rw
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  - name: velocitydm
+    buildsystem: simple
+    build-commands:
+      - install -D -m 755 -t /app/bin/ bin/velocitydm bin/velocitydm-nmh
+      - install -D -m 644 packaging/linux/velocitydm.desktop /app/share/applications/velocitydm.desktop
+      - |
+        install -D -m 644 extensions/chromium/icons/icon128.png /app/share/icons/hicolor/128x128/apps/velocitydm.png
+        install -D -m 644 extensions/chromium/icons/icon48.png /app/share/icons/hicolor/48x48/apps/velocitydm.png
+        install -D -m 644 extensions/chromium/icons/icon16.png /app/share/icons/hicolor/16x16/apps/velocitydm.png
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - android
+          - extensions/dist
+    # Build outside the flatpak sandbox:
+    #   cargo build --release -p velocitydm -p velocitydm-nmh
+    # then place binaries in ./bin/ before running flatpak-builder.

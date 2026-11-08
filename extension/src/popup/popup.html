@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+  <title>VelocityDM Companion</title>
+</head>
+<body>
+  <header>
+    <span id="daemon-dot" class="dot"></span>
+    <span id="daemon-status">checking daemon</span>
+  </header>
+  <section class="add-row">
+    <input id="add-url" type="url" placeholder="https://example.com/file.zip" />
+    <button id="add-btn">Add</button>
+  </section>
+  <section id="capture-list" class="list"></section>
+  <footer>
+    <button id="download-all" class="primary">Download all</button>
+    <button id="clear">Clear list</button>
+    <button id="open-options">Settings</button>
+  </footer>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "com.velocitydm.nmh",
+  "description": "VelocityDM native messaging host - connects the browser extension to the VelocityDM download engine",
+  "path": "@NMH_BINARY_PATH@",
+  "type": "stdio",
+  "allowed_extensions": [
+    "velocitydm@velocitydm.example"
+  ]
+}

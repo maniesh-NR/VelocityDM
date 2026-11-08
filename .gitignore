@@ -1,0 +1,36 @@
+# Rust
+/target
+/win7/target
+**/*.rs.bk
+
+# Extension build outputs
+/extensions/dist/
+/extension/dist/
+
+# Node
+node_modules/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk.idsig
+
+# Packaging scratch
+*.deb
+*.rpm
+*.flatpak
+*.AppImage
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# release working files
+notes.md
+SHA256SUMS-*.txt

@@ -1,0 +1,263 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  ver:
+    runs-on: ubuntu-latest
+    outputs:
+      base: ${{ steps.v.outputs.base }}
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          t="${GITHUB_REF_NAME#v}"
+          echo "tag=v$t"        >> "$GITHUB_OUTPUT"
+          echo "base=v${t%%-*}" >> "$GITHUB_OUTPUT"
+          echo "version=${t%%-*}" >> "$GITHUB_OUTPUT"
+
+  # ---------- Linux (glibc full GUI + musl full GUI) ----------
+  linux:
+    name: Linux x64 (gnu + musl)
+    needs: ver
+    if: needs.ver.outputs.tag == needs.ver.outputs.base || needs.ver.outputs.tag == format('{0}-linux', needs.ver.outputs.base)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - run: sudo apt-get update -y && sudo apt-get install -y musl-tools
+      - name: build (gnu, full GUI)
+        run: cargo build --release
+      - name: build (musl, full GUI)
+        run: cargo build --release --target x86_64-unknown-linux-musl
+      - name: package
+        run: |
+          V=${{ needs.ver.outputs.version }}
+          mkdir -p stage-gnu stage-musl
+          cp target/release/velocitydm target/release/velocitydm-nmh stage-gnu/
+          cp packaging/portable/velocitydm-portable.sh stage-gnu/
+          cp LICENSE stage-gnu/
+          tar czf "velocitydm-$V-linux-x64.tar.gz" -C stage-gnu .
+          cp target/x86_64-unknown-linux-musl/release/velocitydm \
+             target/x86_64-unknown-linux-musl/release/velocitydm-nmh stage-musl/
+          cp LICENSE stage-musl/
+          tar czf "velocitydm-$V-linux-x64-musl.tar.gz" -C stage-musl .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-assets
+          path: |
+            velocitydm-*-linux-x64.tar.gz
+            velocitydm-*-linux-x64-musl.tar.gz
+
+  # ---------- Windows x64/x86 (MSVC, full GUI) ----------
+  windows:
+    name: Windows ${{ matrix.suffix }}
+    needs: ver
+    if: needs.ver.outputs.tag == needs.ver.outputs.base || needs.ver.outputs.tag == format('{0}-windows', needs.ver.outputs.base)
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            suffix: x64
+          - target: i686-pc-windows-msvc
+            suffix: x86
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup target add ${{ matrix.target }}
+      - name: build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: package
+        shell: pwsh
+        env:
+          V: ${{ needs.ver.outputs.version }}
+          S: ${{ matrix.suffix }}
+          RUST_TARGET: ${{ matrix.target }}
+        run: |
+          New-Item -ItemType Directory -Force -Path stage | Out-Null
+          Copy-Item "target/$env:RUST_TARGET/release/velocitydm.exe" stage/
+          Copy-Item "target/$env:RUST_TARGET/release/velocitydm-nmh.exe" stage/
+          Copy-Item LICENSE stage/
+          Compress-Archive -Path stage/* -DestinationPath "velocitydm-$env:V-windows-$env:S.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.suffix }}
+          path: velocitydm-*-windows-*.zip
+
+  # ---------- Windows 7 headless payload (Rust 1.75 + zigbuild) ----------
+  win7:
+    name: Windows 7 payload
+    needs: ver
+    if: needs.ver.outputs.tag == needs.ver.outputs.base || needs.ver.outputs.tag == format('{0}-windows', needs.ver.outputs.base)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.75.0 --profile minimal
+      - run: rustup target add x86_64-pc-windows-gnu i686-pc-windows-gnu --toolchain 1.75.0
+      - uses: taiki-e/install-action@cargo-zigbuild
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+      - name: build x86_64
+        run: cargo +1.75.0 zigbuild --release -p velocitydm --no-default-features --features tls -p velocitydm-nmh --target x86_64-pc-windows-gnu
+      - name: build i686
+        run: cargo +1.75.0 zigbuild --release -p velocitydm --no-default-features --features tls -p velocitydm-nmh --target i686-pc-windows-gnu
+      - name: package
+        run: |
+          V=${{ needs.ver.outputs.version }}
+          for arch in x86_64 i686; do
+            case $arch in x86_64) s=x64;; i686) s=x86;; esac
+            rm -rf stage; mkdir -p stage
+            cp target/$arch-pc-windows-gnu/release/velocitydm.exe stage/
+            cp target/$arch-pc-windows-gnu/release/velocitydm-nmh.exe stage/
+            cp win7/README.md stage/
+            cp LICENSE stage/
+            ( cd stage && zip -q "../velocitydm-$V-windows7-$s.zip" . )
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows7-assets
+          path: velocitydm-*-windows7-*.zip
+
+  # ---------- macOS (aarch64 + x64, full GUI) ----------
+  macos:
+    name: macOS builds
+    needs: ver
+    if: needs.ver.outputs.tag == needs.ver.outputs.base || needs.ver.outputs.tag == format('{0}-macos', needs.ver.outputs.base)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup target add x86_64-apple-darwin
+      - name: build aarch64
+        run: cargo build --release
+      - name: build x86_64
+        run: cargo build --release --target x86_64-apple-darwin
+      - name: package
+        run: |
+          V=${{ needs.ver.outputs.version }}
+          rm -rf stage; mkdir -p stage
+          cp target/release/velocitydm target/release/velocitydm-nmh stage/
+          cp LICENSE stage/
+          ( cd stage && zip -q "../velocitydm-$V-macos-aarch64.zip" . )
+          cp target/x86_64-apple-darwin/release/velocitydm \
+             target/x86_64-apple-darwin/release/velocitydm-nmh stage/
+          ( cd stage && zip -q "../velocitydm-$V-macos-x64.zip" . )
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-assets
+          path: velocitydm-*-macos-*.zip
+
+  # ---------- Android APK ----------
+  android:
+    name: Android APK
+    needs: ver
+    if: needs.ver.outputs.tag == needs.ver.outputs.base || needs.ver.outputs.tag == format('{0}-android', needs.ver.outputs.base)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: assemble debug APK
+        run: gradle -p android :app:assembleDebug --no-daemon
+      - name: rename
+        run: |
+          V=${{ needs.ver.outputs.version }}
+          cp android/app/build/outputs/apk/debug/app-debug.apk "velocitydm-$V-android.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-assets
+          path: velocitydm-*-android.apk
+
+  # ---------- Browser extensions ----------
+  extensions:
+    name: Browser extension zips
+    needs: ver
+    if: needs.ver.outputs.tag == needs.ver.outputs.base || needs.ver.outputs.tag == format('{0}-extensions', needs.ver.outputs.base)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -y && sudo apt-get install -y zip
+      - name: build extension zips
+        run: bash scripts/build-ext.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-assets
+          path: extensions/dist/*.zip
+
+  # ---------- Attach to GitHub releases ----------
+  publish:
+    name: Attach release assets
+    needs: [ver, linux, windows, win7, macos, android, extensions]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: upload to matching releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.ver.outputs.tag }}
+          BASE: ${{ needs.ver.outputs.base }}
+        run: |
+          cd dist
+          ls -la
+          case "$TAG" in
+            "$BASE")
+              FILES=(*)
+              ;;
+            *-linux)
+              FILES=(velocitydm-*-linux-x64.tar.gz velocitydm-*-linux-x64-musl.tar.gz)
+              ;;
+            *-windows)
+              FILES=(velocitydm-*-windows-x64.zip velocitydm-*-windows-x86.zip \
+                     velocitydm-*-windows7-x64.zip velocitydm-*-windows7-x86.zip)
+              ;;
+            *-macos)
+              FILES=(velocitydm-*-macos-aarch64.zip velocitydm-*-macos-x64.zip)
+              ;;
+            *-android)
+              FILES=(velocitydm-*-android.apk)
+              ;;
+            *-extensions)
+              FILES=(chromium-*.zip edge-*.zip firefox-*.zip opera-*.zip)
+              ;;
+            *)
+              echo "no asset mapping for $TAG"; exit 1
+              ;;
+          esac
+          sha256sum "${FILES[@]}" > SHA256SUMS.txt
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                 --title "VelocityDM $TAG" \
+                 --notes "Per-platform assets for VelocityDM ${TAG#v}. See the ${BASE} release for the full description and known limitations."
+          gh release upload "$TAG" "${FILES[@]}" SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+          # only the base release is "latest"
+          if [ "$TAG" != "$BASE" ]; then
+            gh release edit "$TAG" --latest=false --repo "$GITHUB_REPOSITORY"
+          fi
+          echo "attached to $TAG: ${FILES[*]} SHA256SUMS.txt"
