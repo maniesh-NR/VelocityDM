@@ -64,7 +64,9 @@ impl Seeder {
                         let files = files.clone();
                         std::thread::spawn(move || {
                             if let Err(e) = serve_conn(stream, meta, files) {
-                                let _ = e;
+                                // surface peer-connection failures (tests and
+                                // `RUST_LOG`-style debugging); never fatal.
+                                eprintln!("vdm-seeder: peer connection ended: {e:?}");
                             }
                         });
                     }

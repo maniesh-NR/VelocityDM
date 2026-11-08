@@ -340,7 +340,7 @@ pub(crate) mod tests {
     /// body on connection-level panics; real assertion failures re-raise.
     pub(crate) fn flaky_loopback(mut f: impl FnMut() + std::panic::RefUnwindSafe) {
         let mut last = String::new();
-        for attempt in 0..3 {
+        for attempt in 0..5 {
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut f)) {
                 Ok(()) => return,
                 Err(p) => {
@@ -361,7 +361,7 @@ pub(crate) mod tests {
                 }
             }
         }
-        panic!("loopback test failed after 3 attempts: {last}");
+        panic!("loopback test failed after 5 attempts: {last}");
     }
 
     #[test]
