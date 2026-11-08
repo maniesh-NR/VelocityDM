@@ -144,9 +144,9 @@ jobs:
           name: windows7-assets
           path: velocitydm-*-windows7-*.zip
 
-  # ---------- macOS (aarch64 + x64, full GUI) ----------
+  # ---------- Darwin (aarch64 + x64, full GUI) ----------
   macos:
-    name: macOS builds
+    name: Darwin builds
     needs: ver
     if: needs.ver.outputs.tag == needs.ver.outputs.base || needs.ver.outputs.tag == format('{0}-macos', needs.ver.outputs.base)
     runs-on: macos-14
