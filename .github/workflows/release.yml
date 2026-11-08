@@ -168,6 +168,24 @@ jobs:
           docker run --rm -v "$PWD":/io joseluisq/rust-linux-darwin-builder:latest bash -lc '
             set -e
             cd /io
+            # ring 0.17 invokes the CC_<target> compiler for its C code; without
+            # these it picks the host gcc and dies on darwin-only flags.
+            for t in x86_64 aarch64; do
+              CC=$(ls /usr/local/osxcross/target/bin/${t}-apple-darwin*-clang 2>/dev/null | sort | head -1)
+              if [ -z "$CC" ]; then
+                CC=$(find /usr/local /opt -maxdepth 4 -name "${t}-apple-darwin*-clang" 2>/dev/null | sort | head -1)
+              fi
+              if [ -n "$CC" ]; then
+                export CC_${t}_apple_darwin="$CC"
+                export CXX_${t}_apple_darwin="${CC}++"
+                AR=$(ls /usr/local/osxcross/target/bin/${t}-apple-darwin*-ar 2>/dev/null | sort | head -1)
+                [ -n "$AR" ] && export AR_${t}_apple_darwin="$AR"
+                export CARGO_TARGET_${t}_APPLE_DARWIN_LINKER="$CC"
+                echo "using $CC for ${t}"
+              else
+                echo "::warning::no osxcross clang found for ${t}; cc crate falls back"
+              fi
+            done
             (cargo build --release --target aarch64-apple-darwin) || \
               echo "::warning::aarch64-apple-darwin build failed; shipping x64 only"
             cargo build --release --target x86_64-apple-darwin
