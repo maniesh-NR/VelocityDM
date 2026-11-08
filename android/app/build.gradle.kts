@@ -37,19 +37,8 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
-    // split per-ABI like the desktop matrix
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a")
-            isUniversalApk = false
-            versionCodeOverrides = mapOf(
-                "armeabi-v7a" to 20001,
-                "arm64-v8a" to 20002,
-            )
-        }
-    }
+    // One universal APK: the release ships a single `velocitydm-<ver>-android.apk`
+    // and per-ABI split `versionCodeOverrides` are not part of the AGP DSL.
 }
 
 dependencies {

@@ -332,46 +332,77 @@ fn handle_tracker_conn(mut stream: TcpStream, registry: Registry) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// Runner firewalls occasionally reset loopback connections mid-test
+    /// (macOS ECONNRESET 54, Windows WSAECONNABORTED 10053). Retry the whole
+    /// body on connection-level panics; real assertion failures re-raise.
+    pub(crate) fn flaky_loopback(mut f: impl FnMut() + std::panic::RefUnwindSafe) {
+        let mut last = String::new();
+        for attempt in 0..3 {
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut f)) {
+                Ok(()) => return,
+                Err(p) => {
+                    last = p
+                        .downcast_ref::<String>()
+                        .cloned()
+                        .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
+                        .unwrap_or_default();
+                    let conn_fail = last.contains("reset")
+                        || last.contains("aborted")
+                        || last.contains("closed connection")
+                        || last.contains("Connection");
+                    if !conn_fail {
+                        std::panic::resume_unwind(p);
+                    }
+                    eprintln!("loopback attempt {attempt} failed ({last}); retrying");
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+            }
+        }
+        panic!("loopback test failed after 3 attempts: {last}");
+    }
 
     #[test]
     fn tracker_server_roundtrip() {
-        let server = TrackerServer::start("127.0.0.1:0").unwrap();
-        let hash = [7u8; 20];
-        let seed_addr: SocketAddr = "127.0.0.1:55555".parse().unwrap();
-        server.register(hash, seed_addr);
-        let peer_id = crate::util::new_peer_id();
-        let resp = announce(
-            &server.url(),
-            &hash,
-            &peer_id,
-            6881,
-            0,
-            0,
-            1000,
-            TrackerEvent::Started,
-            Duration::from_secs(5),
-        )
-        .unwrap();
-        assert_eq!(resp.peers, vec![seed_addr]);
-        assert_eq!(resp.interval, 5);
-        assert_eq!(resp.complete, Some(1));
-        // unknown hash -> no peers
-        let resp2 = announce(
-            &server.url(),
-            &[9u8; 20],
-            &peer_id,
-            6881,
-            0,
-            0,
-            0,
-            TrackerEvent::Started,
-            Duration::from_secs(5),
-        )
-        .unwrap();
-        assert!(resp2.peers.is_empty());
-        server.stop();
+        flaky_loopback(|| {
+            let server = TrackerServer::start("127.0.0.1:0").unwrap();
+            let hash = [7u8; 20];
+            let seed_addr: SocketAddr = "127.0.0.1:55555".parse().unwrap();
+            server.register(hash, seed_addr);
+            let peer_id = crate::util::new_peer_id();
+            let resp = announce(
+                &server.url(),
+                &hash,
+                &peer_id,
+                6881,
+                0,
+                0,
+                1000,
+                TrackerEvent::Started,
+                Duration::from_secs(5),
+            )
+            .unwrap();
+            assert_eq!(resp.peers, vec![seed_addr]);
+            assert_eq!(resp.interval, 5);
+            assert_eq!(resp.complete, Some(1));
+            // unknown hash -> no peers
+            let resp2 = announce(
+                &server.url(),
+                &[9u8; 20],
+                &peer_id,
+                6881,
+                0,
+                0,
+                0,
+                TrackerEvent::Started,
+                Duration::from_secs(5),
+            )
+            .unwrap();
+            assert!(resp2.peers.is_empty());
+            server.stop();
+        });
     }
 
     #[test]

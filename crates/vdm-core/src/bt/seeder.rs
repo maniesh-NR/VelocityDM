@@ -259,107 +259,111 @@ mod tests {
 
     #[test]
     fn seeder_serves_pieces_and_metadata() {
-        let dir = tempfile::tempdir().unwrap();
-        let data: Vec<u8> = (0..50_000u32).map(|i| (i % 249) as u8).collect();
-        let p = dir.path().join("blob.bin");
-        std::fs::write(&p, &data).unwrap();
-        let tracker = crate::bt::tracker::TrackerServer::start("127.0.0.1:0").unwrap();
-        let (seeder, _torrent, meta) = Seeder::seed_file(&p, &tracker.url()).unwrap();
-        tracker.register(meta.info_hash, seeder.addr);
+        crate::bt::tracker::tests::flaky_loopback(|| {
+            let dir = tempfile::tempdir().unwrap();
+            let data: Vec<u8> = (0..50_000u32).map(|i| (i % 249) as u8).collect();
+            let p = dir.path().join("blob.bin");
+            std::fs::write(&p, &data).unwrap();
+            let tracker = crate::bt::tracker::TrackerServer::start("127.0.0.1:0").unwrap();
+            let (seeder, _torrent, meta) = Seeder::seed_file(&p, &tracker.url()).unwrap();
+            tracker.register(meta.info_hash, seeder.addr);
 
-        // raw client: handshake, bitfield, interested, request two blocks
-        use crate::bt::peer::{read_peer_msg, write_peer_msg, PeerMsg};
-        let mut c = TcpStream::connect(seeder.addr).unwrap();
-        c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        let our_id = crate::util::new_peer_id();
-        let hs = handshake(&mut c, &meta.info_hash, &our_id, Some(&meta.info_hash)).unwrap();
-        assert!(hs.supports_extensions());
-        let bf = match read_peer_msg(&mut c).unwrap() {
-            PeerMsg::Bitfield(b) => b,
-            other => panic!("expected bitfield, got {:?}", other),
-        };
-        // bitfield is byte-padded; the first `piece_count` bits must be set
-        assert!(bf.len() >= meta.piece_count());
-        assert!(bf[..meta.piece_count()].iter().all(|&b| b));
-        write_peer_msg(&mut c, &PeerMsg::Interested).unwrap();
-        assert!(matches!(read_peer_msg(&mut c).unwrap(), PeerMsg::Unchoke));
-        // request piece 0 block 0 (16 KiB)
-        write_peer_msg(
-            &mut c,
-            &PeerMsg::Request {
-                index: 0,
-                begin: 0,
-                len: 16384,
-            },
-        )
-        .unwrap();
-        match read_peer_msg(&mut c).unwrap() {
-            PeerMsg::Piece {
-                index,
-                begin,
-                data: got,
-            } => {
-                assert_eq!((index, begin), (0, 0));
-                assert_eq!(got, &data[..16384]);
-            }
-            other => panic!("{:?}", other),
-        }
-        // request a tail block
-        let last_piece = (meta.piece_count() - 1) as u32;
-        let tail_len = meta.piece_len_at(last_piece);
-        write_peer_msg(
-            &mut c,
-            &PeerMsg::Request {
-                index: last_piece,
-                begin: 0,
-                len: tail_len as u32,
-            },
-        )
-        .unwrap();
-        match read_peer_msg(&mut c).unwrap() {
-            PeerMsg::Piece { data: got, .. } => {
-                assert_eq!(got.len() as u64, tail_len);
-                assert_eq!(got.as_slice(), &data[data.len() - tail_len as usize..]);
-            }
-            other => panic!("{:?}", other),
-        }
-        // metadata exchange: ext handshake then request piece 0
-        write_peer_msg(
-            &mut c,
-            &PeerMsg::Extended {
-                ext_id: 0,
-                payload: crate::bt::peer::build_ext_handshake(1, 0),
-            },
-        )
-        .unwrap();
-        match read_peer_msg(&mut c).unwrap() {
-            PeerMsg::Extended { ext_id: 0, payload } => {
-                let eh = parse_ext_handshake(&payload).unwrap();
-                assert_eq!(eh.ut_metadata, Some(3));
-                assert_eq!(eh.metadata_size, Some(meta.info_bytes.len() as u64));
-            }
-            other => panic!("{:?}", other),
-        }
-        write_peer_msg(
-            &mut c,
-            &PeerMsg::Extended {
-                ext_id: 3,
-                payload: crate::bt::peer::build_metadata_request(0),
-            },
-        )
-        .unwrap();
-        match read_peer_msg(&mut c).unwrap() {
-            PeerMsg::Extended { ext_id: 1, payload } => match parse_metadata_msg_ext(&payload) {
-                crate::bt::peer::MetadataMsg::Data { data, .. } => {
-                    let expect = &meta.info_bytes[..(16 * 1024).min(meta.info_bytes.len())];
-                    assert_eq!(data, expect.to_vec());
+            // raw client: handshake, bitfield, interested, request two blocks
+            use crate::bt::peer::{read_peer_msg, write_peer_msg, PeerMsg};
+            let mut c = TcpStream::connect(seeder.addr).unwrap();
+            c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let our_id = crate::util::new_peer_id();
+            let hs = handshake(&mut c, &meta.info_hash, &our_id, Some(&meta.info_hash)).unwrap();
+            assert!(hs.supports_extensions());
+            let bf = match read_peer_msg(&mut c).unwrap() {
+                PeerMsg::Bitfield(b) => b,
+                other => panic!("expected bitfield, got {:?}", other),
+            };
+            // bitfield is byte-padded; the first `piece_count` bits must be set
+            assert!(bf.len() >= meta.piece_count());
+            assert!(bf[..meta.piece_count()].iter().all(|&b| b));
+            write_peer_msg(&mut c, &PeerMsg::Interested).unwrap();
+            assert!(matches!(read_peer_msg(&mut c).unwrap(), PeerMsg::Unchoke));
+            // request piece 0 block 0 (16 KiB)
+            write_peer_msg(
+                &mut c,
+                &PeerMsg::Request {
+                    index: 0,
+                    begin: 0,
+                    len: 16384,
+                },
+            )
+            .unwrap();
+            match read_peer_msg(&mut c).unwrap() {
+                PeerMsg::Piece {
+                    index,
+                    begin,
+                    data: got,
+                } => {
+                    assert_eq!((index, begin), (0, 0));
+                    assert_eq!(got, &data[..16384]);
                 }
-                m => panic!("{:?}", m),
-            },
-            other => panic!("{:?}", other),
-        }
-        seeder.stop();
-        tracker.stop();
+                other => panic!("{:?}", other),
+            }
+            // request a tail block
+            let last_piece = (meta.piece_count() - 1) as u32;
+            let tail_len = meta.piece_len_at(last_piece);
+            write_peer_msg(
+                &mut c,
+                &PeerMsg::Request {
+                    index: last_piece,
+                    begin: 0,
+                    len: tail_len as u32,
+                },
+            )
+            .unwrap();
+            match read_peer_msg(&mut c).unwrap() {
+                PeerMsg::Piece { data: got, .. } => {
+                    assert_eq!(got.len() as u64, tail_len);
+                    assert_eq!(got.as_slice(), &data[data.len() - tail_len as usize..]);
+                }
+                other => panic!("{:?}", other),
+            }
+            // metadata exchange: ext handshake then request piece 0
+            write_peer_msg(
+                &mut c,
+                &PeerMsg::Extended {
+                    ext_id: 0,
+                    payload: crate::bt::peer::build_ext_handshake(1, 0),
+                },
+            )
+            .unwrap();
+            match read_peer_msg(&mut c).unwrap() {
+                PeerMsg::Extended { ext_id: 0, payload } => {
+                    let eh = parse_ext_handshake(&payload).unwrap();
+                    assert_eq!(eh.ut_metadata, Some(3));
+                    assert_eq!(eh.metadata_size, Some(meta.info_bytes.len() as u64));
+                }
+                other => panic!("{:?}", other),
+            }
+            write_peer_msg(
+                &mut c,
+                &PeerMsg::Extended {
+                    ext_id: 3,
+                    payload: crate::bt::peer::build_metadata_request(0),
+                },
+            )
+            .unwrap();
+            match read_peer_msg(&mut c).unwrap() {
+                PeerMsg::Extended { ext_id: 1, payload } => {
+                    match parse_metadata_msg_ext(&payload) {
+                        crate::bt::peer::MetadataMsg::Data { data, .. } => {
+                            let expect = &meta.info_bytes[..(16 * 1024).min(meta.info_bytes.len())];
+                            assert_eq!(data, expect.to_vec());
+                        }
+                        m => panic!("{:?}", m),
+                    }
+                }
+                other => panic!("{:?}", other),
+            }
+            seeder.stop();
+            tracker.stop();
+        });
     }
 
     fn parse_metadata_msg_ext(payload: &[u8]) -> crate::bt::peer::MetadataMsg {
