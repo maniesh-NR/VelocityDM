@@ -122,7 +122,9 @@ fn handle(msg: Value) -> Value {
                 .and_then(|e| e.parent().map(|p| p.join("velocitydm")))
                 .filter(|p| p.exists());
             let target = gui.or_else(|| {
-                std::env::var("VELOCITYDM_BIN").ok().map(std::path::PathBuf::from)
+                std::env::var("VELOCITYDM_BIN")
+                    .ok()
+                    .map(std::path::PathBuf::from)
             });
             match target {
                 Some(path) => match std::process::Command::new(path)
@@ -173,7 +175,9 @@ fn try_start_daemon(addr: &str) -> bool {
         .and_then(|e| e.parent().map(|p| p.join("velocitydm")))
         .filter(|p| p.exists());
     let target = daemon.or_else(|| {
-        std::env::var("VELOCITYDM_BIN").ok().map(std::path::PathBuf::from)
+        std::env::var("VELOCITYDM_BIN")
+            .ok()
+            .map(std::path::PathBuf::from)
     });
     match target {
         Some(path) => std::process::Command::new(path)

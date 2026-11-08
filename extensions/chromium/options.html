@@ -4,35 +4,69 @@
 <meta charset="utf-8">
 <title>VelocityDM Options</title>
 <style>
+  /* Material You (MD3) tokens — light + dark follow the system */
   :root {
-    --primary: #6750a4; --on-primary: #fff; --surface: #1c1b1f;
-    --container: #2b2930; --text: #e6e0e9; --dim: #cac4d0; --outline: #938f99;
+    --md-primary: #6750a4; --md-on-primary: #fff;
+    --md-primary-container: #eaddff; --md-on-primary-container: #21005d;
+    --md-secondary-container: #e8def8; --md-on-secondary-container: #1d192b;
+    --md-surface: #fef7ff; --md-surface-container-low: #f7f2fa;
+    --md-surface-container: #f3edf7; --md-surface-container-high: #ece6f0;
+    --md-surface-container-highest: #e6e0e9;
+    --md-on-surface: #1d1b20; --md-on-surface-variant: #49454f;
+    --md-outline: #79747e; --md-outline-variant: #cac4d0;
+    --md-tertiary-container: #ffd8e4; --md-on-tertiary-container: #31111d;
+    --md-error: #b3261e; --md-error-container: #f9decc; --md-on-error-container: #410e0b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --md-primary: #d0bcff; --md-on-primary: #381e72;
+      --md-primary-container: #4f378b; --md-on-primary-container: #eaddff;
+      --md-secondary-container: #4a4458; --md-on-secondary-container: #e8def8;
+      --md-surface: #141218; --md-surface-container-low: #1d1b20;
+      --md-surface-container: #211f26; --md-surface-container-high: #2b2930;
+      --md-surface-container-highest: #36343b;
+      --md-on-surface: #e6e0e9; --md-on-surface-variant: #cac4d0;
+      --md-outline: #938f99; --md-outline-variant: #49454f;
+      --md-tertiary-container: #633b48; --md-on-tertiary-container: #ffd8e4;
+      --md-error: #f2b8b5; --md-error-container: #8c1d18; --md-on-error-container: #f9decc;
+    }
   }
   body {
-    margin: 0; padding: 24px; font: 14px/1.5 system-ui, sans-serif;
-    background: var(--surface); color: var(--text);
+    margin: 0 auto; padding: 24px; max-width: 640px;
+    font: 14px/1.5 Roboto, system-ui, sans-serif;
+    background: var(--md-surface); color: var(--md-on-surface);
   }
-  h1 { color: #d0bcff; font-size: 20px; }
+  h1 { color: var(--md-on-surface); font-size: 22px; font-weight: 500; margin: 4px 0 20px; }
+  /* MD3 outlined card */
   fieldset {
-    border: 1px solid var(--outline); border-radius: 12px; margin-bottom: 16px;
+    border: 1px solid var(--md-outline-variant); border-radius: 12px; margin-bottom: 16px;
   }
-  legend { color: var(--dim); padding: 0 8px; font-size: 12px; text-transform: uppercase; }
-  label { display: block; margin: 8px 0; }
+  legend { color: var(--md-on-surface-variant); padding: 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; }
+  label { display: block; margin: 10px 0; }
   .cats label { display: inline-block; margin-right: 14px; }
+  /* MD3 filled text field */
   textarea, input[type=text], input[type=number] {
-    background: var(--container); border: 1px solid var(--outline); color: var(--text);
-    border-radius: 8px; padding: 6px 10px; width: 100%; font: inherit;
+    background: var(--md-surface-container-high); border: 0; border-bottom: 1px solid var(--md-outline-variant);
+    color: var(--md-on-surface); border-radius: 8px 8px 0 0;
+    padding: 8px 12px; width: 100%; font: inherit; outline: none;
   }
-  textarea { min-height: 70px; }
+  textarea, input:focus { border-bottom-color: var(--md-primary); }
+  textarea:focus, input:focus { border-bottom: 2px solid var(--md-primary); background: var(--md-surface-container-highest); }
+  textarea { min-height: 70px; resize: vertical; }
+  /* MD3 buttons */
   button {
-    background: var(--primary); color: var(--on-primary); border: 0; border-radius: 18px;
-    padding: 8px 22px; font-size: 14px; cursor: pointer;
+    background: var(--md-primary); color: var(--md-on-primary); border: 0; border-radius: 9999px;
+    padding: 9px 24px; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer;
   }
-  button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--outline); }
-  .status { margin-left: 12px; font-size: 13px; }
-  .status.ok { color: #4ee9b0; }
-  .status.err { color: #ffb4ab; }
-  .hint { color: var(--dim); font-size: 12px; }
+  button:hover { filter: brightness(1.08); }
+  button.ghost { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+  .status {
+    margin-left: 12px; font-size: 13px; padding: 3px 12px; border-radius: 8px;
+    background: var(--md-tertiary-container); color: var(--md-on-tertiary-container);
+  }
+  .status:empty { background: transparent; padding: 0; margin: 0; }
+  .status.err { background: var(--md-error-container); color: var(--md-on-error-container); }
+  .hint { color: var(--md-on-surface-variant); font-size: 12px; }
 </style>
 </head>
 <body>

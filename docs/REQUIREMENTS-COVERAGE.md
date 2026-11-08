@@ -17,7 +17,7 @@ numbers refer to verified artifacts (tests in-tree, binaries built).
 | Browser extensions Chrome/Safari/Edge/Firefox/Opera (MV3) | Done | 4 zips built (`extensions/dist`), Safari conversion guide; MV3 service workers; 64 node assertions |
 | Video stream sniffing/capture | Done | Extension `webRequest` sniffing with quality labels; HLS engine with AES-128; Android sniffer browser |
 | Rust engine | Done | `vdm-core` (engine), `vdm-rpc`, `velocitydm`, `velocitydm-nmh` |
-| Material Design 3 GUI | Done | egui MD3 dark theme (desktop), Compose MD3 (Android) |
+| Material Design 3 GUI | Done | egui Material You theme (dynamic color seeds, light + dark; desktop), Compose MD3 + wallpaper dynamic color on Android 12+ (Android) |
 | GUI/engine decoupled, non-blocking channels | Done | Engine threads ↔ `EventBus` (sync channel) ↔ RPC SSE / GUI poll at 5–10 Hz; GUI is a client of the same engine API |
 | Refresh-rate limiting (10–30 Hz) | Done | SSE ticks 10 Hz, GUI repaint request 200 ms (5 Hz), progress updates ≥ 100 ms |
 | Zero-copy streaming writes | Done | 64–256 KiB read buffers stream straight to `pwrite`-style positioned writes on the pre-allocated `.part`; no full-file buffering (verified: 6 MB RSS during 3 MB transfer) |

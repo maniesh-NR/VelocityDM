@@ -27,7 +27,10 @@ impl RangePool {
     /// New pool for a file of `total` bytes (0 = unknown -> single open-ended lease).
     pub fn new(total: u64) -> Self {
         let intervals = if total > 0 {
-            vec![Interval { start: 0, end: total - 1 }]
+            vec![Interval {
+                start: 0,
+                end: total - 1,
+            }]
         } else {
             Vec::new()
         };

@@ -42,27 +42,25 @@ impl TestServer {
         let reqs_c = reqs.clone();
         let stop_c = stop.clone();
         listener.set_nonblocking(true).unwrap();
-        let handle = std::thread::spawn(move || {
-            loop {
-                if stop_c.load(Ordering::Relaxed) {
-                    break;
+        let handle = std::thread::spawn(move || loop {
+            if stop_c.load(Ordering::Relaxed) {
+                break;
+            }
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    conns_c.fetch_add(1, Ordering::SeqCst);
+                    let files = files_c.clone();
+                    let flaky = flaky_c.clone();
+                    let slow = slow_c.clone();
+                    let reqs = reqs_c.clone();
+                    std::thread::spawn(move || {
+                        let _ = serve(stream, files, flaky, slow, reqs);
+                    });
                 }
-                match listener.accept() {
-                    Ok((stream, _)) => {
-                        conns_c.fetch_add(1, Ordering::SeqCst);
-                        let files = files_c.clone();
-                        let flaky = flaky_c.clone();
-                        let slow = slow_c.clone();
-                        let reqs = reqs_c.clone();
-                        std::thread::spawn(move || {
-                            let _ = serve(stream, files, flaky, slow, reqs);
-                        });
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(10));
-                    }
-                    Err(_) => break,
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10));
                 }
+                Err(_) => break,
             }
         });
         TestServer {
@@ -243,7 +241,12 @@ fn serve(
     Ok(())
 }
 
-fn write_simple(stream: &mut TcpStream, status: u16, reason: &str, body: &[u8]) -> std::io::Result<()> {
+fn write_simple(
+    stream: &mut TcpStream,
+    status: u16,
+    reason: &str,
+    body: &[u8],
+) -> std::io::Result<()> {
     let resp = format!(
         "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
         status,

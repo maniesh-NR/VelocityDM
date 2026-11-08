@@ -30,6 +30,7 @@ pub struct AnnounceResp {
 }
 
 /// One tracker announce over HTTP.
+#[allow(clippy::too_many_arguments)] // fixed BEP-3 announce field set
 pub fn announce(
     tracker_url: &str,
     info_hash: &[u8; 20],
@@ -77,12 +78,17 @@ pub fn announce(
     if let Some(reason) = v.dict_get(b"failure reason").and_then(|r| r.as_str_lossy()) {
         return Err(Error::Torrent(format!("tracker failure: {}", reason)));
     }
-    let interval = v.dict_get(b"interval").and_then(|i| i.as_int()).unwrap_or(1800) as u64;
+    let interval = v
+        .dict_get(b"interval")
+        .and_then(|i| i.as_int())
+        .unwrap_or(1800) as u64;
     let mut peers = Vec::new();
     if let Some(p) = v.dict_get(b"peers") {
         if let Some(compact) = p.as_bytes() {
             if compact.len() % 6 != 0 {
-                return Err(Error::Torrent("tracker peers length not multiple of 6".into()));
+                return Err(Error::Torrent(
+                    "tracker peers length not multiple of 6".into(),
+                ));
             }
             for chunk in compact.chunks(6) {
                 let ip = [chunk[0], chunk[1], chunk[2], chunk[3]];
@@ -107,12 +113,19 @@ pub fn announce(
     Ok(AnnounceResp {
         interval,
         peers,
-        complete: v.dict_get(b"complete").and_then(|c| c.as_int()).map(|c| c as u64),
-        incomplete: v.dict_get(b"incomplete").and_then(|c| c.as_int()).map(|c| c as u64),
+        complete: v
+            .dict_get(b"complete")
+            .and_then(|c| c.as_int())
+            .map(|c| c as u64),
+        incomplete: v
+            .dict_get(b"incomplete")
+            .and_then(|c| c.as_int())
+            .map(|c| c as u64),
     })
 }
 
 /// Announce all trackers; returns (peers found, ok trackers, failed trackers).
+#[allow(clippy::too_many_arguments)] // fixed BEP-3 announce field set
 pub fn announce_all(
     trackers: &[String],
     info_hash: &[u8; 20],
@@ -131,7 +144,17 @@ pub fn announce_all(
             failures.push(format!("{} (UDP trackers not supported)", t));
             continue;
         }
-        match announce(t, info_hash, peer_id, port, uploaded, downloaded, left, event, Duration::from_secs(10)) {
+        match announce(
+            t,
+            info_hash,
+            peer_id,
+            port,
+            uploaded,
+            downloaded,
+            left,
+            event,
+            Duration::from_secs(10),
+        ) {
             Ok(resp) => {
                 ok += 1;
                 for p in resp.peers {
@@ -245,7 +268,10 @@ fn handle_tracker_conn(mut stream: TcpStream, registry: Registry) {
     let _method = parts.next();
     let path = parts.next().unwrap_or("/").to_string();
     // parse query
-    let query = path.split_once('?').map(|(_, q)| q.to_string()).unwrap_or_default();
+    let query = path
+        .split_once('?')
+        .map(|(_, q)| q.to_string())
+        .unwrap_or_default();
     let mut info_hash: Option<[u8; 20]> = None;
     let mut event = String::new();
     for pair in query.split('&') {

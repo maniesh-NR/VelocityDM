@@ -42,7 +42,8 @@ impl Url {
         let (host, port) = match authority.rsplit_once(':') {
             Some((h, p)) if !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => (
                 h.to_string(),
-                p.parse::<u16>().map_err(|_| Error::Http("bad port".into()))?,
+                p.parse::<u16>()
+                    .map_err(|_| Error::Http("bad port".into()))?,
             ),
             _ => (
                 authority.to_string(),
@@ -99,7 +100,12 @@ impl Url {
     }
 
     pub fn to_string_full(&self) -> String {
-        format!("{}://{}{}", self.scheme, self.host_header(), self.path_and_query)
+        format!(
+            "{}://{}{}",
+            self.scheme,
+            self.host_header(),
+            self.path_and_query
+        )
     }
 }
 
@@ -266,7 +272,12 @@ impl Conn {
     }
 
     #[cfg(feature = "tls")]
-    fn tls_conn(tcp: TcpStream, host: &str, absolute_form: bool, proxy_auth: Option<String>) -> Conn {
+    fn tls_conn(
+        tcp: TcpStream,
+        host: &str,
+        absolute_form: bool,
+        proxy_auth: Option<String>,
+    ) -> Conn {
         match crate::tls::wrap(tcp, host) {
             Ok(t) => Conn {
                 tr: Some(Transport::Tls(Box::new(t))),
@@ -429,14 +440,21 @@ fn find_terminator(buf: &[u8], from: usize) -> Option<usize> {
     None
 }
 
-fn parse_head(raw: &[u8]) -> Result<(u16, String, Vec<(String, String)>)> {
-    let text = std::str::from_utf8(raw).map_err(|_| Error::Http("non-utf8 response head".into()))?;
+/// HTTP response head: (status, reason, headers).
+pub type ResponseHead = (u16, String, Vec<(String, String)>);
+
+fn parse_head(raw: &[u8]) -> Result<ResponseHead> {
+    let text =
+        std::str::from_utf8(raw).map_err(|_| Error::Http("non-utf8 response head".into()))?;
     let mut lines = text.split("\r\n").flat_map(|l| l.split('\n'));
     let status_line = lines.next().unwrap_or("");
     let mut parts = status_line.splitn(3, ' ');
     let version = parts.next().unwrap_or("");
     if !version.starts_with("HTTP/") {
-        return Err(Error::Http(format!("bad status line: {}", status_line.trim())));
+        return Err(Error::Http(format!(
+            "bad status line: {}",
+            status_line.trim()
+        )));
     }
     let status: u16 = parts
         .next()
@@ -537,7 +555,9 @@ struct BodyState {
 enum BodyMode {
     Unknown,
     None,
-    Sized { remaining: u64 },
+    Sized {
+        remaining: u64,
+    },
     Chunked {
         remaining_in_chunk: u64,
         done: bool,
@@ -570,8 +590,8 @@ impl BodyState {
                 done: false,
                 after_crlf: false,
             };
-        } else if let Some(len) = header_value(headers, "content-length")
-            .and_then(|v| v.parse::<u64>().ok())
+        } else if let Some(len) =
+            header_value(headers, "content-length").and_then(|v| v.parse::<u64>().ok())
         {
             self.mode = BodyMode::Sized { remaining: len };
             if len == 0 {
@@ -615,7 +635,12 @@ impl BodyState {
         Ok(())
     }
 
-    fn read_sized(&mut self, tr: &mut Transport, buf: &mut [u8], remaining: &mut u64) -> std::io::Result<usize> {
+    fn read_sized(
+        &mut self,
+        tr: &mut Transport,
+        buf: &mut [u8],
+        remaining: &mut u64,
+    ) -> std::io::Result<usize> {
         if *remaining == 0 {
             self.finished = true;
             return Ok(0);
@@ -722,12 +747,7 @@ impl BodyState {
         }
         let tr = match tr.as_mut() {
             Some(t) => t,
-            None => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "body already detached",
-                ))
-            }
+            None => return Err(std::io::Error::other("body already detached")),
         };
         let mut mode = std::mem::replace(&mut self.mode, BodyMode::Unknown);
         let out = match &mut mode {
@@ -807,7 +827,12 @@ mod tests {
     fn url_parse_cases() {
         let u = Url::parse("https://example.com/a/b?x=1").unwrap();
         assert_eq!(
-            (u.scheme.as_str(), u.host.as_str(), u.port, u.path_and_query.as_str()),
+            (
+                u.scheme.as_str(),
+                u.host.as_str(),
+                u.port,
+                u.path_and_query.as_str()
+            ),
             ("https", "example.com", 443, "/a/b?x=1")
         );
         let u = Url::parse("http://host:8080").unwrap();
@@ -823,7 +848,10 @@ mod tests {
     fn url_join_cases() {
         let base = Url::parse("https://h.test/dir/page.html?a=1").unwrap();
         assert_eq!(base.join("/root.js").unwrap().path_and_query, "/root.js");
-        assert_eq!(base.join("next.html").unwrap().path_and_query, "/dir/next.html");
+        assert_eq!(
+            base.join("next.html").unwrap().path_and_query,
+            "/dir/next.html"
+        );
         assert_eq!(base.join("https://other/x").unwrap().host, "other");
     }
 
@@ -832,8 +860,14 @@ mod tests {
         // HLS playlists reference keys as "../key.bin" relative to a
         // subdirectory playlist; RFC 3986 5.2.4 must remove the dot segments
         let base = Url::parse("https://h.test/live/hi/index.m3u8").unwrap();
-        assert_eq!(base.join("../key.bin").unwrap().path_and_query, "/live/key.bin");
-        assert_eq!(base.join("seg0.ts").unwrap().path_and_query, "/live/hi/seg0.ts");
+        assert_eq!(
+            base.join("../key.bin").unwrap().path_and_query,
+            "/live/key.bin"
+        );
+        assert_eq!(
+            base.join("seg0.ts").unwrap().path_and_query,
+            "/live/hi/seg0.ts"
+        );
         // clamping at the root
         let root = Url::parse("https://h.test/a.m3u8").unwrap();
         assert_eq!(root.join("../key.bin").unwrap().path_and_query, "/key.bin");
@@ -857,7 +891,10 @@ mod tests {
         let (status, reason, headers) = parse_head(raw).unwrap();
         assert_eq!(status, 206);
         assert_eq!(reason, "Partial Content");
-        assert_eq!(header_value(&headers, "content-range"), Some("bytes 0-99/500"));
+        assert_eq!(
+            header_value(&headers, "content-range"),
+            Some("bytes 0-99/500")
+        );
         assert_eq!(header_value(&headers, "CONTENT-LENGTH"), Some("100"));
     }
 

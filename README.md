@@ -21,7 +21,7 @@ VelocityDM 1.0.0
 | Batch | URL patterns like `https://site/pic[001:120].jpg`, page link grabber |
 | Networking | HTTP CONNECT + SOCKS5 proxies (with auth), global + per-download speed limits |
 | Recover | crash-safe `.part`/`.vdmctl` state, **Refresh link** revives expired URLs |
-| UI | egui GUI (Material Design 3 dark), CLI, JSON-RPC 2.0 + SSE on 127.0.0.1:36990 |
+| UI | egui GUI (Material You: dynamic color seeds, light + dark), CLI, JSON-RPC 2.0 + SSE on 127.0.0.1:36990 |
 | Browsers | Chrome/Edge/Opera/Firefox extensions (video sniffing, download takeover, magnet), Safari conversion guide |
 
 The scheduling choices follow the parallel-download research literature

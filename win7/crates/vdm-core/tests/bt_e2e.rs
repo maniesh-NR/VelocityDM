@@ -4,13 +4,13 @@
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
-use vdm_core::bt::metainfo::{create_torrent, CreateInput, Metainfo};
 use vdm_core::bt::magnet::Magnet;
+use vdm_core::bt::metainfo::{create_torrent, CreateInput, Metainfo};
 use vdm_core::bt::seeder::Seeder;
 use vdm_core::bt::tracker::TrackerServer;
 use vdm_core::bt::{download_blocking, BtEvent, BtOptions, BtSpec};
-use vdm_core::engine::{Engine, EngineConfig};
 use vdm_core::engine::events::TaskState;
+use vdm_core::engine::{Engine, EngineConfig};
 
 fn wait_until_ms(timeout_ms: u64, pred: impl Fn() -> bool) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
@@ -29,10 +29,16 @@ fn sha256_hex(data: &[u8]) -> String {
 }
 
 fn make_data(n: usize, seed: u8) -> Vec<u8> {
-    (0..n).map(|i| (i as u16).wrapping_mul(251).wrapping_add(seed as u16) as u8).collect()
+    (0..n)
+        .map(|i| (i as u16).wrapping_mul(251).wrapping_add(seed as u16) as u8)
+        .collect()
 }
 
-fn seed_harness(dir: &Path, size: usize, piece_len: u64) -> (TrackerServer, Seeder, Vec<u8>, Vec<u8>, Arc<Metainfo>) {
+fn seed_harness(
+    dir: &Path,
+    size: usize,
+    piece_len: u64,
+) -> (TrackerServer, Seeder, Vec<u8>, Vec<u8>, Arc<Metainfo>) {
     let data = make_data(size, 7);
     let path = dir.join("payload.bin");
     std::fs::write(&path, &data).unwrap();
@@ -103,7 +109,11 @@ fn magnet_download_e2e() {
     let root = dir.path().join("src");
     std::fs::create_dir_all(&root).unwrap();
     let (tracker, seeder, data, _torrent, meta) = seed_harness(&root, 1024 * 1024, 64 * 1024);
-    let magnet = Magnet::from_parts(meta.info_hash, Some("payload.bin".into()), vec![tracker.url()]);
+    let magnet = Magnet::from_parts(
+        meta.info_hash,
+        Some("payload.bin".into()),
+        vec![tracker.url()],
+    );
     let out = dir.path().join("out");
     std::fs::create_dir_all(&out).unwrap();
     let mut got_metadata = false;
@@ -265,7 +275,10 @@ fn seeder_rejects_wrong_info_hash() {
         },
         &mut |_evt| {},
     );
-    assert!(result.is_err(), "expected handshake info-hash mismatch to fail");
+    assert!(
+        result.is_err(),
+        "expected handshake info-hash mismatch to fail"
+    );
     seeder.stop();
     tracker.stop();
 }
@@ -283,7 +296,12 @@ fn engine_torrent_task_lifecycle() {
         ..Default::default()
     });
     let id = engine
-        .add_torrent(BtSpec::TorrentBytes(torrent), Some(out.to_string_lossy().to_string()), vec![], 0)
+        .add_torrent(
+            BtSpec::TorrentBytes(torrent),
+            Some(out.to_string_lossy().to_string()),
+            vec![],
+            0,
+        )
         .unwrap();
     assert!(wait_until_ms(60_000, || {
         engine.get(id).map(|s| s.state) == Some(TaskState::Completed)

@@ -56,9 +56,7 @@ pub fn parse_master(text: &str) -> Result<Vec<Variant>> {
         let line = line.trim();
         if line.starts_with("#EXT-X-STREAM-INF:") {
             let attrs = parse_attrs(line.trim_start_matches("#EXT-X-STREAM-INF:"));
-            pending_bandwidth = attrs
-                .get("BANDWIDTH")
-                .and_then(|b| b.parse::<u64>().ok());
+            pending_bandwidth = attrs.get("BANDWIDTH").and_then(|b| b.parse::<u64>().ok());
             pending_resolution = attrs.get("RESOLUTION").cloned();
         } else if !line.is_empty() && !line.starts_with('#') {
             variants.push(Variant {
@@ -99,7 +97,10 @@ pub fn parse_media(text: &str, base: &Url) -> Result<MediaPlaylist> {
                 .unwrap_or(0.0);
         } else if line.starts_with("#EXT-X-KEY:") {
             let attrs = parse_attrs(line.trim_start_matches("#EXT-X-KEY:"));
-            let method = attrs.get("METHOD").cloned().unwrap_or_else(|| "NONE".into());
+            let method = attrs
+                .get("METHOD")
+                .cloned()
+                .unwrap_or_else(|| "NONE".into());
             if method == "NONE" {
                 current_key = None;
             } else {
@@ -155,7 +156,10 @@ pub fn choose_variant<'a>(variants: &'a [Variant], quality: &str) -> Result<&'a 
         "worst" | "lowest" => variants.iter().min_by_key(|v| v.bandwidth),
         other => {
             let want: u64 = other.parse().map_err(|_| {
-                Error::Hls(format!("bad quality '{}' (use best|worst|bandwidth)", quality))
+                Error::Hls(format!(
+                    "bad quality '{}' (use best|worst|bandwidth)",
+                    quality
+                ))
             })?;
             variants
                 .iter()
@@ -241,7 +245,9 @@ pub fn aes128_cbc_decrypt(key: &[u8; 16], iv: &[u8; 16], data: &mut Vec<u8>) -> 
         return Ok(());
     }
     if data.len() % 16 != 0 {
-        return Err(Error::Hls("encrypted segment length not multiple of 16".into()));
+        return Err(Error::Hls(
+            "encrypted segment length not multiple of 16".into(),
+        ));
     }
     let cipher = Aes128::new(key.into());
     let mut prev = [0u8; 16];
@@ -326,7 +332,10 @@ mod tests {
 
     #[test]
     fn iv_parsing() {
-        assert_eq!(parse_hex_iv("0x00112233445566778899aabbccddeeff").unwrap()[15], 0xff);
+        assert_eq!(
+            parse_hex_iv("0x00112233445566778899aabbccddeeff").unwrap()[15],
+            0xff
+        );
         assert_eq!(parse_hex_iv("0xff").unwrap()[15], 0xff);
         assert_eq!(parse_hex_iv("ff").unwrap()[15], 0xff);
         assert!(parse_hex_iv("0x").is_none());
@@ -376,18 +385,17 @@ pub fn fetch_text(cfg: &ClientCfg, url: &Url) -> Result<String> {
     let mut conn = Conn::connect(url, cfg)?;
     let mut resp = conn.request(&Request::get(url), cfg)?;
     if resp.status != 200 {
-        return Err(Error::Hls(format!("playlist fetch returned {}", resp.status)));
+        return Err(Error::Hls(format!(
+            "playlist fetch returned {}",
+            resp.status
+        )));
     }
     let body = resp.read_body(16 * 1024 * 1024)?;
     String::from_utf8(body).map_err(|_| Error::Hls("playlist is not utf-8".into()))
 }
 
 /// Resolve a playlist URL into the chosen media playlist (following master).
-pub fn resolve_playlist(
-    cfg: &ClientCfg,
-    url: &Url,
-    quality: &str,
-) -> Result<(Url, MediaPlaylist)> {
+pub fn resolve_playlist(cfg: &ClientCfg, url: &Url, quality: &str) -> Result<(Url, MediaPlaylist)> {
     let text = fetch_text(cfg, url)?;
     let base = url.clone();
     if text.contains("#EXT-X-STREAM-INF") {
@@ -447,9 +455,10 @@ pub fn download_hls(
     }
 
     let part_path = crate::engine::state::ResumeState::part_path(out);
-    let mut writer = std::io::BufWriter::new(std::fs::File::create(&part_path).map_err(|e| {
-        Error::Hls(format!("create part {}: {}", part_path.display(), e))
-    })?);
+    let mut writer = std::io::BufWriter::new(
+        std::fs::File::create(&part_path)
+            .map_err(|e| Error::Hls(format!("create part {}: {}", part_path.display(), e)))?,
+    );
     let done_seg = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let next_idx = Arc::new(Mutex::new(0usize));
 
@@ -501,10 +510,12 @@ pub fn download_hls(
                         Err(_) => return,
                     },
                 };
-                let data = match fetch_segment(&cfg, &seg_url, rate.as_ref(), &mut conn, &mut conn_target) {
-                    Ok(d) => d,
-                    Err(_) => return, // worker exits; collector notices missing segment
-                };
+                let data =
+                    match fetch_segment(&cfg, &seg_url, rate.as_ref(), &mut conn, &mut conn_target)
+                    {
+                        Ok(d) => d,
+                        Err(_) => return, // worker exits; collector notices missing segment
+                    };
                 let data = if let Some(k) = &seg.key {
                     if k.method.eq_ignore_ascii_case("AES-128") {
                         let key = k
@@ -565,12 +576,21 @@ pub fn download_hls(
         let _ = h.join();
     }
     if failed || write_idx < segments.len() {
-        return Err(Error::Hls("segment download failed before completion".into()));
+        return Err(Error::Hls(
+            "segment download failed before completion".into(),
+        ));
     }
-    writer.flush().map_err(|e| Error::Hls(format!("flush: {}", e)))?;
+    writer
+        .flush()
+        .map_err(|e| Error::Hls(format!("flush: {}", e)))?;
     drop(writer);
     std::fs::rename(&part_path, out).map_err(|e| {
-        Error::Hls(format!("rename {} -> {}: {}", part_path.display(), out.display(), e))
+        Error::Hls(format!(
+            "rename {} -> {}: {}",
+            part_path.display(),
+            out.display(),
+            e
+        ))
     })?;
     Ok(())
 }

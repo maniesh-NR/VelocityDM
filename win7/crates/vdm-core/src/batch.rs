@@ -36,7 +36,10 @@ pub fn expand_pattern(pattern: &str) -> Result<Vec<String>> {
                     .parse()
                     .map_err(|_| Error::Task(format!("bad range end '{}'", to)))?;
                 if a > b || b - a > 100_000 {
-                    return Err(Error::Task(format!("bad or oversized range [{}:{}]", from, to)));
+                    return Err(Error::Task(format!(
+                        "bad or oversized range [{}:{}]",
+                        from, to
+                    )));
                 }
                 (a..=b)
                     .map(|n| format!("{:0width$}", n, width = pad))

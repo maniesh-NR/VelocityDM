@@ -43,24 +43,22 @@ impl RpcServer {
         let engine_c = engine.clone();
         let stop_c = stop.clone();
         listener.set_nonblocking(true)?;
-        let handle = std::thread::spawn(move || {
-            loop {
-                if stop_c.load(Ordering::Relaxed) {
-                    break;
+        let handle = std::thread::spawn(move || loop {
+            if stop_c.load(Ordering::Relaxed) {
+                break;
+            }
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    let engine = engine_c.clone();
+                    let stop = stop_c.clone();
+                    std::thread::spawn(move || {
+                        let _ = handle_conn(stream, engine, stop);
+                    });
                 }
-                match listener.accept() {
-                    Ok((stream, _)) => {
-                        let engine = engine_c.clone();
-                        let stop = stop_c.clone();
-                        std::thread::spawn(move || {
-                            let _ = handle_conn(stream, engine, stop);
-                        });
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(_) => break,
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(50));
                 }
+                Err(_) => break,
             }
         });
         Ok(Arc::new(RpcServer {
@@ -80,7 +78,11 @@ impl RpcServer {
     }
 }
 
-fn handle_conn(mut stream: TcpStream, engine: Arc<Engine>, stop: Arc<AtomicBool>) -> std::io::Result<()> {
+fn handle_conn(
+    mut stream: TcpStream,
+    engine: Arc<Engine>,
+    stop: Arc<AtomicBool>,
+) -> std::io::Result<()> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(300)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
     let mut reader = std::io::BufReader::new(stream.try_clone()?);
@@ -114,7 +116,13 @@ fn handle_conn(mut stream: TcpStream, engine: Arc<Engine>, stop: Arc<AtomicBool>
             }
         }
         if content_length > 8 * 1024 * 1024 {
-            write_response(&mut stream, 413, "text/plain", b"payload too large", keep_alive)?;
+            write_response(
+                &mut stream,
+                413,
+                "text/plain",
+                b"payload too large",
+                keep_alive,
+            )?;
             return Ok(());
         }
         let mut body = vec![0u8; content_length];
@@ -122,7 +130,13 @@ fn handle_conn(mut stream: TcpStream, engine: Arc<Engine>, stop: Arc<AtomicBool>
 
         match (method.as_str(), path.as_str()) {
             ("GET", "/health") => {
-                write_response(&mut stream, 200, "application/json", b"{\"ok\":true}", keep_alive)?;
+                write_response(
+                    &mut stream,
+                    200,
+                    "application/json",
+                    b"{\"ok\":true}",
+                    keep_alive,
+                )?;
             }
             ("POST", "/rpc") => {
                 let resp = dispatch(&engine, &body);
@@ -144,7 +158,13 @@ fn handle_conn(mut stream: TcpStream, engine: Arc<Engine>, stop: Arc<AtomicBool>
     Ok(())
 }
 
-fn write_response(stream: &mut TcpStream, status: u16, ctype: &str, body: &[u8], keep_alive: bool) -> std::io::Result<()> {
+fn write_response(
+    stream: &mut TcpStream,
+    status: u16,
+    ctype: &str,
+    body: &[u8],
+    keep_alive: bool,
+) -> std::io::Result<()> {
     let reason = match status {
         200 => "OK",
         404 => "Not Found",
@@ -166,7 +186,11 @@ fn write_response(stream: &mut TcpStream, status: u16, ctype: &str, body: &[u8],
 }
 
 /// SSE: engine events + periodic snapshot deltas (10 Hz).
-fn sse_loop(stream: &mut TcpStream, engine: &Arc<Engine>, stop: &AtomicBool) -> std::io::Result<()> {
+fn sse_loop(
+    stream: &mut TcpStream,
+    engine: &Arc<Engine>,
+    stop: &AtomicBool,
+) -> std::io::Result<()> {
     let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n";
     stream.write_all(head.as_bytes())?;
     stream.flush()?;
@@ -188,7 +212,13 @@ fn sse_loop(stream: &mut TcpStream, engine: &Arc<Engine>, stop: &AtomicBool) -> 
             let snaps = engine.list();
             let mut changed = Vec::new();
             for s in &snaps {
-                let key = format!("{}|{}|{}|{}", s.state.as_str(), s.done, s.speed, s.error.is_some());
+                let key = format!(
+                    "{}|{}|{}|{}",
+                    s.state.as_str(),
+                    s.done,
+                    s.speed,
+                    s.error.is_some()
+                );
                 if last_state.get(&s.id) != Some(&key) {
                     last_state.insert(s.id, key);
                     changed.push(s.clone());
@@ -247,12 +277,15 @@ pub fn dispatch(engine: &Arc<Engine>, body: &[u8]) -> Value {
     let params = req.get("params").cloned().unwrap_or(Value::Null);
     match method {
         "daemon.ping" => ok_response(&id, json!("pong")),
-        "daemon.info" => ok_response(&id, json!({
-            "name": "VelocityDM",
-            "version": vdm_core::VERSION,
-            "rpc": "json-rpc-2.0",
-            "features": ["http", "hls", "bittorrent", "magnet", "batch", "scheduler", "proxy", "refresh"]
-        })),
+        "daemon.info" => ok_response(
+            &id,
+            json!({
+                "name": "VelocityDM",
+                "version": vdm_core::VERSION,
+                "rpc": "json-rpc-2.0",
+                "features": ["http", "hls", "bittorrent", "magnet", "batch", "scheduler", "proxy", "refresh"]
+            }),
+        ),
         "daemon.shutdown" => {
             engine.shutdown();
             ok_response(&id, json!(true))
@@ -317,7 +350,10 @@ pub fn dispatch(engine: &Arc<Engine>, body: &[u8]) -> Value {
                 .and_then(|v| v.as_array())
                 .map(|a| a.iter().map(|x| x.as_u64().unwrap_or(1) as u8).collect())
                 .unwrap_or_default();
-            let limit = params.get("rateLimitBps").and_then(|v| v.as_u64()).unwrap_or(0);
+            let limit = params
+                .get("rateLimitBps")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             match engine.add_torrent(spec, out_dir, priorities, limit) {
                 Ok(task_id) => ok_response(&id, json!({ "id": task_id })),
                 Err(e) => error_response(id, -32003, &e.to_string()),
@@ -334,52 +370,59 @@ pub fn dispatch(engine: &Arc<Engine>, body: &[u8]) -> Value {
                     .map_err(|e| vdm_core::Error::Torrent(format!("{}", e)))
                     .and_then(|b| vdm_core::bt::Metainfo::from_torrent_bytes(&b))
                 {
-                    Ok(meta) => ok_response(&id, json!({
-                        "name": meta.name,
-                        "totalLength": meta.total_len,
-                        "infoHash": hex::encode(meta.info_hash),
-                        "trackers": meta.trackers,
-                        "files": meta.files.iter().map(|f| json!({
-                            "path": f.path.join("/"),
-                            "length": f.length,
-                        })).collect::<Vec<_>>()
-                    })),
+                    Ok(meta) => ok_response(
+                        &id,
+                        json!({
+                            "name": meta.name,
+                            "totalLength": meta.total_len,
+                            "infoHash": hex::encode(meta.info_hash),
+                            "trackers": meta.trackers,
+                            "files": meta.files.iter().map(|f| json!({
+                                "path": f.path.join("/"),
+                                "length": f.length,
+                            })).collect::<Vec<_>>()
+                        }),
+                    ),
                     Err(e) => error_response(id, -32003, &e.to_string()),
                 },
                 BtSpec::TorrentBytes(b) => match vdm_core::bt::Metainfo::from_torrent_bytes(&b) {
-                    Ok(meta) => ok_response(&id, json!({
-                        "name": meta.name,
-                        "totalLength": meta.total_len,
-                        "infoHash": hex::encode(meta.info_hash),
-                        "trackers": meta.trackers,
-                        "files": meta.files.iter().map(|f| json!({
-                            "path": f.path.join("/"),
-                            "length": f.length,
-                        })).collect::<Vec<_>>()
-                    })),
+                    Ok(meta) => ok_response(
+                        &id,
+                        json!({
+                            "name": meta.name,
+                            "totalLength": meta.total_len,
+                            "infoHash": hex::encode(meta.info_hash),
+                            "trackers": meta.trackers,
+                            "files": meta.files.iter().map(|f| json!({
+                                "path": f.path.join("/"),
+                                "length": f.length,
+                            })).collect::<Vec<_>>()
+                        }),
+                    ),
                     Err(e) => error_response(id, -32003, &e.to_string()),
                 },
-                BtSpec::Magnet(_) => error_response(id, -32005, "magnet has no file list before metadata"),
+                BtSpec::Magnet(_) => {
+                    error_response(id, -32005, "magnet has no file list before metadata")
+                }
             }
         }
-        "downloads.pause" => {
-            match param_id(&params).and_then(|i| engine.pause(i).ok()) {
-                Some(()) => ok_response(&id, json!(true)),
-                None => error_response(id, -32001, "no such task"),
-            }
-        }
+        "downloads.pause" => match param_id(&params).and_then(|i| engine.pause(i).ok()) {
+            Some(()) => ok_response(&id, json!(true)),
+            None => error_response(id, -32001, "no such task"),
+        },
         "downloads.pauseAll" => {
             engine.pause_all();
             ok_response(&id, json!(true))
         }
-        "downloads.resume" => {
-            match param_id(&params).and_then(|i| engine.resume(i).ok()) {
-                Some(()) => ok_response(&id, json!(true)),
-                None => error_response(id, -32001, "no such task"),
-            }
-        }
+        "downloads.resume" => match param_id(&params).and_then(|i| engine.resume(i).ok()) {
+            Some(()) => ok_response(&id, json!(true)),
+            None => error_response(id, -32001, "no such task"),
+        },
         "downloads.remove" => {
-            let delete = params.get("deleteFiles").and_then(|v| v.as_bool()).unwrap_or(false);
+            let delete = params
+                .get("deleteFiles")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             match param_id(&params).and_then(|i| engine.remove(i, delete).ok()) {
                 Some(()) => ok_response(&id, json!(true)),
                 None => error_response(id, -32001, "no such task"),
@@ -404,12 +447,15 @@ pub fn dispatch(engine: &Arc<Engine>, body: &[u8]) -> Value {
         }
         "queue.get" => {
             let cfg = engine.config();
-            ok_response(&id, json!({
-                "maxActive": cfg.scheduler.max_active,
-                "stopWindow": cfg.scheduler.stop_window,
-                "shutdownWhenDone": cfg.scheduler.shutdown_when_done,
-                "onQueueDrained": cfg.scheduler.on_queue_drained,
-            }))
+            ok_response(
+                &id,
+                json!({
+                    "maxActive": cfg.scheduler.max_active,
+                    "stopWindow": cfg.scheduler.stop_window,
+                    "shutdownWhenDone": cfg.scheduler.shutdown_when_done,
+                    "onQueueDrained": cfg.scheduler.on_queue_drained,
+                }),
+            )
         }
         "queue.set" => {
             let mut cfg = engine.config();
@@ -443,19 +489,23 @@ pub fn dispatch(engine: &Arc<Engine>, body: &[u8]) -> Value {
                 error_response(id, -32002, "missing globalBps")
             }
         }
-        "limits.get" => {
-            ok_response(&id, json!({ "globalBps": engine.config().global_limit_bps }))
-        }
+        "limits.get" => ok_response(
+            &id,
+            json!({ "globalBps": engine.config().global_limit_bps }),
+        ),
         "settings.get" => {
             let cfg = engine.config();
-            ok_response(&id, json!({
-                "downloadDir": cfg.download_dir.to_string_lossy(),
-                "defaultConnections": cfg.default_connections,
-                "userAgent": cfg.user_agent,
-                "globalLimitBps": cfg.global_limit_bps,
-                "proxy": cfg.proxy,
-                "scheduler": cfg.scheduler,
-            }))
+            ok_response(
+                &id,
+                json!({
+                    "downloadDir": cfg.download_dir.to_string_lossy(),
+                    "defaultConnections": cfg.default_connections,
+                    "userAgent": cfg.user_agent,
+                    "globalLimitBps": cfg.global_limit_bps,
+                    "proxy": cfg.proxy,
+                    "scheduler": cfg.scheduler,
+                }),
+            )
         }
         "settings.set" => {
             let mut cfg = engine.config();
@@ -494,7 +544,9 @@ fn torrent_spec_from_params(params: &Value) -> Result<BtSpec, String> {
         return Ok(BtSpec::TorrentFile(std::path::PathBuf::from(path)));
     }
     if let Some(mag) = params.get("magnet").and_then(|v| v.as_str()) {
-        return Magnet::parse(mag).map(BtSpec::Magnet).map_err(|e| e.to_string());
+        return Magnet::parse(mag)
+            .map(BtSpec::Magnet)
+            .map_err(|e| e.to_string());
     }
     Err("missing torrentPath or magnet".to_string())
 }
@@ -632,14 +684,20 @@ mod tests {
         let server = RpcServer::start(engine.clone(), "127.0.0.1:0").unwrap();
         let client = RpcClient::new(&format!("127.0.0.1:{}", server.port()));
 
-        assert_eq!(client.call("daemon.ping", json!({})).unwrap(), json!("pong"));
+        assert_eq!(
+            client.call("daemon.ping", json!({})).unwrap(),
+            json!("pong")
+        );
         let info = client.call("daemon.info", json!({})).unwrap();
         assert_eq!(info["name"], "VelocityDM");
         assert!(info["features"].as_array().unwrap().len() >= 6);
 
         // add + list + get + pause + resume + remove
         let r = client
-            .call("downloads.add", json!({ "url": "http://127.0.0.1:1/nope", "options": { "filename": "x.bin" } }))
+            .call(
+                "downloads.add",
+                json!({ "url": "http://127.0.0.1:1/nope", "options": { "filename": "x.bin" } }),
+            )
             .unwrap();
         let id = r["id"].as_u64().unwrap();
         let list = client.call("downloads.list", json!({})).unwrap();
@@ -648,31 +706,45 @@ mod tests {
         assert_eq!(got["id"].as_u64().unwrap(), id);
         client.call("downloads.pause", json!({ "id": id })).unwrap();
         let paused = client.call("downloads.get", json!({ "id": id })).unwrap();
-        assert_eq!(paused["userPaused"].as_bool().unwrap(), true);
-        client.call("downloads.resume", json!({ "id": id })).unwrap();
-        client.call("downloads.remove", json!({ "id": id })).unwrap();
+        assert!(paused["userPaused"].as_bool().unwrap());
+        client
+            .call("downloads.resume", json!({ "id": id }))
+            .unwrap();
+        client
+            .call("downloads.remove", json!({ "id": id }))
+            .unwrap();
         let list2 = client.call("downloads.list", json!({})).unwrap();
         assert_eq!(list2.as_array().unwrap().len(), 0);
 
         // batch expansion endpoint
-        let b = client.call("batch.expand", json!({ "pattern": "http://x/p[1:2].jpg" })).unwrap();
+        let b = client
+            .call("batch.expand", json!({ "pattern": "http://x/p[1:2].jpg" }))
+            .unwrap();
         assert_eq!(b["urls"].as_array().unwrap().len(), 2);
 
         // settings roundtrip
         client
-            .call("settings.set", json!({ "downloadDir": "/tmp/vdm-rpc-dir", "defaultConnections": 8 }))
+            .call(
+                "settings.set",
+                json!({ "downloadDir": "/tmp/vdm-rpc-dir", "defaultConnections": 8 }),
+            )
             .unwrap();
         let s = client.call("settings.get", json!({})).unwrap();
         assert_eq!(s["defaultConnections"].as_u64().unwrap(), 8);
 
         // limits
-        client.call("limits.set", json!({ "globalBps": 102400 })).unwrap();
+        client
+            .call("limits.set", json!({ "globalBps": 102400 }))
+            .unwrap();
         let l = client.call("limits.get", json!({})).unwrap();
         assert_eq!(l["globalBps"].as_u64().unwrap(), 102400);
 
         // queue settings
         client
-            .call("queue.set", json!({ "maxActive": 5, "stopWindow": ["22:00", "06:00"] }))
+            .call(
+                "queue.set",
+                json!({ "maxActive": 5, "stopWindow": ["22:00", "06:00"] }),
+            )
             .unwrap();
         let q = client.call("queue.get", json!({})).unwrap();
         assert_eq!(q["maxActive"].as_u64().unwrap(), 5);
@@ -681,14 +753,17 @@ mod tests {
         // errors
         let err = client.call("no.such.method", json!({})).unwrap_err();
         assert!(err.to_string().contains("unknown method"));
-        let err2 = client.call("downloads.get", json!({ "id": 9999 })).unwrap_err();
+        let err2 = client
+            .call("downloads.get", json!({ "id": 9999 }))
+            .unwrap_err();
         assert!(err2.to_string().contains("no such task"));
         let err3 = client.call("downloads.add", json!({})).unwrap_err();
         assert!(err3.to_string().contains("missing url"));
 
         // health via raw http
         let mut s = std::net::TcpStream::connect(format!("127.0.0.1:{}", server.port())).unwrap();
-        s.write_all(b"GET /health HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").unwrap();
+        s.write_all(b"GET /health HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            .unwrap();
         let mut buf = String::new();
         let _ = s.read_to_string(&mut buf);
         assert!(buf.contains("200 OK"));
@@ -704,7 +779,8 @@ mod tests {
         let server = RpcServer::start(engine.clone(), "127.0.0.1:0").unwrap();
         let mut s = std::net::TcpStream::connect(format!("127.0.0.1:{}", server.port())).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        s.write_all(b"GET /events HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        s.write_all(b"GET /events HTTP/1.1\r\nHost: x\r\n\r\n")
+            .unwrap();
         s.flush().unwrap();
         // wait for the SSE header so the server side has subscribed
         let mut got = String::new();

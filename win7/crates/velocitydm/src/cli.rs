@@ -2,7 +2,7 @@
 
 use crate::Commands;
 use serde_json::{json, Value};
-use vdm_core::util::{format_bytes, parse_bytes, now_ms};
+use vdm_core::util::{format_bytes, now_ms, parse_bytes};
 use vdm_rpc::RpcClient;
 
 pub fn client(addr: &str) -> RpcClient {
@@ -22,9 +22,11 @@ pub fn ensure_daemon(addr: &str) -> Result<(), String> {
     let _ = cmd.stdin(std::process::Stdio::null());
     let _ = cmd.stdout(std::process::Stdio::null());
     let _ = cmd.stderr(std::process::Stdio::null());
-    let child = cmd.spawn().map_err(|e| format!("failed to start daemon: {}", e));
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to start daemon: {}", e));
     let _ = std::mem::forget(child); // detach
-    // wait for readiness
+                                     // wait for readiness
     for _ in 0..100 {
         std::thread::sleep(std::time::Duration::from_millis(100));
         if c.call("daemon.ping", json!({})).is_ok() {
@@ -43,11 +45,7 @@ fn out_file_dir(opts: &mut Value, out: Option<&str>, dir: Option<&str>) {
     }
 }
 
-fn apply_common(
-    opts: &mut Value,
-    conn: Option<usize>,
-    limit: Option<&str>,
-) -> Result<(), String> {
+fn apply_common(opts: &mut Value, conn: Option<usize>, limit: Option<&str>) -> Result<(), String> {
     if let Some(c) = conn {
         opts["connections"] = json!(c);
     }
@@ -435,9 +433,7 @@ fn collect_files(
     if depth > 16 {
         return Ok(());
     }
-    let mut entries: Vec<_> = std::fs::read_dir(dir)?
-        .filter_map(|e| e.ok())
-        .collect();
+    let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
     entries.sort_by_key(|e| e.file_name());
     for entry in entries {
         let path = entry.path();
@@ -512,8 +508,16 @@ fn render_list(list: &Value) -> String {
             state_disp,
             name,
             format_bytes(done),
-            if size > 0 { format_bytes(size) } else { "?".to_string() },
-            if speed > 0 { format_bytes(speed) + "/s" } else { "-".to_string() },
+            if size > 0 {
+                format_bytes(size)
+            } else {
+                "?".to_string()
+            },
+            if speed > 0 {
+                format_bytes(speed) + "/s"
+            } else {
+                "-".to_string()
+            },
             eta_s
         ));
     }

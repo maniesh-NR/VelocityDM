@@ -4,8 +4,8 @@
 mod common;
 
 use common::{sha256_hex, wait_until_ms, TestServer};
-use vdm_core::engine::{Engine, EngineConfig, HttpOptions};
 use vdm_core::engine::events::TaskState;
+use vdm_core::engine::{Engine, EngineConfig, HttpOptions};
 
 fn engine_in(dir: &std::path::Path) -> std::sync::Arc<Engine> {
     let cfg = EngineConfig {
@@ -37,8 +37,12 @@ fn segmented_download_completes_with_checksum() {
             },
         )
         .unwrap();
-    assert!(wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed),
-        "state: {:?} err: {:?}", engine.get(id).map(|s| s.state), engine.get(id).and_then(|s| s.error));
+    assert!(
+        wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed),
+        "state: {:?} err: {:?}",
+        engine.get(id).map(|s| s.state),
+        engine.get(id).and_then(|s| s.error)
+    );
     let out = dir.path().join("big.bin");
     let got = std::fs::read(&out).unwrap();
     assert_eq!(got, data);
@@ -92,8 +96,11 @@ fn mirror_failover_completes() {
             },
         )
         .unwrap();
-    assert!(wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed),
-        "err: {:?}", engine.get(id).and_then(|s| s.error));
+    assert!(
+        wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
     let got = std::fs::read(dir.path().join("missing.bin")).unwrap();
     assert_eq!(got, data);
     engine.shutdown();
@@ -111,8 +118,11 @@ fn flaky_server_retries_and_completes() {
     let id = engine
         .add_download(&server.url("/flaky/data.bin"), HttpOptions::default())
         .unwrap();
-    assert!(wait_until_ms(60_000, || state_of(&engine, id) == TaskState::Completed),
-        "err: {:?}", engine.get(id).and_then(|s| s.error));
+    assert!(
+        wait_until_ms(60_000, || state_of(&engine, id) == TaskState::Completed),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
     let got = std::fs::read(dir.path().join("data.bin")).unwrap();
     assert_eq!(got, data);
     engine.shutdown();
@@ -135,10 +145,15 @@ fn pause_resume_mid_download() {
     engine.pause(id).unwrap();
     assert!(wait_until_ms(10_000, || state_of(&engine, id) == TaskState::Paused));
     // part state exists
-    assert!(dir.path().join("data.bin.part").exists() || dir.path().join("data.bin.vdmctl").exists());
+    assert!(
+        dir.path().join("data.bin.part").exists() || dir.path().join("data.bin.vdmctl").exists()
+    );
     engine.resume(id).unwrap();
-    assert!(wait_until_ms(60_000, || state_of(&engine, id) == TaskState::Completed),
-        "err: {:?}", engine.get(id).and_then(|s| s.error));
+    assert!(
+        wait_until_ms(60_000, || state_of(&engine, id) == TaskState::Completed),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
     let got = std::fs::read(dir.path().join("data.bin")).unwrap();
     assert_eq!(got, data);
     engine.shutdown();
@@ -158,8 +173,11 @@ fn refresh_link_revives_failed_download() {
         .unwrap();
     assert!(wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Failed));
     engine.refresh(id, &server.url("/good.bin")).unwrap();
-    assert!(wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed),
-        "err: {:?}", engine.get(id).and_then(|s| s.error));
+    assert!(
+        wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
     let got = std::fs::read(dir.path().join("expired.bin")).unwrap();
     assert_eq!(got, data);
     engine.shutdown();
@@ -178,7 +196,8 @@ fn batch_pattern_downloads_all() {
     let ids = engine.add_batch(&pattern, HttpOptions::default()).unwrap();
     assert_eq!(ids.len(), 3);
     assert!(wait_until_ms(30_000, || {
-        ids.iter().all(|&i| state_of(&engine, i) == TaskState::Completed)
+        ids.iter()
+            .all(|&i| state_of(&engine, i) == TaskState::Completed)
     }));
     for i in 1..=3 {
         assert!(dir.path().join(format!("pic{}.jpg", i)).exists());
@@ -206,7 +225,11 @@ fn scheduler_start_at_activates_later() {
     // queued (not running) before the scheduled time
     std::thread::sleep(std::time::Duration::from_millis(800));
     let early = state_of(&engine, id);
-    assert!(matches!(early, TaskState::Queued | TaskState::Probing), "was {:?}", early);
+    assert!(
+        matches!(early, TaskState::Queued | TaskState::Probing),
+        "was {:?}",
+        early
+    );
     assert!(wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed));
     engine.shutdown();
     server.stop();
@@ -229,7 +252,11 @@ fn global_limiter_slows_transfer() {
         .unwrap();
     assert!(wait_until_ms(60_000, || state_of(&engine, id) == TaskState::Completed));
     let elapsed = t0.elapsed();
-    assert!(elapsed >= std::time::Duration::from_millis(1100), "too fast: {:?}", elapsed);
+    assert!(
+        elapsed >= std::time::Duration::from_millis(1100),
+        "too fast: {:?}",
+        elapsed
+    );
     engine.shutdown();
     server.stop();
 }
@@ -255,7 +282,10 @@ fn max_active_limits_concurrency() {
     for i in 0..3 {
         ids.push(
             engine
-                .add_download(&server.url(&format!("/slow/c{}.bin", i)), HttpOptions::default())
+                .add_download(
+                    &server.url(&format!("/slow/c{}.bin", i)),
+                    HttpOptions::default(),
+                )
                 .unwrap(),
         );
     }
@@ -274,7 +304,8 @@ fn max_active_limits_concurrency() {
     }
     assert_eq!(violations, 0, "max_active exceeded");
     assert!(wait_until_ms(60_000, || {
-        ids.iter().all(|&i| state_of(&engine, i) == TaskState::Completed)
+        ids.iter()
+            .all(|&i| state_of(&engine, i) == TaskState::Completed)
     }));
     engine.shutdown();
     server.stop();
@@ -309,7 +340,9 @@ fn remove_deletes_task() {
 #[test]
 fn keepalive_reuse_across_leases() {
     let server = TestServer::start();
-    let data: Vec<u8> = (0..8 * 1024 * 1024u32).map(|i| (i * 31 + 7) as u8).collect();
+    let data: Vec<u8> = (0..8 * 1024 * 1024u32)
+        .map(|i| (i * 31 + 7) as u8)
+        .collect();
     server.set_file("/keepalive.bin", data.clone());
     let dir = tempfile::tempdir().unwrap();
     let engine = engine_in(dir.path());
@@ -322,11 +355,16 @@ fn keepalive_reuse_across_leases() {
             },
         )
         .unwrap();
-    assert!(wait_until_ms(60_000, || state_of(&engine, id) == TaskState::Completed),
-        "err: {:?}", engine.get(id).and_then(|s| s.error));
+    assert!(
+        wait_until_ms(60_000, || state_of(&engine, id) == TaskState::Completed),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
     let got = std::fs::read(dir.path().join("keepalive.bin")).unwrap();
     assert_eq!(got, data);
-    let accepted = server.connections_accepted.load(std::sync::atomic::Ordering::SeqCst);
+    let accepted = server
+        .connections_accepted
+        .load(std::sync::atomic::Ordering::SeqCst);
     // probe (1-2) + 4 workers + small margin; without reuse this is 16+
     assert!(
         accepted <= 8,
@@ -343,7 +381,9 @@ fn keepalive_reuse_across_leases() {
 #[test]
 fn mirror_selection_prefers_fast_mirror() {
     let server = TestServer::start();
-    let data: Vec<u8> = (0..6 * 1024 * 1024u32).map(|i| (i * 13 + 5) as u8).collect();
+    let data: Vec<u8> = (0..6 * 1024 * 1024u32)
+        .map(|i| (i * 13 + 5) as u8)
+        .collect();
     server.set_file("/slow/mirror.bin", data.clone());
     server.set_file("/fast.bin", data.clone());
     server.set_slow(8); // ~8 ms per 4 KiB on /slow/* paths
@@ -358,8 +398,11 @@ fn mirror_selection_prefers_fast_mirror() {
             },
         )
         .unwrap();
-    assert!(wait_until_ms(120_000, || state_of(&engine, id) == TaskState::Completed),
-        "err: {:?}", engine.get(id).and_then(|s| s.error));
+    assert!(
+        wait_until_ms(120_000, || state_of(&engine, id) == TaskState::Completed),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
     let got = std::fs::read(dir.path().join("mirror.bin")).unwrap();
     assert_eq!(got, data);
     let reqs = server.requests_per_path.lock().unwrap().clone();
@@ -381,7 +424,9 @@ fn mirror_selection_prefers_fast_mirror() {
 #[test]
 fn small_file_avoids_connection_churn() {
     let server = TestServer::start();
-    let data: Vec<u8> = (0..2 * 1024 * 1024u32).map(|i| (i * 11 + 1) as u8).collect();
+    let data: Vec<u8> = (0..2 * 1024 * 1024u32)
+        .map(|i| (i * 11 + 1) as u8)
+        .collect();
     server.set_file("/small.bin", data.clone());
     let dir = tempfile::tempdir().unwrap();
     let engine = engine_in(dir.path());
@@ -398,7 +443,11 @@ fn small_file_avoids_connection_churn() {
     let got = std::fs::read(dir.path().join("small.bin")).unwrap();
     assert_eq!(got, data);
     let snap = engine.get(id).unwrap();
-    assert!(snap.connections <= 2, "expected <= 2 connections for a 2 MiB file, got {}", snap.connections);
+    assert!(
+        snap.connections <= 2,
+        "expected <= 2 connections for a 2 MiB file, got {}",
+        snap.connections
+    );
     engine.shutdown();
     server.stop();
 }

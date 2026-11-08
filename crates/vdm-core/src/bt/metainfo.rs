@@ -5,7 +5,6 @@ use crate::bt::bencode::{self, Value};
 use crate::error::{Error, Result};
 use sha1::{Digest, Sha1};
 
-
 pub fn sha1_20(data: &[u8]) -> [u8; 20] {
     let d: [u8; 20] = Sha1::digest(data).into();
     d
@@ -84,7 +83,9 @@ impl Metainfo {
             .ok_or_else(|| Error::Torrent("info: missing pieces".into()))?
             .to_vec();
         if pieces_raw.is_empty() || pieces_raw.len() % 20 != 0 {
-            return Err(Error::Torrent("info: pieces length not a multiple of 20".into()));
+            return Err(Error::Torrent(
+                "info: pieces length not a multiple of 20".into(),
+            ));
         }
         let pieces: Vec<[u8; 20]> = pieces_raw
             .chunks(20)
@@ -140,7 +141,7 @@ impl Metainfo {
                 path: vec![name.clone()],
             });
         }
-        let expected_pieces = (total_len + piece_len - 1) / piece_len;
+        let expected_pieces = total_len.div_ceil(piece_len);
         if expected_pieces != pieces.len() as u64 {
             return Err(Error::Torrent(format!(
                 "piece count mismatch: {} hashes for {} expected pieces",
@@ -276,13 +277,7 @@ pub fn create_torrent(
             (b"length".to_vec(), Value::Int(len as i64)),
             (
                 b"path".to_vec(),
-                Value::List(
-                    input
-                        .path
-                        .iter()
-                        .map(|c| bencode::str(c))
-                        .collect(),
-                ),
+                Value::List(input.path.iter().map(|c| bencode::str(c)).collect()),
             ),
         ]));
         let mut f = std::fs::File::open(&input.fs_path)
@@ -340,12 +335,7 @@ pub fn create_torrent(
     }
     let info_value = bencode::dict(info_pairs);
 
-    let mut root = vec![
-        (
-            b"created by".to_vec(),
-            bencode::str("VelocityDM/1.0"),
-        ),
-    ];
+    let mut root = vec![(b"created by".to_vec(), bencode::str("VelocityDM/1.0"))];
     if let Some(a) = announce {
         if !a.is_empty() {
             root.push((b"announce".to_vec(), bencode::str(a)));
@@ -358,7 +348,12 @@ pub fn create_torrent(
             if all.len() > 1 {
                 root.push((
                     b"announce-list".to_vec(),
-                    Value::List(all.into_iter().map(|t| vec![bencode::str(&t)]).map(Value::List).collect()),
+                    Value::List(
+                        all.into_iter()
+                            .map(|t| vec![bencode::str(&t)])
+                            .map(Value::List)
+                            .collect(),
+                    ),
                 ));
             }
         }
@@ -452,7 +447,10 @@ mod tests {
         .unwrap();
         let meta = Metainfo::from_torrent_bytes(&bytes).unwrap();
         assert_eq!(meta.files.len(), 2);
-        assert_eq!(meta.files[1].path, vec!["sub".to_string(), "b.bin".to_string()]);
+        assert_eq!(
+            meta.files[1].path,
+            vec!["sub".to_string(), "b.bin".to_string()]
+        );
         assert_eq!(meta.total_len, 15_000);
         assert_eq!(meta.piece_count(), 2);
         // piece 1 (8192..15000) spans a.bin [8192..10000) then b.bin [0..5000)

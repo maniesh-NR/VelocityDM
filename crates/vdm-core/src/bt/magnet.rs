@@ -44,7 +44,8 @@ impl Magnet {
                 _ => {}
             }
         }
-        let info_hash = info_hash.ok_or_else(|| Error::Torrent("magnet has no xt info hash".into()))?;
+        let info_hash =
+            info_hash.ok_or_else(|| Error::Torrent("magnet has no xt info hash".into()))?;
         if trackers.is_empty() {
             return Err(Error::Torrent(
                 "magnet has no trackers (DHT is not enabled; add &tr=...)".into(),
@@ -103,7 +104,10 @@ fn decode_info_hash(s: &str) -> Result<[u8; 20]> {
         out.copy_from_slice(&bytes);
         Ok(out)
     } else {
-        Err(Error::Torrent(format!("info hash '{}' has wrong length", s)))
+        Err(Error::Torrent(format!(
+            "info hash '{}' has wrong length",
+            s
+        )))
     }
 }
 
@@ -148,7 +152,7 @@ fn base32_encode(data: &[u8]) -> String {
     if nbits > 0 {
         out.push(ALPHA[((bits << (5 - nbits)) & 31) as usize] as char);
     }
-    while out.len() % 8 != 0 {
+    while !out.len().is_multiple_of(8) {
         out.push('=');
     }
     out

@@ -1,22 +1,17 @@
-//! Material Design 3 styled egui interface (in-process engine + RPC server).
+//! Material You (Material Design 3) egui interface (in-process engine + RPC
+//! server). All colors come from the MD3 scheme generated from the user's
+//! seed color — see [`crate::theme`].
 
 use crate::daemon::{load_config, request_shutdown, save_config};
+use crate::theme::{self, Scheme, UiPrefs};
 use eframe::egui;
-use eframe::egui::{Align, Color32, Layout, RichText, Slider, TextEdit};
+use eframe::egui::{Align, Color32, Layout, RichText, Rounding, Slider, Stroke, TextEdit, Vec2};
 use std::sync::Arc;
 use vdm_core::engine::events::TaskState;
 use vdm_core::engine::{Engine, EngineConfig, HttpOptions};
 use vdm_core::proxy::ProxyConfig;
 use vdm_core::util::format_bytes;
 use vdm_rpc::RpcServer;
-
-const MD_PRIMARY: Color32 = Color32::from_rgb(0xD0, 0xBC, 0xFF);
-const MD_ON_PRIMARY: Color32 = Color32::from_rgb(0x38, 0x1E, 0x72);
-const MD_SURFACE: Color32 = Color32::from_rgb(0x1C, 0x1B, 0x1F);
-const MD_SURFACE_CONTAINER: Color32 = Color32::from_rgb(0x2B, 0x29, 0x30);
-const MD_OUTLINE: Color32 = Color32::from_rgb(0x9B, 0x8F, 0xA6);
-const MD_TEXT: Color32 = Color32::from_rgb(0xE6, 0xE0, 0xE9);
-const MD_TEXT_DIM: Color32 = Color32::from_rgb(0xCA, 0xC4, 0xD0);
 
 #[derive(Clone)]
 struct TaskRow {
@@ -51,6 +46,8 @@ pub struct VdmApp {
     total_speed: u64,
     selected_task: Option<u64>,
     portable: bool,
+    prefs: UiPrefs,
+    scheme: Scheme,
 }
 
 pub fn run(addr: &str, portable: bool) -> i32 {
@@ -59,10 +56,15 @@ pub fn run(addr: &str, portable: bool) -> i32 {
     let server = match RpcServer::start(engine.clone(), addr) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("cannot bind {}: {} (is the daemon already running?)", addr, e);
+            eprintln!(
+                "cannot bind {}: {} (is the daemon already running?)",
+                addr, e
+            );
             return 1;
         }
     };
+    let prefs = theme::load_prefs(portable);
+    let scheme = Scheme::from_seed_hex(prefs.seed, prefs.dark);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([980.0, 640.0])
@@ -76,11 +78,11 @@ pub fn run(addr: &str, portable: bool) -> i32 {
         "VelocityDM",
         options,
         Box::new(move |cc| {
-            configure_style(&cc.egui_ctx);
-            Box::new(VdmApp::new(engine_c, _server_c, portable))
+            theme::apply(&cc.egui_ctx, &scheme);
+            Box::new(VdmApp::new(engine_c, _server_c, portable, prefs, scheme))
         }),
     );
-    let _ = engine.shutdown();
+    engine.shutdown();
     server.stop();
     match result {
         Ok(()) => 0,
@@ -91,36 +93,55 @@ pub fn run(addr: &str, portable: bool) -> i32 {
     }
 }
 
-fn configure_style(ctx: &egui::Context) {
-    let mut style = (*ctx.style()).clone();
-    style.visuals = egui::Visuals::dark();
-    style.visuals.panel_fill = MD_SURFACE;
-    style.visuals.window_fill = MD_SURFACE_CONTAINER;
-    style.visuals.extreme_bg_color = MD_SURFACE_CONTAINER;
-    style.visuals.faint_bg_color = MD_SURFACE_CONTAINER;
-    style.visuals.widgets.inactive.bg_fill = MD_SURFACE_CONTAINER;
-    style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(0x3A, 0x37, 0x40);
-    style.visuals.widgets.active.bg_fill = Color32::from_rgb(0x46, 0x43, 0x4F);
-    style.visuals.selection.bg_fill = MD_PRIMARY;
-    style.visuals.selection.stroke = egui::Stroke::new(1.0_f32, MD_ON_PRIMARY);
-    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-    style.spacing.button_padding = egui::vec2(14.0, 8.0);
-    if let Some(font_id) = style.text_styles.get_mut(&egui::TextStyle::Body) {
-        font_id.size = 14.0;
-    }
-    if let Some(font_id) = style.text_styles.get_mut(&egui::TextStyle::Heading) {
-        font_id.size = 20.0;
-    }
-    ctx.set_style(style);
+/// MD3 state chip (rounded container + label).
+fn chip(ui: &mut egui::Ui, text: &str, fg: Color32, bg: Color32, outline: Color32) {
+    egui::Frame::default()
+        .fill(bg)
+        .stroke(Stroke::new(1.0_f32, outline))
+        .rounding(Rounding::same(8.0))
+        .inner_margin(egui::Margin::symmetric(8.0, 2.0))
+        .show(ui, |ui| {
+            ui.label(RichText::new(text).size(11.0).color(fg).strong());
+        });
+}
+
+/// Filled button (MD3: primary container, full rounding).
+fn filled_button<'a>(text: &'a str, s: &'a Scheme) -> egui::Button<'a> {
+    egui::Button::new(RichText::new(text).color(s.on_primary))
+        .fill(s.primary)
+        .rounding(Rounding::same(9999.0))
+        .min_size(Vec2::new(0.0, 32.0))
+}
+
+/// Tonal button (MD3: secondary container).
+fn tonal_button<'a>(text: &'a str, s: &'a Scheme) -> egui::Button<'a> {
+    egui::Button::new(RichText::new(text).color(s.on_secondary_container))
+        .fill(s.secondary_container)
+        .rounding(Rounding::same(9999.0))
+        .min_size(Vec2::new(0.0, 32.0))
+}
+
+/// Error-toned text button.
+fn error_button<'a>(text: &'a str, s: &'a Scheme) -> egui::Button<'a> {
+    egui::Button::new(RichText::new(text).color(s.error))
+        .fill(Color32::TRANSPARENT)
+        .rounding(Rounding::same(9999.0))
+        .min_size(Vec2::new(0.0, 32.0))
 }
 
 impl VdmApp {
-    fn new(engine: Arc<Engine>, server: Arc<RpcServer>, portable: bool) -> VdmApp {
+    fn new(
+        engine: Arc<Engine>,
+        server: Arc<RpcServer>,
+        portable: bool,
+        prefs: UiPrefs,
+        scheme: Scheme,
+    ) -> VdmApp {
         let settings = engine.config();
         let proxy_text = settings
             .proxy
             .as_ref()
-            .map(|p| proxy_display(p))
+            .map(proxy_display)
             .unwrap_or_default();
         let stop_start = settings
             .scheduler
@@ -151,6 +172,8 @@ impl VdmApp {
             total_speed: 0,
             selected_task: None,
             portable,
+            prefs,
+            scheme,
         }
     }
 
@@ -175,6 +198,14 @@ impl VdmApp {
             })
             .collect();
     }
+
+    fn set_theme(&mut self, ctx: &egui::Context, seed: u32, dark: bool) {
+        self.prefs.seed = seed;
+        self.prefs.dark = dark;
+        self.scheme = Scheme::from_seed_hex(seed, dark);
+        theme::apply(ctx, &self.scheme);
+        theme::save_prefs(&self.prefs, self.portable);
+    }
 }
 
 impl eframe::App for VdmApp {
@@ -183,44 +214,67 @@ impl eframe::App for VdmApp {
             self.last_tick = std::time::Instant::now();
             self.refresh();
         }
-        egui::TopBottomPanel::top("topbar").show(ctx, |ui| {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("VelocityDM").strong().color(MD_PRIMARY).size(20.0));
-                ui.separator();
-                let btn = egui::Button::new(RichText::new("Settings").color(MD_ON_PRIMARY)).fill(MD_PRIMARY);
-                if ui.add(btn).clicked() {
-                    self.show_settings = !self.show_settings;
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let speed_txt = if self.total_speed > 0 {
-                        format!("{}/s total", format_bytes(self.total_speed))
+        let s = self.scheme;
+        egui::TopBottomPanel::top("topbar")
+            .frame(
+                egui::Frame::default()
+                    .fill(s.surface)
+                    .inner_margin(egui::Margin::same(8.0)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("VelocityDM")
+                            .strong()
+                            .color(s.primary)
+                            .size(20.0),
+                    );
+                    ui.separator();
+                    if ui.add(filled_button("Settings", &s)).clicked() {
+                        self.show_settings = !self.show_settings;
+                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let speed_txt = if self.total_speed > 0 {
+                            format!("{}/s total", format_bytes(self.total_speed))
+                        } else {
+                            "idle".to_string()
+                        };
+                        ui.label(RichText::new(speed_txt).color(s.on_surface_variant));
+                    });
+                });
+                ui.add_space(4.0);
+                // add-download bar
+                ui.horizontal(|ui| {
+                    let hint = if self.add_url.is_empty() {
+                        "Paste a URL, magnet: or path to .torrent"
                     } else {
-                        "idle".to_string()
+                        ""
                     };
-                    ui.label(RichText::new(speed_txt).color(MD_TEXT_DIM));
+                    let edit = TextEdit::singleline(&mut self.add_url)
+                        .hint_text(hint)
+                        .desired_width(ui.available_width() - 460.0)
+                        .margin(egui::vec2(10.0, 8.0));
+                    ui.add(edit);
+                    ui.label(RichText::new("quality").color(s.on_surface_variant));
+                    ui.add(
+                        TextEdit::singleline(&mut self.add_quality)
+                            .desired_width(64.0)
+                            .hint_text("best"),
+                    );
+                    ui.label(RichText::new("limit").color(s.on_surface_variant));
+                    ui.add(
+                        TextEdit::singleline(&mut self.add_limit)
+                            .desired_width(70.0)
+                            .hint_text("off"),
+                    );
+                    if ui.add(filled_button("Add", &s)).clicked()
+                        || (ui.input(|i| i.key_pressed(egui::Key::Enter))
+                            && !self.add_url.is_empty())
+                    {
+                        self.submit_add();
+                    }
                 });
             });
-            ui.add_space(4.0);
-            // add-download bar
-            ui.horizontal(|ui| {
-                let hint = if self.add_url.is_empty() { "Paste a URL, magnet: or path to .torrent" } else { "" };
-                let edit = TextEdit::singleline(&mut self.add_url)
-                    .hint_text(hint)
-                    .desired_width(ui.available_width() - 460.0)
-                    .margin(egui::vec2(10.0, 8.0));
-                ui.add(edit);
-                ui.label("quality");
-                ui.add(TextEdit::singleline(&mut self.add_quality).desired_width(64.0).hint_text("best"));
-                ui.label("limit");
-                ui.add(TextEdit::singleline(&mut self.add_limit).desired_width(70.0).hint_text("off"));
-                let add = egui::Button::new(RichText::new("Add").color(MD_ON_PRIMARY)).fill(MD_PRIMARY);
-                if ui.add(add).clicked() || (ui.input(|i| i.key_pressed(egui::Key::Enter)) && !self.add_url.is_empty()) {
-                    self.submit_add();
-                }
-            });
-            ui.add_space(6.0);
-        });
         if self.show_settings {
             self.settings_panel(ctx);
         }
@@ -228,20 +282,24 @@ impl eframe::App for VdmApp {
             if self.rows.is_empty() {
                 ui.centered_and_justified(|ui| {
                     ui.label(
-                        RichText::new("No downloads yet.\nPaste a link above or use the browser extension.")
-                            .color(MD_TEXT_DIM)
-                            .size(16.0),
+                        RichText::new(
+                            "No downloads yet.\nPaste a link above or use the browser extension.",
+                        )
+                        .color(s.on_surface_variant)
+                        .size(16.0),
                     );
                 });
                 return;
             }
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(0.0, 2.0);
-                let rows = self.rows.clone();
-                for row in &rows {
-                    self.task_row_ui(ui, row);
-                }
-            });
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
+                    let rows = self.rows.clone();
+                    for row in &rows {
+                        self.task_row_ui(ui, row);
+                    }
+                });
         });
         ctx.request_repaint_after(std::time::Duration::from_millis(200));
     }
@@ -308,45 +366,85 @@ impl VdmApp {
     }
 
     fn task_row_ui(&mut self, ui: &mut egui::Ui, row: &TaskRow) {
+        let s = self.scheme;
         let is_selected = self.selected_task == Some(row.id);
         let frame = egui::Frame::default()
-            .fill(if is_selected { Color32::from_rgb(0x33, 0x31, 0x38) } else { MD_SURFACE_CONTAINER })
+            .fill(if is_selected {
+                s.primary_container
+            } else {
+                s.surface_container_low
+            })
             .inner_margin(egui::Margin::symmetric(12.0, 10.0))
             .outer_margin(egui::Margin::symmetric(0.0, 2.0))
-            .rounding(egui::Rounding::same(10.0));
+            .rounding(Rounding::same(12.0));
         frame.show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.set_min_width(ui.available_width());
-                // state chip
-                let (chip_color, chip_text) = match row.is_state {
-                    TaskState::Completed => (Color32::from_rgb(0x4E, 0xE9, 0xB0), "done"),
-                    TaskState::Failed => (Color32::from_rgb(0xFF, 0xB4, 0xAB), &row.state[..]),
-                    TaskState::Paused | TaskState::Queued => (MD_OUTLINE, &row.state[..]),
-                    TaskState::Downloading => (MD_PRIMARY, "active"),
-                    TaskState::Verifying => (Color32::from_rgb(0xFF, 0xD8, 0xE4), "verify"),
-                    TaskState::Probing => (Color32::from_rgb(0xFF, 0xD8, 0xE4), "probe"),
-                    TaskState::Seeding => (MD_PRIMARY, "seed"),
-                };
+                // MD3 state chip
+                match row.is_state {
+                    TaskState::Completed => chip(
+                        ui,
+                        "done",
+                        s.on_tertiary_container,
+                        s.tertiary_container,
+                        Color32::TRANSPARENT,
+                    ),
+                    TaskState::Failed => chip(
+                        ui,
+                        &row.state,
+                        s.on_error_container,
+                        s.error_container,
+                        Color32::TRANSPARENT,
+                    ),
+                    TaskState::Paused | TaskState::Queued => chip(
+                        ui,
+                        &row.state,
+                        s.on_surface_variant,
+                        Color32::TRANSPARENT,
+                        s.outline,
+                    ),
+                    TaskState::Downloading => chip(
+                        ui,
+                        "active",
+                        s.on_primary_container,
+                        s.primary_container,
+                        Color32::TRANSPARENT,
+                    ),
+                    TaskState::Verifying | TaskState::Probing => chip(
+                        ui,
+                        &row.state,
+                        s.on_secondary_container,
+                        s.secondary_container,
+                        Color32::TRANSPARENT,
+                    ),
+                    TaskState::Seeding => chip(
+                        ui,
+                        "seed",
+                        s.on_tertiary_container,
+                        s.tertiary_container,
+                        Color32::TRANSPARENT,
+                    ),
+                }
                 ui.label(
-                    RichText::new(chip_text)
-                        .color(chip_color)
-                        .size(12.0)
-                        .background_color(MD_SURFACE)
-                        ,
+                    RichText::new(format!("#{}", row.id))
+                        .color(s.on_surface_variant)
+                        .size(12.0),
                 );
-                ui.label(RichText::new(format!("#{}", row.id)).color(MD_TEXT_DIM).size(12.0));
-                ui.label(RichText::new(&row.name).color(MD_TEXT).strong());
+                ui.label(RichText::new(&row.name).color(s.on_surface).strong());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     // actions
-                    let can_pause = matches!(row.is_state, TaskState::Downloading | TaskState::Probing | TaskState::Queued);
+                    let can_pause = matches!(
+                        row.is_state,
+                        TaskState::Downloading | TaskState::Probing | TaskState::Queued
+                    );
                     let can_resume = matches!(row.is_state, TaskState::Paused | TaskState::Failed);
-                    if can_pause && ui.button("Pause").clicked() {
+                    if can_pause && ui.add(tonal_button("Pause", &s)).clicked() {
                         let _ = self.engine.pause(row.id);
                     }
-                    if can_resume && ui.button("Resume").clicked() {
+                    if can_resume && ui.add(tonal_button("Resume", &s)).clicked() {
                         let _ = self.engine.resume(row.id);
                     }
-                    if ui.button("Remove").clicked() {
+                    if ui.add(error_button("Remove", &s)).clicked() {
                         let _ = self.engine.remove(row.id, false);
                     }
                     // stats
@@ -369,17 +467,21 @@ impl VdmApp {
                         RichText::new(format!(
                             "{} / {}  {}  {}{}",
                             format_bytes(row.done),
-                            if row.size > 0 { format_bytes(row.size) } else { "?".into() },
+                            if row.size > 0 {
+                                format_bytes(row.size)
+                            } else {
+                                "?".into()
+                            },
                             speed,
                             eta,
                             extra
                         ))
-                        .color(MD_TEXT_DIM)
+                        .color(s.on_surface_variant)
                         .size(12.0),
                     );
                 });
             });
-            // progress bar
+            // progress indicator
             let frac = if row.size > 0 {
                 (row.done as f32 / row.size as f32).clamp(0.0, 1.0)
             } else {
@@ -387,15 +489,23 @@ impl VdmApp {
             };
             let bar = egui::ProgressBar::new(frac)
                 .desired_height(8.0)
-                .fill(MD_PRIMARY)
+                .fill(s.primary)
                 .show_percentage();
             ui.add(bar);
             if let Some(err) = &row.error {
-                ui.label(RichText::new(err).color(Color32::from_rgb(0xFF, 0xB4, 0xAB)).size(12.0));
+                ui.label(RichText::new(err).color(s.error).size(12.0));
             } else if !row.out_path.is_empty() && row.is_state == TaskState::Completed {
-                ui.label(RichText::new(&row.out_path).color(MD_TEXT_DIM).size(11.0));
+                ui.label(
+                    RichText::new(&row.out_path)
+                        .color(s.on_surface_variant)
+                        .size(11.0),
+                );
             }
-            let resp = ui.interact(ui.min_rect(), egui::Id::new(("task", row.id)), egui::Sense::click());
+            let resp = ui.interact(
+                ui.min_rect(),
+                egui::Id::new(("task", row.id)),
+                egui::Sense::click(),
+            );
             if resp.clicked() {
                 self.selected_task = Some(row.id);
             }
@@ -403,23 +513,30 @@ impl VdmApp {
     }
 
     fn settings_panel(&mut self, ctx: &egui::Context) {
+        let s = self.scheme;
         egui::TopBottomPanel::top("settings")
             .frame(
                 egui::Frame::default()
-                    .fill(MD_SURFACE_CONTAINER)
+                    .fill(s.surface_container_low)
                     .inner_margin(egui::Margin::same(14.0)),
             )
             .show(ctx, |ui| {
-                ui.label(RichText::new("Settings").strong().color(MD_PRIMARY).size(16.0));
+                ui.label(
+                    RichText::new("Settings")
+                        .strong()
+                        .color(s.primary)
+                        .size(16.0),
+                );
                 ui.add_space(6.0);
                 ui.columns(2, |cols| {
-                    let mut changed = false;
                     cols[0].horizontal(|ui| {
                         ui.label("Download folder");
                         let mut dir = self.settings.download_dir.to_string_lossy().to_string();
-                        if ui.add(TextEdit::singleline(&mut dir).desired_width(320.0)).changed() {
+                        if ui
+                            .add(TextEdit::singleline(&mut dir).desired_width(320.0))
+                            .changed()
+                        {
                             self.settings.download_dir = std::path::PathBuf::from(dir);
-                            changed = true;
                         }
                     });
                     cols[1].horizontal(|ui| {
@@ -427,7 +544,6 @@ impl VdmApp {
                         let mut conn = self.settings.default_connections;
                         if ui.add(Slider::new(&mut conn, 1..=32)).changed() {
                             self.settings.default_connections = conn;
-                            changed = true;
                         }
                     });
                 });
@@ -439,26 +555,48 @@ impl VdmApp {
                         } else {
                             String::new()
                         };
-                        if ui.add(TextEdit::singleline(&mut limit).desired_width(120.0).hint_text("off")).changed() {
+                        if ui
+                            .add(
+                                TextEdit::singleline(&mut limit)
+                                    .desired_width(120.0)
+                                    .hint_text("off"),
+                            )
+                            .changed()
+                        {
                             self.settings.global_limit_bps =
                                 vdm_core::util::parse_bytes(&limit).unwrap_or(0);
                         }
                     });
                     cols[1].horizontal(|ui| {
                         ui.label("Proxy");
-                        if ui.add(TextEdit::singleline(&mut self.proxy_text).desired_width(280.0).hint_text("http://h:port or socks5://h:port")).changed() {}
+                        ui.add(
+                            TextEdit::singleline(&mut self.proxy_text)
+                                .desired_width(280.0)
+                                .hint_text("http://h:port or socks5://h:port"),
+                        );
                     });
                 });
                 ui.columns(2, |cols| {
                     cols[0].horizontal(|ui| {
                         ui.label("Stop window");
-                        if ui.add(TextEdit::singleline(&mut self.stop_start).desired_width(64.0).hint_text("22:00")).changed() {}
+                        ui.add(
+                            TextEdit::singleline(&mut self.stop_start)
+                                .desired_width(64.0)
+                                .hint_text("22:00"),
+                        );
                         ui.label("to");
-                        if ui.add(TextEdit::singleline(&mut self.stop_end).desired_width(64.0).hint_text("06:00")).changed() {}
+                        ui.add(
+                            TextEdit::singleline(&mut self.stop_end)
+                                .desired_width(64.0)
+                                .hint_text("06:00"),
+                        );
                     });
                     cols[1].horizontal(|ui| {
                         let mut sd = self.settings.scheduler.shutdown_when_done;
-                        if ui.checkbox(&mut sd, "Shut down when queue drains").changed() {
+                        if ui
+                            .checkbox(&mut sd, "Shut down when queue drains")
+                            .changed()
+                        {
                             self.settings.scheduler.shutdown_when_done = sd;
                         }
                     });
@@ -472,18 +610,72 @@ impl VdmApp {
                         }
                     });
                     cols[1].horizontal(|ui| {
-                        let apply = egui::Button::new(RichText::new("Apply").color(MD_ON_PRIMARY)).fill(MD_PRIMARY);
-                        if ui.add(apply).clicked() {
+                        if ui.add(filled_button("Apply", &s)).clicked() {
                             self.apply_settings();
                         }
                     });
+                });
+                // ---- Material You: appearance ----
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Material You")
+                            .strong()
+                            .color(s.primary)
+                            .size(14.0),
+                    );
+                    ui.separator();
+                    if ui
+                        .add(tonal_button(
+                            if self.prefs.dark {
+                                "Dark mode"
+                            } else {
+                                "Light mode"
+                            },
+                            &s,
+                        ))
+                        .clicked()
+                    {
+                        let dark = !self.prefs.dark;
+                        let seed = self.prefs.seed;
+                        self.set_theme(ctx, seed, dark);
+                    }
+                    ui.separator();
+                    ui.label(RichText::new("Dynamic color").color(s.on_surface_variant));
+                    for (seed_hex, name) in theme::SEEDS {
+                        let selected = self.prefs.seed == *seed_hex;
+                        let fill = Color32::from_rgb(
+                            (seed_hex >> 16) as u8,
+                            (seed_hex >> 8) as u8,
+                            *seed_hex as u8,
+                        );
+                        let mut btn = egui::Button::new(RichText::new(" ").size(14.0))
+                            .fill(fill)
+                            .min_size(Vec2::new(26.0, 26.0))
+                            .rounding(Rounding::same(9999.0));
+                        btn = if selected {
+                            btn.stroke(Stroke::new(2.5_f32, s.on_surface))
+                        } else {
+                            btn.stroke(Stroke::new(1.0_f32, s.outline_variant))
+                        };
+                        if ui.add(btn).on_hover_text(*name).clicked() {
+                            let (seed, dark) = (*seed_hex, self.prefs.dark);
+                            self.set_theme(ctx, seed, dark);
+                        }
+                    }
+                    ui.label(
+                        RichText::new(theme::seed_name(self.prefs.seed))
+                            .color(s.on_surface_variant)
+                            .size(12.0),
+                    );
                 });
             });
     }
 
     fn apply_settings(&mut self) {
         let mut cfg = self.settings.clone();
-        if self.proxy_text.trim().is_empty() || self.proxy_text.trim().eq_ignore_ascii_case("none") {
+        if self.proxy_text.trim().is_empty() || self.proxy_text.trim().eq_ignore_ascii_case("none")
+        {
             cfg.proxy = None;
         } else if let Ok(p) = ProxyConfig::parse_url(self.proxy_text.trim()) {
             cfg.proxy = Some(p);

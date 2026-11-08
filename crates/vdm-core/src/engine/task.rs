@@ -138,7 +138,9 @@ pub fn probe(url: &Url, cfg: &ClientCfg) -> Result<ProbeResult> {
 pub fn is_retryable(e: &Error) -> bool {
     match e {
         Error::Io(_) => true,
-        Error::Http(msg) => msg.contains("HTTP 5") || msg.contains("connect") || msg.contains("read"),
+        Error::Http(msg) => {
+            msg.contains("HTTP 5") || msg.contains("connect") || msg.contains("read")
+        }
         _ => false,
     }
 }
@@ -156,7 +158,7 @@ fn filename_from_disposition(d: &str) -> Option<String> {
             let decoded = v
                 .splitn(3, '\'')
                 .nth(2)
-                .map(|s| crate::util::percent_decode(s))
+                .map(crate::util::percent_decode)
                 .unwrap_or_else(|| v.to_string());
             let name = crate::util::sanitize_filename(&decoded);
             if !name.is_empty() {
@@ -267,7 +269,11 @@ impl MirrorStat {
         self.fails.store(0, Ordering::Relaxed);
         self.leases.fetch_add(1, Ordering::Relaxed);
         let prev = self.speed_ema.load(Ordering::Relaxed);
-        let next = if prev == 0 { speed_bps } else { (prev * 7 + speed_bps) / 8 };
+        let next = if prev == 0 {
+            speed_bps
+        } else {
+            (prev * 7 + speed_bps) / 8
+        };
         self.speed_ema.store(next, Ordering::Relaxed);
     }
 
@@ -391,7 +397,9 @@ pub fn run_http_task(
     let probe = match probed {
         Some(p) => p,
         None => {
-            let msg = last_err.map(|e| e.to_string()).unwrap_or_else(|| "probe failed".into());
+            let msg = last_err
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "probe failed".into());
             fail(&shared, id, &msg);
             return;
         }
@@ -409,7 +417,11 @@ pub fn run_http_task(
         .as_deref()
         .map(|t| t.to_ascii_lowercase().contains("mpegurl"))
         .unwrap_or(false)
-        || probe.final_url.path_and_query.to_ascii_lowercase().ends_with(".m3u8");
+        || probe
+            .final_url
+            .path_and_query
+            .to_ascii_lowercase()
+            .ends_with(".m3u8");
 
     let filename = opts
         .filename
@@ -423,14 +435,25 @@ pub fn run_http_task(
     }
 
     if is_hls {
-        run_hls(id, shared, env, control, &url_parsed, &opts, &out_path, &probe);
+        run_hls(
+            id,
+            shared,
+            env,
+            control,
+            &url_parsed,
+            &opts,
+            &out_path,
+            &probe,
+        );
         return;
     }
     if probe.size == 0 || !probe.accepts_ranges {
         run_single(id, shared, env, control, &url_parsed, &out_path);
         return;
     }
-    run_segmented(id, shared, env, control, url_parsed, url, opts, out_path, probe);
+    run_segmented(
+        id, shared, env, control, url_parsed, url, opts, out_path, probe,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -446,10 +469,18 @@ fn run_segmented(
     probe: ProbeResult,
 ) {
     // resume state reuse
-    let mut state = if opts.fresh { None } else { ResumeState::load(&out_path) };
+    let mut state = if opts.fresh {
+        None
+    } else {
+        ResumeState::load(&out_path)
+    };
     state = state.filter(|st| {
-        st.matches(&url, probe.size, probe.etag.as_deref(), probe.last_modified.as_deref())
-            && st.remaining.iter().all(|iv| iv.end < probe.size)
+        st.matches(
+            &url,
+            probe.size,
+            probe.etag.as_deref(),
+            probe.last_modified.as_deref(),
+        ) && st.remaining.iter().all(|iv| iv.end < probe.size)
     });
 
     let connections = if opts.connections == 0 {
@@ -467,9 +498,8 @@ fn run_segmented(
             mirrors.push(m.clone());
         }
     }
-    let mirror_stats: Arc<Vec<MirrorStat>> = Arc::new(
-        (0..mirrors.len()).map(|_| MirrorStat::new()).collect(),
-    );
+    let mirror_stats: Arc<Vec<MirrorStat>> =
+        Arc::new((0..mirrors.len()).map(|_| MirrorStat::new()).collect());
 
     let pool = match &state {
         Some(st) if !st.remaining.is_empty() => {
@@ -484,6 +514,7 @@ fn run_segmented(
         .write(true)
         .read(true)
         .create(true)
+        .truncate(false) // resume: never clobber existing .part data
         .open(&part_path)
     {
         Ok(f) => f,
@@ -534,10 +565,8 @@ fn run_segmented(
     });
     shared.set_state(id, TaskState::Downloading);
 
-    let (tx, rx): (
-        std::sync::mpsc::Sender<WorkerExit>,
-        Receiver<WorkerExit>,
-    ) = std::sync::mpsc::channel();
+    let (tx, rx): (std::sync::mpsc::Sender<WorkerExit>, Receiver<WorkerExit>) =
+        std::sync::mpsc::channel();
     let mut handles = Vec::new();
     for w in 0..connections {
         let tx = tx.clone();
@@ -565,8 +594,20 @@ fn run_segmented(
         let workers = connections;
         handles.push(std::thread::spawn(move || {
             let exit = worker(
-                w, pool, file, state_sync, cfg, mirrors, mirror_stats, workers, done, control,
-                task_bucket, global, size, &out_path_c,
+                w,
+                pool,
+                file,
+                state_sync,
+                cfg,
+                mirrors,
+                mirror_stats,
+                workers,
+                done,
+                control,
+                task_bucket,
+                global,
+                size,
+                &out_path_c,
             );
             let _ = tx.send(exit);
         }));
@@ -600,13 +641,19 @@ fn run_segmented(
         if now.duration_since(last_sample.0).as_millis() >= 100 {
             let inst = ((d - last_sample.1) as f64
                 / now.duration_since(last_sample.0).as_secs_f64()) as u64;
-            speed_ema = if speed_ema == 0 { inst } else { (speed_ema * 7 + inst) / 8 };
+            speed_ema = if speed_ema == 0 {
+                inst
+            } else {
+                (speed_ema * 7 + inst) / 8
+            };
             last_sample = (now, d);
             shared.update(id, |s| {
                 s.done = d;
                 s.speed = speed_ema;
             });
-            shared.bus.publish(crate::engine::events::Event::TaskProgress { id });
+            shared
+                .bus
+                .publish(crate::engine::events::Event::TaskProgress { id });
         }
         if state_save_at.elapsed() >= Duration::from_secs(2) {
             state_save_at = Instant::now();
@@ -754,7 +801,13 @@ fn run_single(
     let mut resp = match resp {
         Some(r) => r,
         None => {
-            fail(&shared, id, &last_err.map(|e| e.to_string()).unwrap_or_else(|| "request failed".into()));
+            fail(
+                &shared,
+                id,
+                &last_err
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| "request failed".into()),
+            );
             return;
         }
     };
@@ -805,9 +858,12 @@ fn run_single(
         let d = done.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
         let now = Instant::now();
         if now.duration_since(last.0).as_millis() >= 100 {
-            let inst =
-                ((d - last.1) as f64 / now.duration_since(last.0).as_secs_f64()) as u64;
-            speed_ema = if speed_ema == 0 { inst } else { (speed_ema * 7 + inst) / 8 };
+            let inst = ((d - last.1) as f64 / now.duration_since(last.0).as_secs_f64()) as u64;
+            speed_ema = if speed_ema == 0 {
+                inst
+            } else {
+                (speed_ema * 7 + inst) / 8
+            };
             last = (now, d);
             shared.update(id, |s| {
                 s.done = d;
@@ -879,9 +935,12 @@ fn run_hls(
     let mut progress = move |done: u64, total: u64| {
         let now = Instant::now();
         if now.duration_since(last.0).as_millis() >= 100 {
-            let inst =
-                ((done - last.1) as f64 / now.duration_since(last.0).as_secs_f64()) as u64;
-            speed_ema = if speed_ema == 0 { inst } else { (speed_ema * 7 + inst) / 8 };
+            let inst = ((done - last.1) as f64 / now.duration_since(last.0).as_secs_f64()) as u64;
+            speed_ema = if speed_ema == 0 {
+                inst
+            } else {
+                (speed_ema * 7 + inst) / 8
+            };
             last = (now, done);
             shared2.update(id, |s| {
                 s.done = done;
@@ -906,7 +965,11 @@ fn run_hls(
     let result = crate::engine::hls::download_hls(
         &cfg,
         url,
-        if opts.quality.is_empty() { "best" } else { &opts.quality },
+        if opts.quality.is_empty() {
+            "best"
+        } else {
+            &opts.quality
+        },
         4,
         out_path,
         rate.as_ref(),
@@ -978,8 +1041,8 @@ fn worker(
     const MAX_RETRIES: u32 = 16;
     let mut window: u64 = 256 * 1024;
     let mut buf: Vec<u8> = vec![0u8; window as usize]; // hoisted across leases
-    // Stagger starts when running many connections: a synchronized SYN
-    // burst induces loss on constrained links (parallel-TCP measurements).
+                                                       // Stagger starts when running many connections: a synchronized SYN
+                                                       // burst induces loss on constrained links (parallel-TCP measurements).
     if workers > 8 && wid > 0 {
         std::thread::sleep(Duration::from_millis(((wid as u64) * 15).min(300)));
     }
@@ -1050,8 +1113,7 @@ fn worker(
                     continue 'attempt;
                 }
             };
-            let req =
-                Request::get(&mirror_url).header("Range", &format!("bytes={}-{}", pos, end));
+            let req = Request::get(&mirror_url).header("Range", &format!("bytes={}-{}", pos, end));
             let resp_result = conn.as_mut().unwrap().request(&req, &cfg);
             let mut resp = match resp_result {
                 Ok(r) => r,
@@ -1075,8 +1137,8 @@ fn worker(
                 }
             };
             conn_recycled = false;
-            let ok_status = resp.status == 206
-                || (resp.status == 200 && pos == 0 && end + 1 == size);
+            let ok_status =
+                resp.status == 206 || (resp.status == 200 && pos == 0 && end + 1 == size);
             if !ok_status {
                 let code = resp.status;
                 let _ = resp.read_body(4096);
@@ -1206,9 +1268,7 @@ fn worker(
 }
 
 fn backoff_ms(retries: u32) -> u64 {
-    250u64
-        .saturating_mul(1u64 << retries.min(4))
-        .min(4000)
+    250u64.saturating_mul(1u64 << retries.min(4)).min(4000)
 }
 
 #[cfg(test)]

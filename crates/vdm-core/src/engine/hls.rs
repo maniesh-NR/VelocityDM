@@ -56,9 +56,7 @@ pub fn parse_master(text: &str) -> Result<Vec<Variant>> {
         let line = line.trim();
         if line.starts_with("#EXT-X-STREAM-INF:") {
             let attrs = parse_attrs(line.trim_start_matches("#EXT-X-STREAM-INF:"));
-            pending_bandwidth = attrs
-                .get("BANDWIDTH")
-                .and_then(|b| b.parse::<u64>().ok());
+            pending_bandwidth = attrs.get("BANDWIDTH").and_then(|b| b.parse::<u64>().ok());
             pending_resolution = attrs.get("RESOLUTION").cloned();
         } else if !line.is_empty() && !line.starts_with('#') {
             variants.push(Variant {
@@ -99,7 +97,10 @@ pub fn parse_media(text: &str, base: &Url) -> Result<MediaPlaylist> {
                 .unwrap_or(0.0);
         } else if line.starts_with("#EXT-X-KEY:") {
             let attrs = parse_attrs(line.trim_start_matches("#EXT-X-KEY:"));
-            let method = attrs.get("METHOD").cloned().unwrap_or_else(|| "NONE".into());
+            let method = attrs
+                .get("METHOD")
+                .cloned()
+                .unwrap_or_else(|| "NONE".into());
             if method == "NONE" {
                 current_key = None;
             } else {
@@ -155,7 +156,10 @@ pub fn choose_variant<'a>(variants: &'a [Variant], quality: &str) -> Result<&'a 
         "worst" | "lowest" => variants.iter().min_by_key(|v| v.bandwidth),
         other => {
             let want: u64 = other.parse().map_err(|_| {
-                Error::Hls(format!("bad quality '{}' (use best|worst|bandwidth)", quality))
+                Error::Hls(format!(
+                    "bad quality '{}' (use best|worst|bandwidth)",
+                    quality
+                ))
             })?;
             variants
                 .iter()
@@ -240,8 +244,10 @@ pub fn aes128_cbc_decrypt(key: &[u8; 16], iv: &[u8; 16], data: &mut Vec<u8>) -> 
     if data.is_empty() {
         return Ok(());
     }
-    if data.len() % 16 != 0 {
-        return Err(Error::Hls("encrypted segment length not multiple of 16".into()));
+    if !data.len().is_multiple_of(16) {
+        return Err(Error::Hls(
+            "encrypted segment length not multiple of 16".into(),
+        ));
     }
     let cipher = Aes128::new(key.into());
     let mut prev = [0u8; 16];
@@ -249,7 +255,7 @@ pub fn aes128_cbc_decrypt(key: &[u8; 16], iv: &[u8; 16], data: &mut Vec<u8>) -> 
     for chunk in data.chunks_mut(16) {
         let mut block: aes::cipher::generic_array::GenericArray<u8, aes::cipher::typenum::U16> =
             aes::cipher::generic_array::GenericArray::clone_from_slice(chunk);
-        let ciphertext = block.clone();
+        let ciphertext = block;
         cipher.decrypt_block(&mut block);
         for i in 0..16 {
             block[i] ^= prev[i];
@@ -272,122 +278,21 @@ pub fn aes128_cbc_decrypt(key: &[u8; 16], iv: &[u8; 16], data: &mut Vec<u8>) -> 
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn master_parsing() {
-        let text = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1280000,RESOLUTION=1280x720\n720.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=640000\n360.m3u8\n";
-        let v = parse_master(text).unwrap();
-        assert_eq!(v.len(), 2);
-        assert_eq!(v[0].bandwidth, 1_280_000);
-        assert_eq!(v[0].resolution.as_deref(), Some("1280x720"));
-        assert_eq!(v[1].uri, "360.m3u8");
-        assert!(parse_master("#EXTM3U\n").is_err());
-    }
-
-    #[test]
-    fn variant_choice() {
-        let v = parse_master("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=900\nb.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=500\nc.m3u8\n").unwrap();
-        assert_eq!(choose_variant(&v, "best").unwrap().uri, "b.m3u8");
-        assert_eq!(choose_variant(&v, "worst").unwrap().uri, "a.m3u8");
-        assert_eq!(choose_variant(&v, "").unwrap().uri, "b.m3u8");
-        assert_eq!(choose_variant(&v, "550").unwrap().uri, "c.m3u8");
-        assert!(choose_variant(&v, "abc").is_err());
-    }
-
-    #[test]
-    fn media_parsing_with_key_and_iv() {
-        let base = Url::parse("https://cdn.test/live/master/chunk.m3u8").unwrap();
-        let text = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:5\n#EXT-X-KEY:METHOD=AES-128,URI=\"https://cdn.test/key?sid=1,2\",IV=0x00112233445566778899aabbccddeeff\n#EXTINF:9.009,\nseg001.ts\n#EXTINF:9.009,\nseg002.ts\n#EXT-X-ENDLIST\n";
-        let m = parse_media(text, &base).unwrap();
-        assert_eq!(m.target_duration, 10.0);
-        assert_eq!(m.media_sequence, 5);
-        assert!(m.endlist);
-        assert_eq!(m.segments.len(), 2);
-        assert_eq!(m.segments[0].seq, 5);
-        assert_eq!(m.segments[1].seq, 6);
-        assert_eq!(m.segments[0].uri, "https://cdn.test/live/master/seg001.ts");
-        let key = m.segments[0].key.as_ref().unwrap();
-        assert_eq!(key.method, "AES-128");
-        assert_eq!(key.uri.as_deref(), Some("https://cdn.test/key?sid=1,2"));
-        assert_eq!(key.iv.unwrap()[0], 0x00);
-        assert_eq!(key.iv.unwrap()[15], 0xff);
-    }
-
-    #[test]
-    fn attrs_with_commas_in_quotes() {
-        let a = parse_attrs("METHOD=AES-128,URI=\"https://k.test/a?b=1,2\",IV=0x1");
-        assert_eq!(a.get("METHOD").unwrap(), "AES-128");
-        assert_eq!(a.get("URI").unwrap(), "https://k.test/a?b=1,2");
-        assert_eq!(a.get("IV").unwrap(), "0x1");
-    }
-
-    #[test]
-    fn iv_parsing() {
-        assert_eq!(parse_hex_iv("0x00112233445566778899aabbccddeeff").unwrap()[15], 0xff);
-        assert_eq!(parse_hex_iv("0xff").unwrap()[15], 0xff);
-        assert_eq!(parse_hex_iv("ff").unwrap()[15], 0xff);
-        assert!(parse_hex_iv("0x").is_none());
-    }
-
-    #[test]
-    fn cbc_decrypt_roundtrip_against_reference() {
-        // AES-128 key "0123456789abcdef", IV=0, plaintext "VelocityDM rulez!!" (17 bytes -> pad 15? no: 17 -> pad 15? PKCS7 pads to 32 with 15 bytes of 0x0f)
-        // Reference: encrypt with our own CBC implementation inverted.
-        use aes::cipher::BlockEncrypt;
-        let key: [u8; 16] = *b"0123456789abcdef";
-        let iv = [0u8; 16];
-        let plain = b"VelocityDM test.".to_vec(); // 16 bytes -> padded to 32 with 16 x 0x10
-        let mut padded = plain.clone();
-        let pad = 16 - padded.len() % 16;
-        padded.extend(std::iter::repeat(pad as u8).take(pad));
-        // encrypt
-        let cipher = Aes128::new(&key.into());
-        let mut prev = iv;
-        let mut enc = padded.clone();
-        for chunk in enc.chunks_mut(16) {
-            for i in 0..16 {
-                chunk[i] ^= prev[i];
-            }
-            cipher.encrypt_block(chunk.try_into().unwrap());
-            prev.copy_from_slice(chunk);
-        }
-        let mut got = enc.clone();
-        aes128_cbc_decrypt(&key, &iv, &mut got).unwrap();
-        assert_eq!(got, plain);
-        // tampered padding is rejected
-        let mut bad = enc.clone();
-        let last = bad.len() - 1;
-        bad[last] ^= 0x01;
-        assert!(aes128_cbc_decrypt(&key, &iv, &mut bad).is_err());
-    }
-
-    #[test]
-    fn seq_iv_default() {
-        assert_eq!(seq_iv(1)[15], 1);
-        assert_eq!(seq_iv(0x0102030405060708)[8], 1);
-    }
-}
-
-/// Fetch playlist text.
 pub fn fetch_text(cfg: &ClientCfg, url: &Url) -> Result<String> {
     let mut conn = Conn::connect(url, cfg)?;
     let mut resp = conn.request(&Request::get(url), cfg)?;
     if resp.status != 200 {
-        return Err(Error::Hls(format!("playlist fetch returned {}", resp.status)));
+        return Err(Error::Hls(format!(
+            "playlist fetch returned {}",
+            resp.status
+        )));
     }
     let body = resp.read_body(16 * 1024 * 1024)?;
     String::from_utf8(body).map_err(|_| Error::Hls("playlist is not utf-8".into()))
 }
 
 /// Resolve a playlist URL into the chosen media playlist (following master).
-pub fn resolve_playlist(
-    cfg: &ClientCfg,
-    url: &Url,
-    quality: &str,
-) -> Result<(Url, MediaPlaylist)> {
+pub fn resolve_playlist(cfg: &ClientCfg, url: &Url, quality: &str) -> Result<(Url, MediaPlaylist)> {
     let text = fetch_text(cfg, url)?;
     let base = url.clone();
     if text.contains("#EXT-X-STREAM-INF") {
@@ -447,9 +352,10 @@ pub fn download_hls(
     }
 
     let part_path = crate::engine::state::ResumeState::part_path(out);
-    let mut writer = std::io::BufWriter::new(std::fs::File::create(&part_path).map_err(|e| {
-        Error::Hls(format!("create part {}: {}", part_path.display(), e))
-    })?);
+    let mut writer = std::io::BufWriter::new(
+        std::fs::File::create(&part_path)
+            .map_err(|e| Error::Hls(format!("create part {}: {}", part_path.display(), e)))?,
+    );
     let done_seg = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let next_idx = Arc::new(Mutex::new(0usize));
 
@@ -501,10 +407,12 @@ pub fn download_hls(
                         Err(_) => return,
                     },
                 };
-                let data = match fetch_segment(&cfg, &seg_url, rate.as_ref(), &mut conn, &mut conn_target) {
-                    Ok(d) => d,
-                    Err(_) => return, // worker exits; collector notices missing segment
-                };
+                let data =
+                    match fetch_segment(&cfg, &seg_url, rate.as_ref(), &mut conn, &mut conn_target)
+                    {
+                        Ok(d) => d,
+                        Err(_) => return, // worker exits; collector notices missing segment
+                    };
                 let data = if let Some(k) = &seg.key {
                     if k.method.eq_ignore_ascii_case("AES-128") {
                         let key = k
@@ -565,12 +473,21 @@ pub fn download_hls(
         let _ = h.join();
     }
     if failed || write_idx < segments.len() {
-        return Err(Error::Hls("segment download failed before completion".into()));
+        return Err(Error::Hls(
+            "segment download failed before completion".into(),
+        ));
     }
-    writer.flush().map_err(|e| Error::Hls(format!("flush: {}", e)))?;
+    writer
+        .flush()
+        .map_err(|e| Error::Hls(format!("flush: {}", e)))?;
     drop(writer);
     std::fs::rename(&part_path, out).map_err(|e| {
-        Error::Hls(format!("rename {} -> {}: {}", part_path.display(), out.display(), e))
+        Error::Hls(format!(
+            "rename {} -> {}: {}",
+            part_path.display(),
+            out.display(),
+            e
+        ))
     })?;
     Ok(())
 }
@@ -637,4 +554,107 @@ fn fetch_segment(
     // cleanly drained body -> recycle for the next segment
     *conn = resp.into_conn();
     Ok(out)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn master_parsing() {
+        let text = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1280000,RESOLUTION=1280x720\n720.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=640000\n360.m3u8\n";
+        let v = parse_master(text).unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].bandwidth, 1_280_000);
+        assert_eq!(v[0].resolution.as_deref(), Some("1280x720"));
+        assert_eq!(v[1].uri, "360.m3u8");
+        assert!(parse_master("#EXTM3U\n").is_err());
+    }
+
+    #[test]
+    fn variant_choice() {
+        let v = parse_master("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=900\nb.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=500\nc.m3u8\n").unwrap();
+        assert_eq!(choose_variant(&v, "best").unwrap().uri, "b.m3u8");
+        assert_eq!(choose_variant(&v, "worst").unwrap().uri, "a.m3u8");
+        assert_eq!(choose_variant(&v, "").unwrap().uri, "b.m3u8");
+        assert_eq!(choose_variant(&v, "550").unwrap().uri, "c.m3u8");
+        assert!(choose_variant(&v, "abc").is_err());
+    }
+
+    #[test]
+    fn media_parsing_with_key_and_iv() {
+        let base = Url::parse("https://cdn.test/live/master/chunk.m3u8").unwrap();
+        let text = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:5\n#EXT-X-KEY:METHOD=AES-128,URI=\"https://cdn.test/key?sid=1,2\",IV=0x00112233445566778899aabbccddeeff\n#EXTINF:9.009,\nseg001.ts\n#EXTINF:9.009,\nseg002.ts\n#EXT-X-ENDLIST\n";
+        let m = parse_media(text, &base).unwrap();
+        assert_eq!(m.target_duration, 10.0);
+        assert_eq!(m.media_sequence, 5);
+        assert!(m.endlist);
+        assert_eq!(m.segments.len(), 2);
+        assert_eq!(m.segments[0].seq, 5);
+        assert_eq!(m.segments[1].seq, 6);
+        assert_eq!(m.segments[0].uri, "https://cdn.test/live/master/seg001.ts");
+        let key = m.segments[0].key.as_ref().unwrap();
+        assert_eq!(key.method, "AES-128");
+        assert_eq!(key.uri.as_deref(), Some("https://cdn.test/key?sid=1,2"));
+        assert_eq!(key.iv.unwrap()[0], 0x00);
+        assert_eq!(key.iv.unwrap()[15], 0xff);
+    }
+
+    #[test]
+    fn attrs_with_commas_in_quotes() {
+        let a = parse_attrs("METHOD=AES-128,URI=\"https://k.test/a?b=1,2\",IV=0x1");
+        assert_eq!(a.get("METHOD").unwrap(), "AES-128");
+        assert_eq!(a.get("URI").unwrap(), "https://k.test/a?b=1,2");
+        assert_eq!(a.get("IV").unwrap(), "0x1");
+    }
+
+    #[test]
+    fn iv_parsing() {
+        assert_eq!(
+            parse_hex_iv("0x00112233445566778899aabbccddeeff").unwrap()[15],
+            0xff
+        );
+        assert_eq!(parse_hex_iv("0xff").unwrap()[15], 0xff);
+        assert_eq!(parse_hex_iv("ff").unwrap()[15], 0xff);
+        assert!(parse_hex_iv("0x").is_none());
+    }
+
+    #[test]
+    fn cbc_decrypt_roundtrip_against_reference() {
+        // AES-128 key "0123456789abcdef", IV=0, plaintext "VelocityDM rulez!!" (17 bytes -> pad 15? no: 17 -> pad 15? PKCS7 pads to 32 with 15 bytes of 0x0f)
+        // Reference: encrypt with our own CBC implementation inverted.
+        use aes::cipher::BlockEncrypt;
+        let key: [u8; 16] = *b"0123456789abcdef";
+        let iv = [0u8; 16];
+        let plain = b"VelocityDM test.".to_vec(); // 16 bytes -> padded to 32 with 16 x 0x10
+        let mut padded = plain.clone();
+        let pad = 16 - padded.len() % 16;
+        padded.extend(std::iter::repeat_n(pad as u8, pad));
+        // encrypt
+        let cipher = Aes128::new(&key.into());
+        let mut prev = iv;
+        let mut enc = padded.clone();
+        for chunk in enc.chunks_mut(16) {
+            for i in 0..16 {
+                chunk[i] ^= prev[i];
+            }
+            cipher.encrypt_block(aes::cipher::generic_array::GenericArray::from_mut_slice(
+                chunk,
+            ));
+            prev.copy_from_slice(chunk);
+        }
+        let mut got = enc.clone();
+        aes128_cbc_decrypt(&key, &iv, &mut got).unwrap();
+        assert_eq!(got, plain);
+        // tampered padding is rejected
+        let mut bad = enc.clone();
+        let last = bad.len() - 1;
+        bad[last] ^= 0x01;
+        assert!(aes128_cbc_decrypt(&key, &iv, &mut bad).is_err());
+    }
+
+    #[test]
+    fn seq_iv_default() {
+        assert_eq!(seq_iv(1)[15], 1);
+        assert_eq!(seq_iv(0x0102030405060708)[8], 1);
+    }
 }

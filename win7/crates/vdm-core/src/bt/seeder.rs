@@ -101,7 +101,11 @@ impl Seeder {
             false,
         )?;
         let meta = Arc::new(meta);
-        let seeder = Seeder::start(meta.clone(), path.parent().unwrap_or(Path::new(".")), "127.0.0.1:0")?;
+        let seeder = Seeder::start(
+            meta.clone(),
+            path.parent().unwrap_or(Path::new(".")),
+            "127.0.0.1:0",
+        )?;
         Ok((seeder, torrent, meta))
     }
 
@@ -117,14 +121,21 @@ impl Seeder {
     }
 }
 
-fn serve_conn(mut stream: TcpStream, meta: Arc<Metainfo>, files: Vec<Arc<Mutex<std::fs::File>>>) -> Result<()> {
+fn serve_conn(
+    mut stream: TcpStream,
+    meta: Arc<Metainfo>,
+    files: Vec<Arc<Mutex<std::fs::File>>>,
+) -> Result<()> {
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
     let our_id = crate::util::new_peer_id();
     handshake(&mut stream, &meta.info_hash, &our_id, Some(&meta.info_hash))?;
     // full bitfield
-    write_peer_msg(&mut stream, &PeerMsg::Bitfield(vec![true; meta.piece_count()]))?;
+    write_peer_msg(
+        &mut stream,
+        &PeerMsg::Bitfield(vec![true; meta.piece_count()]),
+    )?;
     let mut their_ut_metadata: Option<u8> = None;
     loop {
         let msg = read_peer_msg(&mut stream)?;
@@ -140,10 +151,7 @@ fn serve_conn(mut stream: TcpStream, meta: Arc<Metainfo>, files: Vec<Arc<Mutex<s
                     return Err(Error::Torrent("invalid request span".into()));
                 }
                 let data = read_span(&meta, &files, index, begin as u64, len as u64)?;
-                write_peer_msg(
-                    &mut stream,
-                    &PeerMsg::Piece { index, begin, data },
-                )?;
+                write_peer_msg(&mut stream, &PeerMsg::Piece { index, begin, data })?;
             }
             PeerMsg::Extended { ext_id: 0, payload } => {
                 // record their advertised ut_metadata id and answer with ours
@@ -188,7 +196,10 @@ fn serve_conn(mut stream: TcpStream, meta: Arc<Metainfo>, files: Vec<Arc<Mutex<s
             | PeerMsg::Have(_)
             | PeerMsg::Bitfield(_)
             | PeerMsg::Port(_) => {}
-            PeerMsg::Extended { .. } | PeerMsg::Cancel { .. } | PeerMsg::Piece { .. } | PeerMsg::Unknown { .. } => {}
+            PeerMsg::Extended { .. }
+            | PeerMsg::Cancel { .. }
+            | PeerMsg::Piece { .. }
+            | PeerMsg::Unknown { .. } => {}
         }
     }
 }
@@ -233,7 +244,11 @@ pub fn read_span(
 }
 
 /// Read whole piece (used by resume verification).
-pub fn read_piece(meta: &Metainfo, files: &[Arc<Mutex<std::fs::File>>], index: u32) -> Result<Vec<u8>> {
+pub fn read_piece(
+    meta: &Metainfo,
+    files: &[Arc<Mutex<std::fs::File>>],
+    index: u32,
+) -> Result<Vec<u8>> {
     let len = meta.piece_len_at(index);
     read_span(meta, files, index, 0, len)
 }
@@ -269,9 +284,21 @@ mod tests {
         write_peer_msg(&mut c, &PeerMsg::Interested).unwrap();
         assert!(matches!(read_peer_msg(&mut c).unwrap(), PeerMsg::Unchoke));
         // request piece 0 block 0 (16 KiB)
-        write_peer_msg(&mut c, &PeerMsg::Request { index: 0, begin: 0, len: 16384 }).unwrap();
+        write_peer_msg(
+            &mut c,
+            &PeerMsg::Request {
+                index: 0,
+                begin: 0,
+                len: 16384,
+            },
+        )
+        .unwrap();
         match read_peer_msg(&mut c).unwrap() {
-            PeerMsg::Piece { index, begin, data: got } => {
+            PeerMsg::Piece {
+                index,
+                begin,
+                data: got,
+            } => {
                 assert_eq!((index, begin), (0, 0));
                 assert_eq!(got, &data[..16384]);
             }
@@ -280,7 +307,15 @@ mod tests {
         // request a tail block
         let last_piece = (meta.piece_count() - 1) as u32;
         let tail_len = meta.piece_len_at(last_piece);
-        write_peer_msg(&mut c, &PeerMsg::Request { index: last_piece, begin: 0, len: tail_len as u32 }).unwrap();
+        write_peer_msg(
+            &mut c,
+            &PeerMsg::Request {
+                index: last_piece,
+                begin: 0,
+                len: tail_len as u32,
+            },
+        )
+        .unwrap();
         match read_peer_msg(&mut c).unwrap() {
             PeerMsg::Piece { data: got, .. } => {
                 assert_eq!(got.len() as u64, tail_len);
@@ -289,7 +324,14 @@ mod tests {
             other => panic!("{:?}", other),
         }
         // metadata exchange: ext handshake then request piece 0
-        write_peer_msg(&mut c, &PeerMsg::Extended { ext_id: 0, payload: crate::bt::peer::build_ext_handshake(1, 0) }).unwrap();
+        write_peer_msg(
+            &mut c,
+            &PeerMsg::Extended {
+                ext_id: 0,
+                payload: crate::bt::peer::build_ext_handshake(1, 0),
+            },
+        )
+        .unwrap();
         match read_peer_msg(&mut c).unwrap() {
             PeerMsg::Extended { ext_id: 0, payload } => {
                 let eh = parse_ext_handshake(&payload).unwrap();
@@ -298,17 +340,22 @@ mod tests {
             }
             other => panic!("{:?}", other),
         }
-        write_peer_msg(&mut c, &PeerMsg::Extended { ext_id: 3, payload: crate::bt::peer::build_metadata_request(0) }).unwrap();
+        write_peer_msg(
+            &mut c,
+            &PeerMsg::Extended {
+                ext_id: 3,
+                payload: crate::bt::peer::build_metadata_request(0),
+            },
+        )
+        .unwrap();
         match read_peer_msg(&mut c).unwrap() {
-            PeerMsg::Extended { ext_id: 1, payload } => {
-                match parse_metadata_msg_ext(&payload) {
-                    crate::bt::peer::MetadataMsg::Data { data, .. } => {
-                        let expect = &meta.info_bytes[..(16 * 1024).min(meta.info_bytes.len())];
-                        assert_eq!(data, expect.to_vec());
-                    }
-                    m => panic!("{:?}", m),
+            PeerMsg::Extended { ext_id: 1, payload } => match parse_metadata_msg_ext(&payload) {
+                crate::bt::peer::MetadataMsg::Data { data, .. } => {
+                    let expect = &meta.info_bytes[..(16 * 1024).min(meta.info_bytes.len())];
+                    assert_eq!(data, expect.to_vec());
                 }
-            }
+                m => panic!("{:?}", m),
+            },
             other => panic!("{:?}", other),
         }
         seeder.stop();

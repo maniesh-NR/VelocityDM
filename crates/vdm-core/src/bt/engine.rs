@@ -4,8 +4,8 @@
 use crate::bt::magnet::Magnet;
 use crate::bt::metainfo::Metainfo;
 use crate::bt::peer::{
-    build_ext_handshake, build_metadata_request, handshake, parse_ext_handshake, parse_metadata_msg,
-    read_peer_msg, write_peer_msg, MetadataMsg, PeerMsg,
+    build_ext_handshake, build_metadata_request, handshake, parse_ext_handshake,
+    parse_metadata_msg, read_peer_msg, write_peer_msg, MetadataMsg, PeerMsg,
 };
 use crate::bt::pieces::{bitfield_encode, AddOutcome, BlockPick, PieceStore};
 use crate::bt::tracker::{announce_all, TrackerEvent};
@@ -69,8 +69,17 @@ impl Default for BtOptions {
 #[derive(Debug, Clone)]
 pub enum BtEvent {
     Metadata(Arc<Metainfo>),
-    Progress { done: u64, total: u64, speed_bps: u64, peers: u32, seeds: u32 },
-    Completed { files: Vec<PathBuf>, total_len: u64 },
+    Progress {
+        done: u64,
+        total: u64,
+        speed_bps: u64,
+        peers: u32,
+        seeds: u32,
+    },
+    Completed {
+        files: Vec<PathBuf>,
+        total_len: u64,
+    },
     Failed(String),
 }
 
@@ -130,7 +139,9 @@ pub fn download_blocking(
     };
     on_event(BtEvent::Metadata(meta.clone()));
     if trackers.is_empty() {
-        return Err(Error::Torrent("no HTTP trackers available (UDP/DHT not supported)".into()));
+        return Err(Error::Torrent(
+            "no HTTP trackers available (UDP/DHT not supported)".into(),
+        ));
     }
 
     // 2) output layout
@@ -150,16 +161,19 @@ pub fn download_blocking(
     let mut store = PieceStore::new(meta.clone(), priorities.clone(), opts.sequential)?;
 
     // 3) resume
-    let state_path = state_path;
     if let Ok(text) = std::fs::read_to_string(&state_path) {
         if let Ok(st) = serde_json::from_str::<BtResumeState>(&text) {
             if st.info_hash == hex::encode(meta.info_hash) {
                 store.restore_have(&st.have);
             }
         }
-    } else if out_paths.iter().all(|p| p.exists()) && out_paths.iter().enumerate().all(|(i, p)| {
-        std::fs::metadata(p).map(|m| m.len() >= meta.files[i].length).unwrap_or(false)
-    }) {
+    } else if out_paths.iter().all(|p| p.exists())
+        && out_paths.iter().enumerate().all(|(i, p)| {
+            std::fs::metadata(p)
+                .map(|m| m.len() >= meta.files[i].length)
+                .unwrap_or(false)
+        })
+    {
         // files exist without state: full hash verification
         let mut prog = |done: u64, total: u64| {
             on_event(BtEvent::Progress {
@@ -182,7 +196,12 @@ pub fn download_blocking(
         }
         if priorities[i] == 0 {
             writers.push(Arc::new(Mutex::new(
-                std::fs::OpenOptions::new().write(true).read(true).create(true).open(&out_paths[i])?,
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .read(true)
+                    .create(true)
+                    .truncate(false)
+                    .open(&out_paths[i])?,
             )));
             continue;
         }
@@ -190,6 +209,7 @@ pub fn download_blocking(
             .write(true)
             .read(true)
             .create(true)
+            .truncate(false)
             .open(&out_paths[i])?;
         if fh.metadata()?.len() != f.length {
             fh.set_len(f.length)?;
@@ -238,6 +258,7 @@ pub fn download_blocking(
     }
     let mut attempted: HashSet<std::net::SocketAddr> = HashSet::new();
     let mut spawned = 0usize;
+    #[allow(clippy::explicit_counter_loop)] // break depends on the running count
     for addr in initial_peers {
         if spawned >= opts.max_peers {
             break;
@@ -246,6 +267,8 @@ pub fn download_blocking(
         spawn_peer(shared.clone(), meta.clone(), addr, peer_id, opts);
         spawned += 1;
     }
+    // (clippy: the break-condition depends on the running count, so the
+    // explicit counter is intentional here)
 
     // 6) monitor loop
     let start = Instant::now();
@@ -285,12 +308,16 @@ pub fn download_blocking(
             last_peer_activity = Instant::now();
         }
         // give up if no peers for a long time
-        if last_peer_activity.elapsed() > Duration::from_secs(120) && start.elapsed() > Duration::from_secs(120) {
+        if last_peer_activity.elapsed() > Duration::from_secs(120)
+            && start.elapsed() > Duration::from_secs(120)
+        {
             save_state(&shared, &state_path, &meta, &priorities);
             break Err(Error::Torrent("no reachable peers".into()));
         }
         // periodic re-announce to pick up new peers
-        if last_reannounce.elapsed() > Duration::from_secs(30) && shared.peers.load(Ordering::Relaxed) < opts.max_peers as u32 {
+        if last_reannounce.elapsed() > Duration::from_secs(30)
+            && shared.peers.load(Ordering::Relaxed) < opts.max_peers as u32
+        {
             last_reannounce = Instant::now();
             let left = {
                 let st = shared.store.lock().unwrap();
@@ -308,7 +335,9 @@ pub fn download_blocking(
                 TrackerEvent::Periodic,
             );
             for addr in peers {
-                if !attempted.contains(&addr) && shared.peers.load(Ordering::Relaxed) < opts.max_peers as u32 {
+                if !attempted.contains(&addr)
+                    && shared.peers.load(Ordering::Relaxed) < opts.max_peers as u32
+                {
                     attempted.insert(addr);
                     spawn_peer(shared.clone(), meta.clone(), addr, peer_id, opts);
                 }
@@ -324,7 +353,10 @@ pub fn download_blocking(
             last_progress = Instant::now();
             let (done, total) = {
                 let st = shared.store.lock().unwrap();
-                (st.total_needed_bytes() - st.needed_bytes(), st.total_needed_bytes())
+                (
+                    st.total_needed_bytes() - st.needed_bytes(),
+                    st.total_needed_bytes(),
+                )
             };
             let now = Instant::now();
             let (pt, pv) = last_speed_sample;
@@ -334,7 +366,11 @@ pub fn download_blocking(
                 0
             };
             last_speed_sample = (now, done);
-            speed_ema = if speed_ema == 0 { inst } else { (speed_ema * 7 + inst) / 8 };
+            speed_ema = if speed_ema == 0 {
+                inst
+            } else {
+                (speed_ema * 7 + inst) / 8
+            };
             on_event(BtEvent::Progress {
                 done,
                 total,
@@ -432,7 +468,9 @@ fn layout(out_dir: &Path, meta: &Metainfo) -> Result<(Vec<PathBuf>, PathBuf)> {
 fn save_state(shared: &Arc<Shared>, path: &Path, meta: &Metainfo, priorities: &[u8]) {
     let have: Vec<u32> = {
         let st = shared.store.lock().unwrap();
-        (0..st.have.len() as u32).filter(|&i| st.have[i as usize]).collect()
+        (0..st.have.len() as u32)
+            .filter(|&i| st.have[i as usize])
+            .collect()
     };
     let state = BtResumeState {
         info_hash: hex::encode(meta.info_hash),
@@ -465,6 +503,7 @@ pub fn verify_existing(
                     .read(true)
                     .write(true)
                     .create(true)
+                    .truncate(false)
                     .open(std::env::temp_dir().join(".vdm-missing"))
                     .expect("open fallback")
             })))
@@ -505,7 +544,7 @@ fn peer_thread(
     io_timeout: Duration,
     connect_timeout: Duration,
 ) -> Result<()> {
-    let sockaddr = std::net::SocketAddr::from(addr);
+    let sockaddr = addr;
     let stream = TcpStream::connect_timeout(&sockaddr, connect_timeout)?;
     let _ = stream.set_nodelay(true);
     stream.set_read_timeout(Some(io_timeout))?;
@@ -569,7 +608,14 @@ fn peer_loop(
                 };
                 match pick {
                     BlockPick::Request { piece, offset, len } => {
-                        write_peer_msg(stream, &PeerMsg::Request { index: piece, begin: offset, len })?;
+                        write_peer_msg(
+                            stream,
+                            &PeerMsg::Request {
+                                index: piece,
+                                begin: offset,
+                                len,
+                            },
+                        )?;
                         outstanding.push_back((piece, offset, len));
                     }
                     BlockPick::None => break,
@@ -616,7 +662,9 @@ fn peer_loop(
             PeerMsg::Choke => *choked = true,
             PeerMsg::Unchoke => *choked = false,
             PeerMsg::Piece { index, begin, data } => {
-                outstanding.retain(|&(pi, off, len)| !(pi == index && off == begin && len as u32 == data.len() as u32));
+                outstanding.retain(|&(pi, off, len)| {
+                    !(pi == index && off == begin && len == data.len() as u32)
+                });
                 if let Some(bucket) = &shared.rate {
                     bucket.wait_for(data.len() as u64);
                 }
@@ -632,7 +680,9 @@ fn peer_loop(
                         }
                         let mut st = shared.store.lock().unwrap();
                         st.mark_have(index);
-                        shared.downloaded.fetch_add(piece_data.len() as u64, Ordering::Relaxed);
+                        shared
+                            .downloaded
+                            .fetch_add(piece_data.len() as u64, Ordering::Relaxed);
                     }
                     AddOutcome::Corrupted => {
                         shared.corrupted.fetch_add(1, Ordering::Relaxed);
@@ -693,7 +743,11 @@ fn fetch_metadata(magnet: &Magnet, opts: &BtOptions) -> Result<Vec<u8>> {
     if candidates.is_empty() {
         return Err(Error::Torrent(format!(
             "magnet: no peers from trackers{}",
-            if failures.is_empty() { String::new() } else { format!(" ({})", failures.join("; ")) }
+            if failures.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", failures.join("; "))
+            }
         )));
     }
     let deadline = Instant::now() + Duration::from_secs(60);
@@ -707,7 +761,9 @@ fn fetch_metadata(magnet: &Magnet, opts: &BtOptions) -> Result<Vec<u8>> {
             }
         }
     }
-    Err(Error::Torrent("magnet: no peer supplied valid metadata".into()))
+    Err(Error::Torrent(
+        "magnet: no peer supplied valid metadata".into(),
+    ))
 }
 
 #[allow(unused_assignments)]
@@ -747,7 +803,7 @@ fn try_metadata_from_peer(
                 their_ut_metadata = eh.ut_metadata;
                 metadata_size = eh.metadata_size;
                 if let (Some(id), Some(size)) = (their_ut_metadata, metadata_size) {
-                    let pieces = (size as usize + METADATA_PIECE_LEN - 1) / METADATA_PIECE_LEN;
+                    let pieces = (size as usize).div_ceil(METADATA_PIECE_LEN);
                     for p in 0..pieces {
                         write_peer_msg(
                             &mut stream,
@@ -760,11 +816,16 @@ fn try_metadata_from_peer(
                 }
             }
             PeerMsg::Extended { ext_id, payload } if ext_id == OUR_UT_METADATA => {
-                if let Ok(MetadataMsg::Data { piece, total_size, data }) = parse_metadata_msg(&payload) {
+                if let Ok(MetadataMsg::Data {
+                    piece,
+                    total_size,
+                    data,
+                }) = parse_metadata_msg(&payload)
+                {
                     metadata_size = Some(total_size);
                     chunks.insert(piece, data);
                     if let Some(size) = metadata_size {
-                        let pieces = (size as usize + METADATA_PIECE_LEN - 1) / METADATA_PIECE_LEN;
+                        let pieces = (size as usize).div_ceil(METADATA_PIECE_LEN);
                         if (0..pieces as u32).all(|p| chunks.contains_key(&p)) {
                             let mut info = Vec::with_capacity(size as usize);
                             for p in 0..pieces as u32 {
@@ -776,7 +837,11 @@ fn try_metadata_from_peer(
                     }
                 }
             }
-            PeerMsg::Bitfield(_) | PeerMsg::Have(_) | PeerMsg::Unchoke | PeerMsg::Choke | PeerMsg::KeepAlive => {}
+            PeerMsg::Bitfield(_)
+            | PeerMsg::Have(_)
+            | PeerMsg::Unchoke
+            | PeerMsg::Choke
+            | PeerMsg::KeepAlive => {}
             _ => {}
         }
     }
@@ -790,4 +855,3 @@ pub fn spec_label(spec: &BtSpec) -> String {
         BtSpec::Magnet(m) => format!("magnet:{}", hex::encode(m.info_hash)),
     }
 }
-

@@ -21,7 +21,10 @@ impl Algo {
             "md5" => Ok(Algo::Md5),
             "sha1" | "sha-1" => Ok(Algo::Sha1),
             "sha256" | "sha-256" => Ok(Algo::Sha256),
-            other => Err(Error::Task(format!("unsupported checksum algo '{}'", other))),
+            other => Err(Error::Task(format!(
+                "unsupported checksum algo '{}'",
+                other
+            ))),
         }
     }
     pub fn name(&self) -> &'static str {
@@ -42,7 +45,9 @@ pub fn digest_file(path: &Path, algo: Algo, progress: impl Fn(u64, u64)) -> Resu
     let mut hex_out = String::with_capacity(64);
     match algo {
         Algo::Md5 => hash_loop::<Md5>(&mut f, &mut buf, total, &mut done, &progress, &mut hex_out)?,
-        Algo::Sha1 => hash_loop::<Sha1>(&mut f, &mut buf, total, &mut done, &progress, &mut hex_out)?,
+        Algo::Sha1 => {
+            hash_loop::<Sha1>(&mut f, &mut buf, total, &mut done, &progress, &mut hex_out)?
+        }
         Algo::Sha256 => {
             hash_loop::<Sha256>(&mut f, &mut buf, total, &mut done, &progress, &mut hex_out)?
         }
@@ -98,8 +103,14 @@ mod tests {
 
     #[test]
     fn known_vectors() {
-        assert_eq!(digest_bytes(Algo::Md5, b"hello"), "5d41402abc4b2a76b9719d911017c592");
-        assert_eq!(digest_bytes(Algo::Sha1, b"hello"), "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
+        assert_eq!(
+            digest_bytes(Algo::Md5, b"hello"),
+            "5d41402abc4b2a76b9719d911017c592"
+        );
+        assert_eq!(
+            digest_bytes(Algo::Sha1, b"hello"),
+            "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"
+        );
         assert_eq!(
             digest_bytes(Algo::Sha256, b"hello"),
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"

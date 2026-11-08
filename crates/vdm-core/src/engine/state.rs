@@ -35,8 +35,7 @@ impl ResumeState {
 
     pub fn save(&self, out_path: &Path) -> std::io::Result<()> {
         let path = Self::ctl_path(out_path);
-        let text = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let text = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         // write via temp + rename for crash safety
         let tmp = path.with_extension("vdmctl.tmp");
         std::fs::write(&tmp, text)?;
@@ -56,7 +55,13 @@ impl ResumeState {
 
     /// Whether a saved state can be reused: same size and validator (etag or
     /// last-modified), or no validator at all.
-    pub fn matches(&self, url: &str, size: u64, etag: Option<&str>, last_modified: Option<&str>) -> bool {
+    pub fn matches(
+        &self,
+        url: &str,
+        size: u64,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) -> bool {
         if self.size != size {
             return false;
         }
@@ -96,10 +101,16 @@ mod tests {
             checksum_algo: Some("sha256".into()),
             checksum_hex: Some("00".into()),
             filename: "file.zip".into(),
-            remaining: vec![Interval { start: 400, end: 999 }],
+            remaining: vec![Interval {
+                start: 400,
+                end: 999,
+            }],
         };
         st.save(&out).unwrap();
-        assert_eq!(ResumeState::part_path(&out), dir.path().join("file.zip.part"));
+        assert_eq!(
+            ResumeState::part_path(&out),
+            dir.path().join("file.zip.part")
+        );
         let back = ResumeState::load(&out).unwrap();
         assert_eq!(back.url, "http://x/f");
         assert_eq!(back.remaining.len(), 1);

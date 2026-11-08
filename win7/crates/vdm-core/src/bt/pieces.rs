@@ -48,7 +48,11 @@ pub struct PieceStore {
 }
 
 impl PieceStore {
-    pub fn new(meta: Arc<Metainfo>, file_priorities: Vec<u8>, sequential: bool) -> Result<PieceStore> {
+    pub fn new(
+        meta: Arc<Metainfo>,
+        file_priorities: Vec<u8>,
+        sequential: bool,
+    ) -> Result<PieceStore> {
         if file_priorities.len() != meta.files.len() {
             return Err(Error::Torrent(format!(
                 "priority vector length {} != file count {}",
@@ -204,7 +208,11 @@ impl PieceStore {
             return AddOutcome::Duplicate;
         }
         let block = offset / BLOCK_LEN;
-        let partial = match self.partials.get_mut(piece as usize).and_then(|p| p.as_mut()) {
+        let partial = match self
+            .partials
+            .get_mut(piece as usize)
+            .and_then(|p| p.as_mut())
+        {
             Some(p) => p,
             None => {
                 // unsolicited block; start a partial implicitly
@@ -265,7 +273,6 @@ impl PieceStore {
     pub fn bitfield_bytes(&self) -> Vec<u8> {
         bitfield_encode(&self.have)
     }
-
 }
 
 pub fn bitfield_has(bf: &[u8], piece: u32) -> bool {
@@ -291,7 +298,11 @@ mod tests {
     use super::*;
     use crate::bt::metainfo::{create_torrent, CreateInput};
 
-    fn test_store(dir: &std::path::Path, piece_len: u64, sizes: &[usize]) -> (PieceStore, Vec<Vec<u8>>, Vec<u8>) {
+    fn test_store(
+        dir: &std::path::Path,
+        piece_len: u64,
+        sizes: &[usize],
+    ) -> (PieceStore, Vec<Vec<u8>>, Vec<u8>) {
         let mut inputs = Vec::new();
         let mut datas = Vec::new();
         for (i, &sz) in sizes.iter().enumerate() {
@@ -304,8 +315,15 @@ mod tests {
             });
             datas.push(data);
         }
-        let (meta, torrent) =
-            create_torrent("bundle", &inputs, piece_len, Some("http://t/ann"), &[], false).unwrap();
+        let (meta, torrent) = create_torrent(
+            "bundle",
+            &inputs,
+            piece_len,
+            Some("http://t/ann"),
+            &[],
+            false,
+        )
+        .unwrap();
         let store = PieceStore::new(Arc::new(meta), vec![1; sizes.len()], false).unwrap();
         (store, datas, torrent)
     }
@@ -424,13 +442,17 @@ mod tests {
             path: vec!["b.bin".into()],
             fs_path: dir.path().join("b.bin"),
         });
-        let (meta, _) = create_torrent("two", &inputs, 2048, Some("http://t/ann"), &[], false).unwrap();
+        let (meta, _) =
+            create_torrent("two", &inputs, 2048, Some("http://t/ann"), &[], false).unwrap();
         let mut store = PieceStore::new(Arc::new(meta), vec![1, 0], false).unwrap();
         assert_eq!(store.total_needed_bytes(), 2048);
         let only_b = |p: u32| p >= 2;
         assert_eq!(store.next_block(&only_b), BlockPick::None);
         let only_a = |p: u32| p < 2;
-        assert!(matches!(store.next_block(&only_a), BlockPick::Request { piece: 0, .. }));
+        assert!(matches!(
+            store.next_block(&only_a),
+            BlockPick::Request { piece: 0, .. }
+        ));
     }
 
     #[test]
@@ -445,7 +467,10 @@ mod tests {
     fn duplicate_blocks_ignored() {
         let dir = tempfile::tempdir().unwrap();
         let (mut store, datas, _t) = test_store(dir.path(), 1024, &[1024]);
-        assert!(matches!(store.add_block(0, 0, &datas[0]), AddOutcome::Complete(_)));
+        assert!(matches!(
+            store.add_block(0, 0, &datas[0]),
+            AddOutcome::Complete(_)
+        ));
         store.mark_have(0);
         assert_eq!(store.add_block(0, 0, &datas[0]), AddOutcome::Duplicate);
     }

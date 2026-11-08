@@ -16,7 +16,7 @@ pub fn expand_pattern(pattern: &str) -> Result<Vec<String>> {
             // find matching ']'
             let close = match pattern[i + 1..].find(']') {
                 Some(p) => i + 1 + p,
-                None => return Err(Error::Task(format!("unbalanced '[' in pattern"))),
+                None => return Err(Error::Task("unbalanced '[' in pattern".to_string())),
             };
             let body = &pattern[i + 1..close];
             let alts: Vec<String> = if body.contains(':') {
@@ -36,7 +36,10 @@ pub fn expand_pattern(pattern: &str) -> Result<Vec<String>> {
                     .parse()
                     .map_err(|_| Error::Task(format!("bad range end '{}'", to)))?;
                 if a > b || b - a > 100_000 {
-                    return Err(Error::Task(format!("bad or oversized range [{}:{}]", from, to)));
+                    return Err(Error::Task(format!(
+                        "bad or oversized range [{}:{}]",
+                        from, to
+                    )));
                 }
                 (a..=b)
                     .map(|n| format!("{:0width$}", n, width = pad))

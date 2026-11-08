@@ -51,10 +51,9 @@ impl Gate {
                 let me = g.waiting.get(&id).copied();
                 match me {
                     None => true, // shouldn't happen
-                    Some(mine) => g
-                        .waiting
-                        .values()
-                        .all(|&(p, c)| (p, std::cmp::Reverse(c)) <= (mine.0, std::cmp::Reverse(mine.1))),
+                    Some(mine) => g.waiting.values().all(|&(p, c)| {
+                        (p, std::cmp::Reverse(c)) <= (mine.0, std::cmp::Reverse(mine.1))
+                    }),
                 }
             };
             if g.used < g.max && is_top {

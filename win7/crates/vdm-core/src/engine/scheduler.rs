@@ -95,7 +95,12 @@ pub fn in_stop_window(window: &(String, String), minute_of_day: u32) -> bool {
 
 /// Pure scheduler step. `now` is epoch seconds; `minute_of_day` is the local
 /// wall-clock minute (0..=1439) for window checks.
-pub fn tick(tasks: &[TaskView], rules: &SchedulerRules, now: u64, minute_of_day: u32) -> Vec<Action> {
+pub fn tick(
+    tasks: &[TaskView],
+    rules: &SchedulerRules,
+    now: u64,
+    minute_of_day: u32,
+) -> Vec<Action> {
     let mut actions = Vec::new();
     let paused_by_window = rules
         .stop_window
@@ -112,7 +117,10 @@ pub fn tick(tasks: &[TaskView], rules: &SchedulerRules, now: u64, minute_of_day:
     }
     // resume paused tasks (they were paused by the window; user-paused tasks
     // have state Paused too, but resume-on-window-end matches XDM behavior)
-    let active_count = tasks.iter().filter(|t| t.state == TaskViewState::Active).count();
+    let active_count = tasks
+        .iter()
+        .filter(|t| t.state == TaskViewState::Active)
+        .count();
     let mut slots = rules.max_active.saturating_sub(active_count);
     // candidates: paused (not by the user) first (FIFO), then queued ordered
     // by (priority desc, start_at)
@@ -142,9 +150,7 @@ pub fn tick(tasks: &[TaskView], rules: &SchedulerRules, now: u64, minute_of_day:
         slots -= 1;
     }
     // queue-drained detection: nothing active/queued/paused and at least one done
-    if !tasks.is_empty()
-        && tasks.iter().all(|t| t.state == TaskViewState::Done)
-    {
+    if !tasks.is_empty() && tasks.iter().all(|t| t.state == TaskViewState::Done) {
         actions.push(Action::QueueDrained);
     }
     actions
@@ -155,7 +161,13 @@ mod tests {
     use super::*;
 
     fn tv(id: u64, state: TaskViewState, priority: u8, start_at: Option<u64>) -> TaskView {
-        TaskView { id, state, priority, start_at, user_paused: false }
+        TaskView {
+            id,
+            state,
+            priority,
+            start_at,
+            user_paused: false,
+        }
     }
 
     #[test]

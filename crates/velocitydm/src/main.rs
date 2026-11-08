@@ -2,6 +2,8 @@
 
 #[cfg(feature = "gui")]
 mod gui;
+#[cfg(feature = "gui")]
+mod theme;
 
 mod cli;
 mod daemon;

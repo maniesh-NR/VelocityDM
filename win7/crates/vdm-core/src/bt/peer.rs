@@ -22,14 +22,32 @@ pub enum PeerMsg {
     NotInterested,
     Have(u32),
     Bitfield(Vec<bool>),
-    Request { index: u32, begin: u32, len: u32 },
-    Cancel { index: u32, begin: u32, len: u32 },
-    Piece { index: u32, begin: u32, data: Vec<u8> },
+    Request {
+        index: u32,
+        begin: u32,
+        len: u32,
+    },
+    Cancel {
+        index: u32,
+        begin: u32,
+        len: u32,
+    },
+    Piece {
+        index: u32,
+        begin: u32,
+        data: Vec<u8>,
+    },
     /// BEP-10 extension message: (extension id, payload).
-    Extended { ext_id: u8, payload: Vec<u8> },
+    Extended {
+        ext_id: u8,
+        payload: Vec<u8>,
+    },
     /// DHT port (BEP-5); ignored.
     Port(u16),
-    Unknown { id: u8, data: Vec<u8> },
+    Unknown {
+        id: u8,
+        data: Vec<u8>,
+    },
 }
 
 impl PeerMsg {
@@ -42,12 +60,8 @@ impl PeerMsg {
             PeerMsg::NotInterested => frame(3, &[]),
             PeerMsg::Have(i) => frame(4, &i.to_be_bytes()),
             PeerMsg::Bitfield(bits) => frame(5, &crate::bt::pieces::bitfield_encode(bits)),
-            PeerMsg::Request { index, begin, len } => {
-                frame(6, &concat_be(*index, *begin, *len))
-            }
-            PeerMsg::Cancel { index, begin, len } => {
-                frame(8, &concat_be(*index, *begin, *len))
-            }
+            PeerMsg::Request { index, begin, len } => frame(6, &concat_be(*index, *begin, *len)),
+            PeerMsg::Cancel { index, begin, len } => frame(8, &concat_be(*index, *begin, *len)),
             PeerMsg::Piece { index, begin, data } => {
                 let mut body = Vec::with_capacity(9 + data.len());
                 body.extend_from_slice(&concat_be(*index, *begin, 0));
@@ -90,7 +104,10 @@ pub fn read_peer_msg(r: &mut impl Read) -> Result<PeerMsg> {
     read_exact(r, &mut len_buf)?;
     let len = u32::from_be_bytes(len_buf) as usize;
     if len > MAX_MSG_LEN {
-        return Err(Error::Torrent(format!("peer message too large ({} bytes)", len)));
+        return Err(Error::Torrent(format!(
+            "peer message too large ({} bytes)",
+            len
+        )));
     }
     if len == 0 {
         return Ok(PeerMsg::KeepAlive);
@@ -244,7 +261,10 @@ pub fn build_ext_handshake(ut_metadata_id: u8, metadata_size: u64) -> Vec<u8> {
     bencode::encode(&Value::Dict(vec![
         (
             b"m".to_vec(),
-            Value::Dict(vec![(b"ut_metadata".to_vec(), Value::Int(ut_metadata_id as i64))]),
+            Value::Dict(vec![(
+                b"ut_metadata".to_vec(),
+                Value::Int(ut_metadata_id as i64),
+            )]),
         ),
         (b"metadata_size".to_vec(), Value::Int(metadata_size as i64)),
         (b"v".to_vec(), bencode::str("VelocityDM 1.0")),
@@ -259,13 +279,18 @@ pub struct ExtHandshake {
 
 pub fn parse_ext_handshake(payload: &[u8]) -> Result<ExtHandshake> {
     let (v, _) = bencode::decode_prefix(payload)?;
-    let m = v.dict_get(b"m").ok_or_else(|| Error::Torrent("ext handshake: no m dict".into()))?;
+    let m = v
+        .dict_get(b"m")
+        .ok_or_else(|| Error::Torrent("ext handshake: no m dict".into()))?;
     let ut = m
         .dict_get(b"ut_metadata")
         .and_then(|u| u.as_int())
         .filter(|&u| u > 0)
         .map(|u| u as u8);
-    let size = v.dict_get(b"metadata_size").and_then(|s| s.as_int()).map(|s| s as u64);
+    let size = v
+        .dict_get(b"metadata_size")
+        .and_then(|s| s.as_int())
+        .map(|s| s as u64);
     Ok(ExtHandshake {
         ut_metadata: ut,
         metadata_size: size,
@@ -293,9 +318,17 @@ pub fn build_metadata_data(piece: u32, total_size: u64, chunk: &[u8]) -> Vec<u8>
 
 #[derive(Debug, Clone)]
 pub enum MetadataMsg {
-    Request { piece: u32 },
-    Data { piece: u32, total_size: u64, data: Vec<u8> },
-    Reject { piece: u32 },
+    Request {
+        piece: u32,
+    },
+    Data {
+        piece: u32,
+        total_size: u64,
+        data: Vec<u8>,
+    },
+    Reject {
+        piece: u32,
+    },
 }
 
 pub fn parse_metadata_msg(payload: &[u8]) -> Result<MetadataMsg> {
@@ -308,7 +341,10 @@ pub fn parse_metadata_msg(payload: &[u8]) -> Result<MetadataMsg> {
     match msg_type {
         0 => Ok(MetadataMsg::Request { piece }),
         1 => {
-            let total = v.dict_get(b"total_size").and_then(|t| t.as_int()).unwrap_or(0) as u64;
+            let total = v
+                .dict_get(b"total_size")
+                .and_then(|t| t.as_int())
+                .unwrap_or(0) as u64;
             Ok(MetadataMsg::Data {
                 piece,
                 total_size: total,
@@ -316,7 +352,10 @@ pub fn parse_metadata_msg(payload: &[u8]) -> Result<MetadataMsg> {
             })
         }
         2 => Ok(MetadataMsg::Reject { piece }),
-        other => Err(Error::Torrent(format!("metadata msg: bad msg_type {}", other))),
+        other => Err(Error::Torrent(format!(
+            "metadata msg: bad msg_type {}",
+            other
+        ))),
     }
 }
 
@@ -347,10 +386,25 @@ mod tests {
         msg_roundtrip(PeerMsg::NotInterested);
         msg_roundtrip(PeerMsg::Have(42));
         msg_roundtrip(PeerMsg::Bitfield(vec![true, false, true]));
-        msg_roundtrip(PeerMsg::Request { index: 1, begin: 2, len: 16384 });
-        msg_roundtrip(PeerMsg::Cancel { index: 1, begin: 2, len: 3 });
-        msg_roundtrip(PeerMsg::Piece { index: 3, begin: 16384, data: vec![9u8; 100] });
-        msg_roundtrip(PeerMsg::Extended { ext_id: 1, payload: vec![1, 2, 3] });
+        msg_roundtrip(PeerMsg::Request {
+            index: 1,
+            begin: 2,
+            len: 16384,
+        });
+        msg_roundtrip(PeerMsg::Cancel {
+            index: 1,
+            begin: 2,
+            len: 3,
+        });
+        msg_roundtrip(PeerMsg::Piece {
+            index: 3,
+            begin: 16384,
+            data: vec![9u8; 100],
+        });
+        msg_roundtrip(PeerMsg::Extended {
+            ext_id: 1,
+            payload: vec![1, 2, 3],
+        });
         msg_roundtrip(PeerMsg::Port(6881));
     }
 
@@ -409,7 +463,11 @@ mod tests {
         let chunk = vec![0xABu8; 300];
         let data = build_metadata_data(2, 40_000, &chunk);
         match parse_metadata_msg(&data).unwrap() {
-            MetadataMsg::Data { piece, total_size, data } => {
+            MetadataMsg::Data {
+                piece,
+                total_size,
+                data,
+            } => {
                 assert_eq!((piece, total_size), (2, 40_000));
                 assert_eq!(data, chunk);
             }

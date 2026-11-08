@@ -81,12 +81,27 @@ impl TaskSnapshot {
 /// Coarse engine events (fine-grained progress comes from snapshot polling).
 #[derive(Debug, Clone)]
 pub enum Event {
-    TaskAdded { id: u64 },
-    TaskStateChanged { id: u64, state: TaskState },
-    TaskProgress { id: u64 },
-    TaskCompleted { id: u64, path: String },
-    TaskFailed { id: u64, error: String },
-    TaskRemoved { id: u64 },
+    TaskAdded {
+        id: u64,
+    },
+    TaskStateChanged {
+        id: u64,
+        state: TaskState,
+    },
+    TaskProgress {
+        id: u64,
+    },
+    TaskCompleted {
+        id: u64,
+        path: String,
+    },
+    TaskFailed {
+        id: u64,
+        error: String,
+    },
+    TaskRemoved {
+        id: u64,
+    },
     /// Queue became empty after at least one completion (for
     /// scheduler/shutdown-when-done handling).
     QueueDrained,

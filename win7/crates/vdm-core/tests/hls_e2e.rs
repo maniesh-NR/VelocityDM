@@ -3,9 +3,9 @@
 mod common;
 
 use common::{wait_until_ms, TestServer};
-use vdm_core::engine::{Engine, EngineConfig, HttpOptions};
 use vdm_core::engine::events::TaskState;
 use vdm_core::engine::hls::aes128_cbc_decrypt;
+use vdm_core::engine::{Engine, EngineConfig, HttpOptions};
 use vdm_core::http::{ClientCfg, Url};
 
 fn aes128_cbc_encrypt(key: &[u8; 16], iv: &[u8; 16], data: &[u8]) -> Vec<u8> {
@@ -31,7 +31,9 @@ fn aes128_cbc_encrypt(key: &[u8; 16], iv: &[u8; 16], data: &[u8]) -> Vec<u8> {
 }
 
 fn make_segment(seed: u8, len: usize) -> Vec<u8> {
-    (0..len).map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed)).collect()
+    (0..len)
+        .map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed))
+        .collect()
 }
 
 fn setup_hls(server: &TestServer, encrypt: bool) -> (Vec<u8>, String) {
@@ -44,7 +46,8 @@ fn setup_hls(server: &TestServer, encrypt: bool) -> (Vec<u8>, String) {
     let mut stream_hi = Vec::new();
     let mut stream_lo = Vec::new();
     for q in ["hi", "lo"] {
-        let mut playlist = String::from("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n");
+        let mut playlist =
+            String::from("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n");
         let big = q == "hi";
         for i in 0..6u32 {
             let seg = make_segment((i % 8) as u8 + 1, if big { 51 * 1024 } else { 17 * 1024 });
@@ -59,11 +62,7 @@ fn setup_hls(server: &TestServer, encrypt: bool) -> (Vec<u8>, String) {
                 seg.clone()
             };
             server.set_file(&format!("/{}/seg{}.ts", q, i), stored);
-            playlist.push_str(&format!(
-                "#EXTINF:5.0,\n/{}/seg{}.ts\n",
-                q,
-                i
-            ));
+            playlist.push_str(&format!("#EXTINF:5.0,\n/{}/seg{}.ts\n", q, i));
             if big {
                 stream_hi.extend_from_slice(&seg);
             } else {
@@ -81,7 +80,14 @@ fn setup_hls(server: &TestServer, encrypt: bool) -> (Vec<u8>, String) {
     }
     let master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000\n/hi.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=300000\n/lo.m3u8\n";
     server.set_file("/master.m3u8", master.as_bytes().to_vec());
-    (stream_hi, stream_lo.to_vec().is_empty().then(|| String::new()).unwrap_or_default())
+    (
+        stream_hi,
+        stream_lo
+            .to_vec()
+            .is_empty()
+            .then(|| String::new())
+            .unwrap_or_default(),
+    )
 }
 
 #[test]
@@ -97,7 +103,8 @@ fn hls_clear_best_quality() {
         .add_download(&server.url("/master.m3u8"), HttpOptions::default())
         .unwrap();
     assert!(
-        wait_until_ms(30_000, || engine.get(id).map(|s| s.state) == Some(TaskState::Completed)),
+        wait_until_ms(30_000, || engine.get(id).map(|s| s.state)
+            == Some(TaskState::Completed)),
         "err: {:?}",
         engine.get(id).and_then(|s| s.error)
     );
@@ -134,7 +141,8 @@ fn hls_aes128_worst_quality() {
         )
         .unwrap();
     assert!(
-        wait_until_ms(30_000, || engine.get(id).map(|s| s.state) == Some(TaskState::Completed)),
+        wait_until_ms(30_000, || engine.get(id).map(|s| s.state)
+            == Some(TaskState::Completed)),
         "err: {:?}",
         engine.get(id).and_then(|s| s.error)
     );
@@ -183,7 +191,10 @@ fn aes_cbc_roundtrip_via_public_api() {
 #[test]
 fn playlist_resolution_over_http() {
     let server = TestServer::start();
-    server.set_file("/v.m3u8", b"#EXTM3U\n#EXTINF:5.0,\nseg0.ts\n#EXT-X-ENDLIST\n".to_vec());
+    server.set_file(
+        "/v.m3u8",
+        b"#EXTM3U\n#EXTINF:5.0,\nseg0.ts\n#EXT-X-ENDLIST\n".to_vec(),
+    );
     server.set_file("/seg0.ts", vec![5u8; 4096]);
     let cfg = ClientCfg::default();
     let url = Url::parse(&server.url("/v.m3u8")).unwrap();

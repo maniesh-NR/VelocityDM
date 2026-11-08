@@ -10,11 +10,10 @@ pub mod task;
 
 use crate::bt::{self, BtOptions, BtSpec, Magnet};
 use crate::engine::events::{
-    ActiveCounter, EngineShared, EventBus, Event, TaskControl, TaskSnapshot,
-    TaskState,
+    ActiveCounter, EngineShared, Event, EventBus, TaskControl, TaskSnapshot, TaskState,
 };
 use crate::engine::gate::Gate;
-use crate::engine::scheduler::{Action, SchedulerRules, TaskViewState, TaskView};
+use crate::engine::scheduler::{Action, SchedulerRules, TaskView, TaskViewState};
 use crate::engine::task::{run_http_task, TaskEnv};
 
 pub use crate::engine::task::HttpOptions;
@@ -67,8 +66,16 @@ impl Default for EngineConfig {
 /// Stored task so pause/resume/refresh can re-run it.
 #[derive(Clone)]
 enum StoredTask {
-    Http { url: String, opts: HttpOptions },
-    Torrent { spec: BtSpec, out_dir: Option<String>, priorities: Vec<u8>, limit_bps: u64 },
+    Http {
+        url: String,
+        opts: HttpOptions,
+    },
+    Torrent {
+        spec: BtSpec,
+        out_dir: Option<String>,
+        priorities: Vec<u8>,
+        limit_bps: u64,
+    },
 }
 
 pub struct Engine {
@@ -120,9 +127,9 @@ impl Engine {
                             id: s.id,
                             state: match s.state {
                                 TaskState::Queued | TaskState::Probing => TaskViewState::Queued,
-                                TaskState::Downloading | TaskState::Verifying | TaskState::Seeding => {
-                                    TaskViewState::Active
-                                }
+                                TaskState::Downloading
+                                | TaskState::Verifying
+                                | TaskState::Seeding => TaskViewState::Active,
                                 TaskState::Paused => TaskViewState::Paused,
                                 TaskState::Completed | TaskState::Failed => TaskViewState::Done,
                             },
@@ -147,10 +154,8 @@ impl Engine {
                                 drained_handled = true;
                                 engine.shared.bus.publish(Event::QueueDrained);
                                 if let Some(cmd) = &cfg.scheduler.on_queue_drained {
-                                    let _ = std::process::Command::new("sh")
-                                        .arg("-c")
-                                        .arg(cmd)
-                                        .spawn();
+                                    let _ =
+                                        std::process::Command::new("sh").arg("-c").arg(cmd).spawn();
                                 }
                             }
                         }
@@ -213,7 +218,15 @@ impl Engine {
         self.next_id.fetch_add(1, Ordering::SeqCst)
     }
 
-    fn insert_snapshot(&self, id: u64, kind: &str, name: &str, url: &str, opts_start_at: Option<u64>, priority: u8) {
+    fn insert_snapshot(
+        &self,
+        id: u64,
+        kind: &str,
+        name: &str,
+        url: &str,
+        opts_start_at: Option<u64>,
+        priority: u8,
+    ) {
         let cfg = self.cfg.lock().unwrap();
         let snap = TaskSnapshot {
             id,
@@ -261,7 +274,11 @@ impl Engine {
             },
         );
         let control = TaskControl::new();
-        self.shared.controls.lock().unwrap().insert(id, control.clone());
+        self.shared
+            .controls
+            .lock()
+            .unwrap()
+            .insert(id, control.clone());
         self.spawn_http_task(id, url.to_string(), opts, control, true);
         Ok(id)
     }
@@ -278,7 +295,14 @@ impl Engine {
         Ok(ids)
     }
 
-    fn spawn_http_task(&self, id: u64, url: String, opts: HttpOptions, control: Arc<TaskControl>, resume: bool) {
+    fn spawn_http_task(
+        &self,
+        id: u64,
+        url: String,
+        opts: HttpOptions,
+        control: Arc<TaskControl>,
+        resume: bool,
+    ) {
         let shared = self.shared.clone();
         let env = self.env();
         let gate = self.gate.clone();
@@ -315,9 +339,13 @@ impl Engine {
             BtSpec::TorrentFile(p) => (
                 "torrent",
                 p.to_string_lossy().to_string(),
-                p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "torrent".into()),
+                p.file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "torrent".into()),
             ),
-            BtSpec::TorrentBytes(_) => ("torrent", "(in-memory)".to_string(), "torrent".to_string()),
+            BtSpec::TorrentBytes(_) => {
+                ("torrent", "(in-memory)".to_string(), "torrent".to_string())
+            }
             BtSpec::Magnet(m) => (
                 "magnet",
                 Magnet::to_uri(&crate::bt::Magnet {
@@ -341,7 +369,11 @@ impl Engine {
             },
         );
         let control = TaskControl::new();
-        self.shared.controls.lock().unwrap().insert(id, control.clone());
+        self.shared
+            .controls
+            .lock()
+            .unwrap()
+            .insert(id, control.clone());
         self.spawn_bt_task(id, spec, out_dir, priorities, limit_bps, control);
         Ok(id)
     }
@@ -389,7 +421,13 @@ impl Engine {
                         s.size = meta.total_len;
                     });
                 }
-                bt::BtEvent::Progress { done, total, speed_bps, peers, seeds } => {
+                bt::BtEvent::Progress {
+                    done,
+                    total,
+                    speed_bps,
+                    peers,
+                    seeds,
+                } => {
                     let now = std::time::Instant::now();
                     let _ = &mut last;
                     let _ = &mut speed_ema;
@@ -500,10 +538,7 @@ impl Engine {
             .ok_or_else(|| crate::Error::Task(format!("no task {}", id)))?;
         if matches!(
             state,
-            TaskState::Downloading
-                | TaskState::Probing
-                | TaskState::Verifying
-                | TaskState::Queued
+            TaskState::Downloading | TaskState::Probing | TaskState::Verifying | TaskState::Queued
         ) {
             // already running or waiting for a slot; never double-spawn
             return Ok(());
@@ -517,7 +552,11 @@ impl Engine {
             .ok_or_else(|| crate::Error::Task(format!("no stored task {}", id)))?;
         // fresh control flags
         let control = TaskControl::new();
-        self.shared.controls.lock().unwrap().insert(id, control.clone());
+        self.shared
+            .controls
+            .lock()
+            .unwrap()
+            .insert(id, control.clone());
         self.shared.update(id, |s| {
             s.state = TaskState::Queued;
             s.error = None;
@@ -527,7 +566,12 @@ impl Engine {
             StoredTask::Http { url, opts } => {
                 self.spawn_http_task(id, url, opts, control, true);
             }
-            StoredTask::Torrent { spec, out_dir, priorities, limit_bps } => {
+            StoredTask::Torrent {
+                spec,
+                out_dir,
+                priorities,
+                limit_bps,
+            } => {
                 self.spawn_bt_task(id, spec, out_dir, priorities, limit_bps, control);
             }
         }
@@ -567,8 +611,13 @@ impl Engine {
             .get(id)
             .map(|s| s.state)
             .ok_or_else(|| crate::Error::Task(format!("no task {}", id)))?;
-        if matches!(state, TaskState::Downloading | TaskState::Probing | TaskState::Verifying) {
-            return Err(crate::Error::Task("pause the download before refreshing its link".into()));
+        if matches!(
+            state,
+            TaskState::Downloading | TaskState::Probing | TaskState::Verifying
+        ) {
+            return Err(crate::Error::Task(
+                "pause the download before refreshing its link".into(),
+            ));
         }
         let original_name = self.get(id).map(|s| s.name.clone());
         let mut stored = self.stored.lock().unwrap();
@@ -586,7 +635,9 @@ impl Engine {
                 }
             }
             StoredTask::Torrent { .. } => {
-                return Err(crate::Error::Task("refresh link applies to HTTP downloads".into()));
+                return Err(crate::Error::Task(
+                    "refresh link applies to HTTP downloads".into(),
+                ));
             }
         }
         drop(stored);

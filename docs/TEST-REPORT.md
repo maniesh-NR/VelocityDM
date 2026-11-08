@@ -94,7 +94,7 @@ Benchmark (scripts/bench.sh, loopback, 128 MiB payload, 8 segments):
 | FOSS integration | tokio, rustls, RustCrypto, serde, clap; Android: OkHttp, Room, Compose |
 | Academic algorithms (Padhye 1998, TFRC/RFC 3448, BitTorrent 2003, work stealing) | implemented and documented in docs/ALGORITHMS.md |
 | GUI/engine decoupling, non-blocking channels, 10-30 Hz refresh cap, zero-copy streaming, connection pool | architecture enforced and tested (event-coalescing test, RSS-flat benchmark, pool-reuse assertions) |
-| Material Design 3 | Android Compose MD3 + dynamic color; egui MD3-styled GUI source behind the `gui` feature |
+| Material Design 3 | Android Compose MD3 + wallpaper dynamic color (Android 12+); egui Material You GUI (OKLCH tonal palettes, light + dark) behind the `gui` feature |
 | GPL-3.0-or-later, English UI, no emoji, no DRM circumvention | LICENSE + clean-room statement (docs/CLEAN_ROOM.md) |
 
 ## Known limitations

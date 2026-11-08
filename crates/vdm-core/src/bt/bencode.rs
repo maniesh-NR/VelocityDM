@@ -26,7 +26,8 @@ impl Value {
         }
     }
     pub fn as_str_lossy(&self) -> Option<String> {
-        self.as_bytes().map(|b| String::from_utf8_lossy(b).into_owned())
+        self.as_bytes()
+            .map(|b| String::from_utf8_lossy(b).into_owned())
     }
     pub fn as_list(&self) -> Option<&[Value]> {
         match self {
@@ -111,7 +112,9 @@ impl<'a> Decoder<'a> {
         match self.data[self.pos] {
             b'i' => {
                 self.pos += 1;
-                let end = self.find(b'e').ok_or_else(|| Error::Bencode("unterminated integer".into()))?;
+                let end = self
+                    .find(b'e')
+                    .ok_or_else(|| Error::Bencode("unterminated integer".into()))?;
                 let text = std::str::from_utf8(&self.data[self.pos..end])
                     .map_err(|_| Error::Bencode("non-utf8 integer".into()))?;
                 let n: i64 = text
@@ -166,7 +169,10 @@ impl<'a> Decoder<'a> {
                 self.pos = end;
                 Ok(Value::Str(self.data[start..end].to_vec()))
             }
-            other => Err(Error::Bencode(format!("unexpected type byte 0x{:02x}", other))),
+            other => Err(Error::Bencode(format!(
+                "unexpected type byte 0x{:02x}",
+                other
+            ))),
         }
     }
 

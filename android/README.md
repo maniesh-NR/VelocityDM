@@ -1,6 +1,6 @@
 # VelocityDM for Android
 
-A Material Design 3 Compose front-end over a Kotlin segmented-download
+A Material You (Material Design 3, wallpaper dynamic color on Android 12+) Compose front-end over a Kotlin segmented-download
 engine (OkHttp + coroutines). The architecture mirrors the desktop Rust
 engine: probe, work-stealing range pool, mirror failover, token-bucket rate
 limit, `.part`/`.vdmctl` crash-safe resume.

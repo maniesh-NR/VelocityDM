@@ -88,8 +88,18 @@ impl ProxyConfig {
             None => (None, None),
         };
         match scheme.to_ascii_lowercase().as_str() {
-            "http" | "https" => Ok(ProxyConfig::Http { host, port, user, pass }),
-            "socks5" | "socks5h" => Ok(ProxyConfig::Socks5 { host, port, user, pass }),
+            "http" | "https" => Ok(ProxyConfig::Http {
+                host,
+                port,
+                user,
+                pass,
+            }),
+            "socks5" | "socks5h" => Ok(ProxyConfig::Socks5 {
+                host,
+                port,
+                user,
+                pass,
+            }),
             other => Err(Error::Http(format!("unsupported proxy scheme '{}'", other))),
         }
     }
@@ -174,16 +184,21 @@ impl ProxyStream {
         } else {
             &[0x05, 0x01, 0x00]
         };
-        s.tcp.write_all(greeting).map_err(io("socks greeting write"))?;
+        s.tcp
+            .write_all(greeting)
+            .map_err(io("socks greeting write"))?;
         let mut resp = [0u8; 2];
-        s.tcp.read_exact(&mut resp).map_err(io("socks greeting read"))?;
+        s.tcp
+            .read_exact(&mut resp)
+            .map_err(io("socks greeting read"))?;
         if resp[0] != 0x05 {
             return Err(Error::Http("not a SOCKS5 proxy".into()));
         }
         match resp[1] {
             0x00 => {}
             0x02 => {
-                let (user, pass) = creds.ok_or_else(|| Error::Http("proxy requires auth".into()))?;
+                let (user, pass) =
+                    creds.ok_or_else(|| Error::Http("proxy requires auth".into()))?;
                 if user.len() > 255 || pass.len() > 255 {
                     return Err(Error::Http("socks credentials too long".into()));
                 }
@@ -220,9 +235,14 @@ impl ProxyStream {
         s.tcp.write_all(&req).map_err(io("socks connect write"))?;
         // response: ver rep rsv atyp bnd.addr bnd.port
         let mut head = [0u8; 4];
-        s.tcp.read_exact(&mut head).map_err(io("socks connect read"))?;
+        s.tcp
+            .read_exact(&mut head)
+            .map_err(io("socks connect read"))?;
         if head[1] != 0x00 {
-            return Err(Error::Http(format!("socks connect failed (rep=0x{:02x})", head[1])));
+            return Err(Error::Http(format!(
+                "socks connect failed (rep=0x{:02x})",
+                head[1]
+            )));
         }
         let skip = match head[3] {
             0x01 => 4,
