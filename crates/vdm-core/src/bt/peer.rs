@@ -3,6 +3,7 @@
 use crate::bt::bencode::{self, Value};
 use crate::error::{Error, Result};
 use std::io::{Read, Write};
+use std::time::Duration;
 
 pub const PROTOCOL_STR: &[u8] = b"BitTorrent protocol";
 /// Reserved bits: extension protocol (BEP-10) enabled.
@@ -172,11 +173,25 @@ fn be32(data: &[u8], off: usize) -> u32 {
 
 fn read_exact(r: &mut impl Read, buf: &mut [u8]) -> Result<()> {
     let mut filled = 0;
+    // Windows can surface WSAEWOULDBLOCK on blocking sockets as a spurious
+    // transient error (observed on CI runners): retry briefly instead of
+    // dropping the peer connection.
+    let mut would_block = 0u32;
     while filled < buf.len() {
         match r.read(&mut buf[filled..]) {
             Ok(0) => return Err(Error::Torrent("peer closed connection".into())),
-            Ok(n) => filled += n,
+            Ok(n) => {
+                filled += n;
+                would_block = 0;
+            }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                would_block += 1;
+                if would_block > 5_000 {
+                    return Err(Error::Io(e));
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
             Err(e) => return Err(Error::Io(e)),
         }
     }

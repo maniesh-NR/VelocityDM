@@ -110,6 +110,10 @@ jobs:
     needs: ver
     if: needs.ver.outputs.tag == needs.ver.outputs.base || needs.ver.outputs.tag == format('{0}-windows', needs.ver.outputs.base)
     runs-on: ubuntu-22.04
+    env:
+      # --manifest-path leaves the target dir ambiguous between the repo root
+      # and the workspace dir; pin it so packaging always finds the exes.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/win7-target
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install 1.75.0 --profile minimal
@@ -125,11 +129,12 @@ jobs:
       - name: package
         run: |
           V=${{ needs.ver.outputs.version }}
+          set -e
           for arch in x86_64 i686; do
             case $arch in x86_64) s=x64;; i686) s=x86;; esac
             rm -rf stage; mkdir -p stage
-            cp win7/target/$arch-pc-windows-gnu/release/velocitydm.exe stage/
-            cp win7/target/$arch-pc-windows-gnu/release/velocitydm-nmh.exe stage/
+            cp win7-target/$arch-pc-windows-gnu/release/velocitydm.exe stage/
+            cp win7-target/$arch-pc-windows-gnu/release/velocitydm-nmh.exe stage/
             cp win7/README.md stage/
             cp LICENSE stage/
             ( cd stage && zip -q "../velocitydm-$V-windows7-$s.zip" . )
