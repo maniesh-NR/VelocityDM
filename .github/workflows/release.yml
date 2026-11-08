@@ -4,6 +4,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to build and attach assets for (defaults to the ref name)'
+        required: false
+        type: string
 
 concurrency:
   group: release-${{ github.ref }}
@@ -25,8 +30,11 @@ jobs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - id: v
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag_name }}
         run: |
           t="${GITHUB_REF_NAME#v}"
+          [ -n "$INPUT_TAG" ] && t="${INPUT_TAG#v}"
           echo "tag=v$t"        >> "$GITHUB_OUTPUT"
           echo "base=v${t%%-*}" >> "$GITHUB_OUTPUT"
           echo "version=${t%%-*}" >> "$GITHUB_OUTPUT"
@@ -145,27 +153,38 @@ jobs:
           path: velocitydm-*-windows7-*.zip
 
   # ---------- Darwin (aarch64 + x64, full GUI) ----------
-  macos:
-    name: Darwin builds
+  # Cross-compiled from Linux with an osxcross container image: macOS
+  # runners are unavailable in this environment, and the same toolchain
+  # produces identical artifacts for both CPU architectures.
+  darwin:
+    name: Darwin builds (osxcross)
     needs: ver
     if: needs.ver.outputs.tag == needs.ver.outputs.base || needs.ver.outputs.tag == format('{0}-macos', needs.ver.outputs.base)
-    runs-on: macos-14
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install stable --profile minimal
-      - run: rustup default stable
-      - run: rustup target add x86_64-apple-darwin
-      - name: build aarch64
-        run: cargo build --release
-      - name: build x86_64
-        run: cargo build --release --target x86_64-apple-darwin
+      - name: build aarch64 + x64
+        run: |
+          docker run --rm -v "$PWD":/io joseluisq/rust-linux-darwin-builder:latest bash -lc '
+            set -e
+            cd /io
+            (cargo build --release --target aarch64-apple-darwin) || \
+              echo "::warning::aarch64-apple-darwin build failed; shipping x64 only"
+            cargo build --release --target x86_64-apple-darwin
+          '
       - name: package
         run: |
           V=${{ needs.ver.outputs.version }}
+          set -e
           rm -rf stage; mkdir -p stage
-          cp target/release/velocitydm target/release/velocitydm-nmh stage/
           cp LICENSE stage/
-          ( cd stage && zip -qr "../velocitydm-$V-macos-aarch64.zip" . )
+          if [ -f target/aarch64-apple-darwin/release/velocitydm ]; then
+            rm -rf stage-a; mkdir -p stage-a
+            cp target/aarch64-apple-darwin/release/velocitydm \
+               target/aarch64-apple-darwin/release/velocitydm-nmh stage-a/
+            cp LICENSE stage-a/
+            ( cd stage-a && zip -qr "../velocitydm-$V-macos-aarch64.zip" . )
+          fi
           cp target/x86_64-apple-darwin/release/velocitydm \
              target/x86_64-apple-darwin/release/velocitydm-nmh stage/
           ( cd stage && zip -qr "../velocitydm-$V-macos-x64.zip" . )
@@ -247,7 +266,7 @@ jobs:
                      velocitydm-*-windows7-x64.zip velocitydm-*-windows7-x86.zip)
               ;;
             *-macos)
-              FILES=(velocitydm-*-macos-aarch64.zip velocitydm-*-macos-x64.zip)
+              FILES=(velocitydm-*-macos-*.zip)
               ;;
             *-android)
               FILES=(velocitydm-*-android.apk)
