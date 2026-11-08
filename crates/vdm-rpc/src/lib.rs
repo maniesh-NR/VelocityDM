@@ -49,6 +49,10 @@ impl RpcServer {
             }
             match listener.accept() {
                 Ok((stream, _)) => {
+                    // macOS/BSD/Windows: accepted sockets inherit the
+                    // listener's non-blocking flag (Linux does not); the RPC
+                    // connection loop is blocking I/O.
+                    let _ = stream.set_nonblocking(false);
                     let engine = engine_c.clone();
                     let stop = stop_c.clone();
                     std::thread::spawn(move || {

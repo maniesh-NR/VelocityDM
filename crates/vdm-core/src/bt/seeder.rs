@@ -128,6 +128,11 @@ fn serve_conn(
     meta: Arc<Metainfo>,
     files: Vec<Arc<Mutex<std::fs::File>>>,
 ) -> Result<()> {
+    // The listener is non-blocking for the accept poll; on macOS, BSD and
+    // Windows an accepted socket INHERITS that flag (Linux does not), which
+    // would turn every subsequent read/write into WouldBlock. Force the
+    // per-connection stream back to blocking mode.
+    let _ = stream.set_nonblocking(false);
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));

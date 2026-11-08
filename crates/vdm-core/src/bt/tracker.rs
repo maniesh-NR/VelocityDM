@@ -202,6 +202,10 @@ impl TrackerServer {
                 }
                 match listener.accept() {
                     Ok((stream, _)) => {
+                        // macOS/BSD/Windows: accepted sockets inherit the
+                        // listener's non-blocking flag (Linux does not);
+                        // per-connection handling is blocking I/O.
+                        let _ = stream.set_nonblocking(false);
                         let reg = reg.clone();
                         std::thread::spawn(move || handle_tracker_conn(stream, reg));
                     }
