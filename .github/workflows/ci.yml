@@ -61,8 +61,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install stable --profile minimal
-      - run: rustup default stable
+      # Pinned: newest stable (1.100+) breaks objc2 0.4.1 (eframe 0.27 macOS
+      # stack, via icrate 0.0.4). 1.99.1 is the proven-green toolchain for
+      # this dependency set; the Darwin release builds use their own pinned
+      # rustc in the osxcross container for the same reason.
+      - run: rustup toolchain install 1.99.1 --profile minimal
+      - run: rustup default 1.99.1
       - run: cargo test --workspace
 
   win7-payload:
