@@ -130,3 +130,22 @@ session reads this file first, then `ROADMAP.md`.
 - Docs brought to truth: RPC.md / EXTENSIONS.md / docs README describe
   the ACTUAL single-address protocol; bench.sh runs against the current
   CLI; TEST-REPORT regenerated (127 + 76 + 24 + 27).
+
+## 2026-11-13 (session 3, close) — S1R published
+
+- S1R gate closed (0002b: five-role panel, rounds 2+3, 5/5 PASS, zero
+  outstanding objections; the two post-consensus tightening touches are
+  documented in the record).
+- Publish executed: main fast-forwarded to b27549a; all six tags re-cut
+  (annotated, one-per-command force-pushes) and verified on the remote;
+  7 workflows green (1 CI + 6 Release); all six releases carry assets
+  with timestamps postdating the push (16:49-16:54 UTC) — the broken
+  daemon.shutdown binaries are clobbered. Branch protection re-verified:
+  exactly the 8 byte-exact required checks, strict/enforce_admins false,
+  force-pushes and deletions disallowed.
+- Topics API quirk: a repo cannot have more than 20 topics (422
+  otherwise). Applied exactly 20.
+- Cron 514177 no longer exists on this session's cron list (the retry
+  cycle ended) — nothing to delete.
+- Local tags note: the working repo's tags now point at the new tag
+  objects (re-cut by the publisher at runtime), matching the remote.
