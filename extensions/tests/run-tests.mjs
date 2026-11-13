@@ -13,6 +13,7 @@ const LINKS = require('../shared/links.js');
 const FILTERS = require('../shared/filters.js');
 const MSG = require('../shared/messaging.js');
 const STATE = require('../shared/state.js');
+const MD3 = require('../shared/md3.js');
 
 let passed = 0;
 function ok(name, cond) {
@@ -132,6 +133,35 @@ console.log('state');
   ok('clear', store.clear().length === 0);
   ok('seenAt set', typeof store.push({ url: 'z' })[0].seenAt === 'number');
 }
+
+console.log('md3 (Material You)');
+{
+  const light = MD3.schemeFromSeed('#4156A4', false);
+  const dark = MD3.schemeFromSeed('#4156A4', true);
+  const hexOf = (v) => /^#[0-9a-fA-F]{6}$/.test(v);
+  ok('all roles are hex colors', Object.values(light).every(hexOf) && Object.values(dark).every(hexOf));
+  ok('light and dark differ', light.primary !== dark.primary && light.surface !== dark.surface);
+  ok('light surface is light, dark surface is dark',
+    parseInt(light.surface.slice(1, 3), 16) > 200 && parseInt(dark.surface.slice(1, 3), 16) < 40);
+  ok('role set complete', ['primary', 'onPrimary', 'primaryContainer', 'onPrimaryContainer',
+    'secondary', 'tertiary', 'error', 'success', 'surface', 'onSurface', 'surfaceVariant',
+    'onSurfaceVariant', 'surfaceContainer', 'outline', 'outlineVariant', 'background']
+    .every((k) => k in light));
+  const other = MD3.schemeFromSeed('#006A6A', true);
+  ok('scheme is seed-sensitive', other.primary !== dark.primary);
+  const again = MD3.schemeFromSeed('#4156A4', true);
+  ok('scheme is deterministic', again.primary === dark.primary);
+  ok('parseHex accepts #RRGGBB and RRGGBB',
+    JSON.stringify(MD3.parseHex('#4156a4')) === '[65,86,164]' && JSON.stringify(MD3.parseHex('4156A4')) === '[65,86,164]');
+  ok('parseHex rejects junk', MD3.parseHex('#4156A') === null && MD3.parseHex('zzzzzz') === null && MD3.parseHex('') === null);
+  ok('presets all parse', MD3.PRESETS.every(([n, h]) => MD3.parseHex(h) !== null));
+  ok('tonal palette: tone 100 is white-ish, tone 0 is black-ish',
+    MD3.tonal(258, 48, 100).slice(1, 3) === 'ff' && MD3.tonal(258, 48, 0).slice(1, 3) === '00');
+  ok('cssVarName mapping', MD3.cssVarName('primaryContainer') === '--md-primary-container');
+  ok('tonal palette stays in gamut at high chroma',
+    /^#[0-9a-fA-F]{6}$/.test(MD3.tonal(258, 120, 40)) && /^#[0-9a-fA-F]{6}$/.test(MD3.tonal(60, 120, 80)));
+}
+
 
 console.log('\n' + passed + ' assertions passed');
 if (process.exitCode) console.error('FAILURES PRESENT');

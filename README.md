@@ -84,6 +84,14 @@ scripts/            e2e.sh (integration smoke), testserver.py, builders
 - [docs/CLEAN_ROOM.md](docs/CLEAN_ROOM.md) — clean-room implementation notes
 - [docs/BUILDING.md](docs/BUILDING.md) — building, testing, cross-compiling, packaging
 
+## Agent harness
+
+[harness/](harness/) is the agent infrastructure: durable project memory,
+the staged roadmap with **adversarial consensus gates** (independent
+RED/BLUE/AUDITOR agents must reach consensus before any stage proceeds),
+and the sandbox-backup workflow — backups are event-driven and always the
+last step of an execution plan, never a fixed time interval.
+
 ## License
 
 GPL-3.0-or-later. No DRM circumvention code; media downloads use the

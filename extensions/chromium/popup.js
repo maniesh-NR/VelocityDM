@@ -1,14 +1,15 @@
 /**
  * VelocityDM popup: sniffed videos, quick add, live download list.
+ * Material You dynamic color is initialized before the first render.
  */
 /* global chrome, document */
 
 (function () {
   'use strict';
 
-  const DET = window.VDMDetector;
   const MSG = window.VDMMessaging;
   const PAT = window.VDMPatterns;
+  const MD3 = window.VDMMd3;
   let grabbedGroups = null;
 
   function el(id) { return document.getElementById(id); }
@@ -18,6 +19,48 @@
       chrome.runtime.sendMessage(msg, resolve);
     });
   }
+
+  // ------------------------------------------------------------------ theme
+  const MODE_LABELS = { system: 'auto', light: 'light', dark: 'dark' };
+  const MODE_CYCLE = { system: 'light', light: 'dark', dark: 'system' };
+
+  function markSelectedSwatch(seed) {
+    document.querySelectorAll('.swatch').forEach(function (b) {
+      b.classList.toggle('sel', (b.dataset.seed || '').toLowerCase() === String(seed).toLowerCase());
+    });
+  }
+
+  function setModeLabel(mode) {
+    const btn = el('btn-mode');
+    if (btn) btn.textContent = MODE_LABELS[mode] || 'auto';
+  }
+
+  function initThemeControls() {
+    document.querySelectorAll('.swatch').forEach(function (b) {
+      b.addEventListener('click', function () {
+        MD3.updateTheme({ seed: b.dataset.seed }).then(function (t) {
+          markSelectedSwatch(t.seed);
+        });
+      });
+    });
+    const modeBtn = el('btn-mode');
+    if (modeBtn) {
+      modeBtn.addEventListener('click', function () {
+        MD3.getTheme().then(function (cur) {
+          const next = MODE_CYCLE[cur.mode] || 'system';
+          MD3.updateTheme({ mode: next }).then(function (t) {
+            setModeLabel(t.mode);
+          });
+        });
+      });
+    }
+  }
+
+  MD3.initTheme().then(function (t) {
+    markSelectedSwatch(t.seed);
+    setModeLabel(t.mode);
+  });
+  initThemeControls();
 
   // ------------------------------------------------------------------ videos
   function renderVideos(videos) {

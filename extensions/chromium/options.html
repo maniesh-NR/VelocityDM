@@ -4,73 +4,95 @@
 <meta charset="utf-8">
 <title>VelocityDM Options</title>
 <style>
-  /* Material You (MD3) tokens — light + dark follow the system */
+  /* Material You (MD3) dynamic color: --md-* custom properties are set at
+     startup by shared/md3.js from the user's seed color; these are the
+     baseline dark fallbacks for first paint. */
   :root {
-    --md-primary: #6750a4; --md-on-primary: #fff;
-    --md-primary-container: #eaddff; --md-on-primary-container: #21005d;
-    --md-secondary-container: #e8def8; --md-on-secondary-container: #1d192b;
-    --md-surface: #fef7ff; --md-surface-container-low: #f7f2fa;
-    --md-surface-container: #f3edf7; --md-surface-container-high: #ece6f0;
-    --md-surface-container-highest: #e6e0e9;
-    --md-on-surface: #1d1b20; --md-on-surface-variant: #49454f;
-    --md-outline: #79747e; --md-outline-variant: #cac4d0;
-    --md-tertiary-container: #ffd8e4; --md-on-tertiary-container: #31111d;
-    --md-error: #b3261e; --md-error-container: #f9decc; --md-on-error-container: #410e0b;
+    --md-primary: #BAC3FF; --md-on-primary: #08318F;
+    --md-primary-container: #294777; --md-on-primary-container: #DEE0FF;
+    --md-secondary: #C4C4DD; --md-on-secondary: #26324A;
+    --md-tertiary: #E6BAD7; --md-tertiary-container: #5D3C55;
+    --md-error: #F2B8B5; --md-on-error: #601410; --md-error-container: #8C1D18;
+    --md-success: #7FD89E; --md-on-success: #0B3D1E;
+    --md-surface: #121318; --md-on-surface: #E3E1E9;
+    --md-on-surface-variant: #C7C5D0; --md-surface-variant: #46464F;
+    --md-surface-container: #1E1F25; --md-surface-container-high: #292A2F;
+    --md-surface-container-highest: #33343A;
+    --md-outline: #90909A; --md-outline-variant: #46464F;
+    --md-background: #121318;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --md-primary: #d0bcff; --md-on-primary: #381e72;
-      --md-primary-container: #4f378b; --md-on-primary-container: #eaddff;
-      --md-secondary-container: #4a4458; --md-on-secondary-container: #e8def8;
-      --md-surface: #141218; --md-surface-container-low: #1d1b20;
-      --md-surface-container: #211f26; --md-surface-container-high: #2b2930;
-      --md-surface-container-highest: #36343b;
-      --md-on-surface: #e6e0e9; --md-on-surface-variant: #cac4d0;
-      --md-outline: #938f99; --md-outline-variant: #49454f;
-      --md-tertiary-container: #633b48; --md-on-tertiary-container: #ffd8e4;
-      --md-error: #f2b8b5; --md-error-container: #8c1d18; --md-on-error-container: #f9decc;
-    }
-  }
+  * { box-sizing: border-box; }
   body {
-    margin: 0 auto; padding: 24px; max-width: 640px;
-    font: 14px/1.5 Roboto, system-ui, sans-serif;
+    margin: 0; padding: 24px; font: 14px/1.5 system-ui, sans-serif;
     background: var(--md-surface); color: var(--md-on-surface);
   }
-  h1 { color: var(--md-on-surface); font-size: 22px; font-weight: 500; margin: 4px 0 20px; }
-  /* MD3 outlined card */
+  h1 { color: var(--md-primary); font-size: 20px; }
   fieldset {
-    border: 1px solid var(--md-outline-variant); border-radius: 12px; margin-bottom: 16px;
+    border: 1px solid var(--md-outline); border-radius: 12px; margin-bottom: 16px;
   }
-  legend { color: var(--md-on-surface-variant); padding: 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; }
-  label { display: block; margin: 10px 0; }
+  legend { color: var(--md-on-surface-variant); padding: 0 8px; font-size: 12px; text-transform: uppercase; }
+  label { display: block; margin: 8px 0; }
   .cats label { display: inline-block; margin-right: 14px; }
-  /* MD3 filled text field */
   textarea, input[type=text], input[type=number] {
-    background: var(--md-surface-container-high); border: 0; border-bottom: 1px solid var(--md-outline-variant);
-    color: var(--md-on-surface); border-radius: 8px 8px 0 0;
-    padding: 8px 12px; width: 100%; font: inherit; outline: none;
+    background: var(--md-surface-container); border: 1px solid var(--md-outline);
+    color: var(--md-on-surface); border-radius: 8px; padding: 6px 10px; width: 100%; font: inherit;
   }
-  textarea, input:focus { border-bottom-color: var(--md-primary); }
-  textarea:focus, input:focus { border-bottom: 2px solid var(--md-primary); background: var(--md-surface-container-highest); }
-  textarea { min-height: 70px; resize: vertical; }
-  /* MD3 buttons */
+  textarea { min-height: 70px; }
   button {
-    background: var(--md-primary); color: var(--md-on-primary); border: 0; border-radius: 9999px;
-    padding: 9px 24px; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer;
+    background: var(--md-primary); color: var(--md-on-primary); border: 0; border-radius: 18px;
+    padding: 8px 22px; font-size: 14px; cursor: pointer;
   }
-  button:hover { filter: brightness(1.08); }
-  button.ghost { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
-  .status {
-    margin-left: 12px; font-size: 13px; padding: 3px 12px; border-radius: 8px;
-    background: var(--md-tertiary-container); color: var(--md-on-tertiary-container);
+  button.ghost {
+    background: transparent; color: var(--md-on-surface-variant);
+    border: 1px solid var(--md-outline);
   }
-  .status:empty { background: transparent; padding: 0; margin: 0; }
-  .status.err { background: var(--md-error-container); color: var(--md-on-error-container); }
+  .status { margin-left: 12px; font-size: 13px; }
+  .status.ok { color: var(--md-success); }
+  .status.err { color: var(--md-error); }
   .hint { color: var(--md-on-surface-variant); font-size: 12px; }
+  /* Material You theme section */
+  .swatches { display: flex; gap: 10px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  .swatch {
+    width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent;
+    padding: 0; cursor: pointer;
+  }
+  .swatch.sel { border-color: var(--md-on-surface); }
+  .modes { display: flex; gap: 14px; align-items: center; }
+  .modes label { display: inline-block; margin: 0; }
+  .seed-row { display: flex; gap: 8px; align-items: center; }
+  .seed-row input[type=text] { width: 110px; }
 </style>
 </head>
 <body>
 <h1>VelocityDM Options</h1>
+
+<fieldset>
+  <legend>Theme &mdash; Material You</legend>
+  <p class="hint">
+    Pick a source color; the whole UI derives its palette from it
+    (light and dark), the same dynamic-color model the desktop and Android
+    apps use.
+  </p>
+  <div class="swatches" id="swatches">
+    <button class="swatch" data-seed="#4156A4" style="background:#4156A4" aria-label="brand seed"></button>
+    <button class="swatch" data-seed="#6750A4" style="background:#6750A4" aria-label="violet seed"></button>
+    <button class="swatch" data-seed="#00639B" style="background:#00639B" aria-label="ocean seed"></button>
+    <button class="swatch" data-seed="#006A6A" style="background:#006A6A" aria-label="teal seed"></button>
+    <button class="swatch" data-seed="#386A33" style="background:#386A33" aria-label="forest seed"></button>
+    <button class="swatch" data-seed="#8F4C00" style="background:#8F4C00" aria-label="sunset seed"></button>
+    <button class="swatch" data-seed="#984061" style="background:#984061" aria-label="rose seed"></button>
+    <button class="swatch" data-seed="#56606F" style="background:#56606F" aria-label="slate seed"></button>
+    <div class="seed-row">
+      <input type="text" id="custom-seed" placeholder="#RRGGBB" spellcheck="false">
+      <button class="ghost" id="apply-seed">Use color</button>
+    </div>
+  </div>
+  <div class="modes" id="modes">
+    <label><input type="radio" name="mode" value="system" checked> Follow browser</label>
+    <label><input type="radio" name="mode" value="light"> Light</label>
+    <label><input type="radio" name="mode" value="dark"> Dark</label>
+  </div>
+</fieldset>
 
 <fieldset>
   <legend>Take over browser downloads</legend>
@@ -113,6 +135,7 @@
   <span class="status" id="save-status"></span>
 </p>
 
+<script src="shared/md3.js"></script>
 <script src="shared/filters.js"></script>
 <script src="options.js"></script>
 </body>

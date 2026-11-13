@@ -1,0 +1,38 @@
+name: Sandbox backup
+
+# On-demand repository snapshot. Intentionally NOT scheduled: per
+# harness/WORKFLOW.md, backups are event-driven (the last step of every
+# execution plan), never at a fixed time interval. This workflow exists for
+# manual/ad-hoc snapshots from the GitHub UI ("Run workflow" button).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    name: Repository snapshot artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: archive repository state
+        run: |
+          STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "snapshot: $STAMP" > SNAPSHOT.txt
+          echo "head: $GITHUB_SHA" >> SNAPSHOT.txt
+          echo "default branch head: $(git rev-parse origin/main)" >> SNAPSHOT.txt
+          echo "tags: $(git tag | tr '\n' ' ')" >> SNAPSHOT.txt
+          mkdir -p artifact
+          tar czf "artifact/velocitydm-src-$STAMP.tar.gz" \
+            --exclude=.git .
+          cp SNAPSHOT.txt artifact/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-backup-${{ github.run_number }}
+          retention-days: 90
+          path: |
+            artifact/*

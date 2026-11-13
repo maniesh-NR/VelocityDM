@@ -1,5 +1,5 @@
 /**
- * VelocityDM options page logic.
+ * VelocityDM options page logic: intercept settings + Material You theme.
  */
 /* global chrome, document */
 
@@ -7,6 +7,7 @@
   'use strict';
 
   const FILTERS = window.VDMFilters;
+  const MD3 = window.VDMMd3;
 
   function el(id) { return document.getElementById(id); }
 
@@ -15,6 +16,51 @@
       chrome.runtime.sendMessage(msg, resolve);
     });
   }
+
+  // ------------------------------------------------------------------ theme
+  function markSelectedSwatch(seed) {
+    document.querySelectorAll('.swatch').forEach(function (b) {
+      b.classList.toggle('sel', (b.dataset.seed || '').toLowerCase() === String(seed).toLowerCase());
+    });
+  }
+
+  function markMode(mode) {
+    document.querySelectorAll('#modes input[name=mode]').forEach(function (r) {
+      r.checked = r.value === mode;
+    });
+  }
+
+  MD3.initTheme().then(function (t) {
+    markSelectedSwatch(t.seed);
+    markMode(t.mode);
+    el('custom-seed').value = t.seed;
+  });
+
+  document.querySelectorAll('.swatch').forEach(function (b) {
+    b.addEventListener('click', function () {
+      MD3.updateTheme({ seed: b.dataset.seed }).then(function (t) {
+        markSelectedSwatch(t.seed);
+        el('custom-seed').value = t.seed;
+      });
+    });
+  });
+
+  el('apply-seed').addEventListener('click', function () {
+    const value = el('custom-seed').value.trim();
+    if (MD3.parseHex(value)) {
+      MD3.updateTheme({ seed: value }).then(function (t) {
+        markSelectedSwatch(t.seed);
+      });
+    } else {
+      el('custom-seed').value = '';
+    }
+  });
+
+  document.querySelectorAll('#modes input[name=mode]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      if (r.checked) MD3.updateTheme({ mode: r.value });
+    });
+  });
 
   function toForm(settings) {
     const cats = el('cats').querySelectorAll('input[type=checkbox]');

@@ -4,105 +4,95 @@
 <meta charset="utf-8">
 <title>VelocityDM</title>
 <style>
-  /* Material You (MD3) tokens — light + dark follow the system */
+  /* Material You (MD3) dynamic color: --md-* custom properties are set at
+     startup by shared/md3.js from the user's seed color; these are the
+     baseline dark fallbacks for first paint. */
   :root {
-    --md-primary: #6750a4; --md-on-primary: #fff;
-    --md-primary-container: #eaddff; --md-on-primary-container: #21005d;
-    --md-secondary-container: #e8def8; --md-on-secondary-container: #1d192b;
-    --md-tertiary-container: #ffd8e4; --md-on-tertiary-container: #31111d;
-    --md-surface: #fef7ff; --md-surface-container-low: #f7f2fa;
-    --md-surface-container: #f3edf7; --md-surface-container-high: #ece6f0;
-    --md-surface-container-highest: #e6e0e9;
-    --md-on-surface: #1d1b20; --md-on-surface-variant: #49454f;
-    --md-outline: #79747e; --md-outline-variant: #cac4d0;
-    --md-error: #b3261e; --md-error-container: #f9decc; --md-on-error-container: #410e0b;
-    --md-scrim: rgba(0,0,0,.35);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --md-primary: #d0bcff; --md-on-primary: #381e72;
-      --md-primary-container: #4f378b; --md-on-primary-container: #eaddff;
-      --md-secondary-container: #4a4458; --md-on-secondary-container: #e8def8;
-      --md-tertiary-container: #633b48; --md-on-tertiary-container: #ffd8e4;
-      --md-surface: #141218; --md-surface-container-low: #1d1b20;
-      --md-surface-container: #211f26; --md-surface-container-high: #2b2930;
-      --md-surface-container-highest: #36343b;
-      --md-on-surface: #e6e0e9; --md-on-surface-variant: #cac4d0;
-      --md-outline: #938f99; --md-outline-variant: #49454f;
-      --md-error: #f2b8b5; --md-error-container: #8c1d18; --md-on-error-container: #f9decc;
-      --md-scrim: rgba(0,0,0,.55);
-    }
+    --md-primary: #BAC3FF; --md-on-primary: #08318F;
+    --md-primary-container: #294777; --md-on-primary-container: #DEE0FF;
+    --md-secondary: #C4C4DD; --md-on-secondary: #26324A;
+    --md-secondary-container: #3C4159; --md-on-secondary-container: #E0E0F9;
+    --md-tertiary: #E6BAD7; --md-tertiary-container: #5D3C55;
+    --md-error: #F2B8B5; --md-on-error: #601410; --md-error-container: #8C1D18;
+    --md-success: #7FD89E; --md-on-success: #0B3D1E;
+    --md-surface: #121318; --md-on-surface: #E3E1E9;
+    --md-on-surface-variant: #C7C5D0; --md-surface-variant: #46464F;
+    --md-surface-container: #1E1F25; --md-surface-container-high: #292A2F;
+    --md-surface-container-highest: #33343A;
+    --md-outline: #90909A; --md-outline-variant: #46464F;
+    --md-background: #121318;
   }
   * { box-sizing: border-box; }
   body {
     width: 380px; max-height: 560px; overflow-y: auto; margin: 0;
-    font: 13px/1.4 Roboto, system-ui, sans-serif;
+    font: 13px/1.4 system-ui, sans-serif;
     background: var(--md-surface); color: var(--md-on-surface);
   }
   header {
-    display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
     background: var(--md-surface-container); position: sticky; top: 0; z-index: 2;
-    border-radius: 0 0 16px 16px;
   }
-  header h1 { font-size: 15px; margin: 0; color: var(--md-on-surface); font-weight: 500; letter-spacing: .1px; }
+  header h1 { font-size: 15px; margin: 0; color: var(--md-primary); font-weight: 600; }
   header .actions { margin-left: auto; display: flex; gap: 6px; }
-  /* MD3 buttons: filled + tonal + text */
-  button {
-    border: 0; border-radius: 9999px; padding: 6px 14px; font-size: 12px; font-weight: 500;
-    font-family: inherit; cursor: pointer; transition: filter .15s, background .15s;
+  header button, section button {
+    background: var(--md-primary); color: var(--md-on-primary); border: 0; border-radius: 16px;
+    padding: 5px 12px; font-size: 12px; cursor: pointer;
   }
-  button.filled, section button, header button {
-    background: var(--md-primary); color: var(--md-on-primary);
+  header button.ghost, section button.ghost {
+    background: transparent; color: var(--md-on-surface-variant);
+    border: 1px solid var(--md-outline);
   }
-  button.filled:hover, section button:hover, header button:hover { filter: brightness(1.08); }
-  button.ghost, button.tonal {
-    background: var(--md-secondary-container); color: var(--md-on-secondary-container);
+  /* Material You seed picker */
+  .theme-row {
+    display: flex; align-items: center; gap: 5px; padding: 6px 12px;
+    background: var(--md-surface-container);
+    border-bottom: 1px solid var(--md-outline-variant);
   }
-  button.text { background: transparent; color: var(--md-primary); }
-  button:disabled { opacity: .38; cursor: default; }
-  section { padding: 8px 16px; }
+  .theme-row .label { font-size: 10px; color: var(--md-on-surface-variant); margin-right: 2px; }
+  .swatch {
+    width: 16px; height: 16px; border-radius: 50%; border: 2px solid transparent;
+    padding: 0; cursor: pointer; flex: none;
+  }
+  .swatch.sel { border-color: var(--md-on-surface); }
+  .theme-row .spacer { flex: 1; }
+  .theme-row .mode {
+    background: transparent; color: var(--md-on-surface-variant); border: 1px solid var(--md-outline);
+    border-radius: 12px; font-size: 10px; padding: 3px 8px; cursor: pointer;
+  }
+  section { padding: 8px 12px; }
   h2 {
-    font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
-    color: var(--md-on-surface-variant); margin: 8px 0 6px; font-weight: 600;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--md-on-surface-variant); margin: 6px 0; font-weight: 600;
   }
-  /* MD3 card */
   .item {
-    background: var(--md-surface-container-low); border-radius: 12px; padding: 10px 12px; margin-bottom: 6px;
+    background: var(--md-surface-container); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px;
     display: flex; flex-direction: column; gap: 4px;
   }
   .item .row1 { display: flex; align-items: center; gap: 6px; }
   .item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item .quality { color: var(--md-primary); font-size: 11px; font-weight: 500; }
+  .item .quality { color: var(--md-primary); font-size: 11px; }
   .item .kind {
-    color: var(--md-on-secondary-container); background: var(--md-secondary-container);
-    border-radius: 8px; padding: 1px 8px; font-size: 10px;
+    color: var(--md-on-surface-variant); font-size: 10px;
+    border: 1px solid var(--md-outline); border-radius: 8px; padding: 1px 6px;
   }
   .item .url { color: var(--md-on-surface-variant); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item button { align-self: flex-start; }
   .empty { color: var(--md-on-surface-variant); font-size: 12px; padding: 6px 2px; }
-  /* MD3 assist chips for download state */
-  .downloads .state {
-    font-size: 10px; padding: 2px 10px; border-radius: 8px; font-weight: 500;
-    background: var(--md-surface-container-high); color: var(--md-on-surface-variant);
-  }
-  .state.downloading { background: var(--md-primary-container); color: var(--md-on-primary-container); }
-  .state.completed { background: var(--md-tertiary-container); color: var(--md-on-tertiary-container); }
-  .state.paused, .state.queued { background: transparent; color: var(--md-on-surface-variant); border: 1px solid var(--md-outline); }
-  .state.failed { background: var(--md-error-container); color: var(--md-on-error-container); }
-  /* MD3 linear progress */
-  .bar { height: 4px; background: var(--md-surface-container-highest); border-radius: 2px; overflow: hidden; }
-  .bar > div { height: 100%; background: var(--md-primary); border-radius: 2px; }
-  .addrow { display: flex; gap: 8px; }
-  /* MD3 filled text field */
+  .downloads .state { font-size: 10px; padding: 1px 8px; border-radius: 8px; }
+  .state.downloading { color: var(--md-primary); border: 1px solid var(--md-primary); }
+  .state.completed { color: var(--md-success); border: 1px solid var(--md-success); }
+  .state.paused, .state.queued { color: var(--md-on-surface-variant); border: 1px solid var(--md-outline); }
+  .state.failed { color: var(--md-error); border: 1px solid var(--md-error); }
+  .bar { height: 4px; background: var(--md-surface-variant); border-radius: 2px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--md-primary); }
+  .addrow { display: flex; gap: 6px; }
   .addrow input {
-    flex: 1; background: var(--md-surface-container-high); border: 0; border-bottom: 1px solid var(--md-outline-variant);
-    color: var(--md-on-surface); border-radius: 8px 8px 0 0; padding: 8px 14px; font-size: 12px; font-family: inherit;
-    outline: none;
+    flex: 1; background: var(--md-surface-container); border: 1px solid var(--md-outline);
+    color: var(--md-on-surface); border-radius: 16px; padding: 6px 12px; font-size: 12px;
   }
-  .addrow input:focus { border-bottom: 2px solid var(--md-primary); background: var(--md-surface-container-highest); }
   .grab { text-align: center; }
   .grab button { width: 100%; }
-  footer { padding: 4px 16px 12px; color: var(--md-on-surface-variant); font-size: 10px; text-align: center; }
+  footer { padding: 4px 12px 10px; color: var(--md-on-surface-variant); font-size: 10px; text-align: center; }
   footer a { color: var(--md-primary); text-decoration: none; }
 </style>
 </head>
@@ -114,6 +104,20 @@
     <button class="ghost" id="btn-options">Settings</button>
   </div>
 </header>
+
+<div class="theme-row" id="theme-row" title="Material You dynamic color">
+  <span class="label">Material You</span>
+  <button class="swatch" data-seed="#4156A4" style="background:#4156A4" aria-label="brand seed"></button>
+  <button class="swatch" data-seed="#6750A4" style="background:#6750A4" aria-label="violet seed"></button>
+  <button class="swatch" data-seed="#00639B" style="background:#00639B" aria-label="ocean seed"></button>
+  <button class="swatch" data-seed="#006A6A" style="background:#006A6A" aria-label="teal seed"></button>
+  <button class="swatch" data-seed="#386A33" style="background:#386A33" aria-label="forest seed"></button>
+  <button class="swatch" data-seed="#8F4C00" style="background:#8F4C00" aria-label="sunset seed"></button>
+  <button class="swatch" data-seed="#984061" style="background:#984061" aria-label="rose seed"></button>
+  <button class="swatch" data-seed="#56606F" style="background:#56606F" aria-label="slate seed"></button>
+  <span class="spacer"></span>
+  <button class="mode ghost" id="btn-mode">auto</button>
+</div>
 
 <section class="addrow">
   <input id="add-url" type="text" placeholder="Paste URL, magnet: or batch pattern" spellcheck="false">
@@ -136,6 +140,7 @@
 
 <footer> VelocityDM <span id="version"></span> &middot; <a href="#" id="open-options">options</a> &middot; <a href="#" id="open-gui">open app</a> </footer>
 
+<script src="shared/md3.js"></script>
 <script src="shared/detector.js"></script>
 <script src="shared/patterns.js"></script>
 <script src="shared/links.js"></script>
