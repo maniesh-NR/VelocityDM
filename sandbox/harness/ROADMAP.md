@@ -7,9 +7,10 @@ Each stage transition is gated by the adversarial consensus protocol
 | # | Stage | Status | Gate record |
 | --- | --- | --- | --- |
 | S0 | Engine + repository rebuild (clean-room IDM-style core, CI workflows, packaging, extension trees) | DONE (retroactive) | — |
-| S1 | Material You across all platforms + Android rewire + agent harness | ACTIVE | `ASSESSMENTS/0001-material-you-and-1.0.0-release.md` |
-| S2 | Publish v1.0.0: push main + 6 tags, releases with assets, repo config, roadmap issues | PENDING (gate = S1 consensus) | — |
-| S3 | Hardening: branch protection (8 required checks), verify all releases carry assets, CI green | PENDING (gate = S2 outputs verified) | — |
+| S1 | Material You across all platforms + Android rewire + agent harness | DONE (gate 0001b) | `ASSESSMENTS/0001-material-you-and-1.0.0-release.md` |
+| S2 | Publish v1.0.0: push main + 6 tags, releases with assets, repo config, roadmap issues | DONE (2026-11-13) | `harness/BACKUPS.md` + MEMORY.md entry |
+| S3 | Hardening: branch protection (8 required checks), verify all releases carry assets, CI green | DONE (2026-11-13) | MEMORY.md entry |
+| S1R | Post-loss reconciliation + security hardening + doc truth + republish | DONE (2026-11-13; published at b27549a) | `ASSESSMENTS/0002b-round2-consensus.md` |
 | S4 | DHT (BEP-5) so trackerless magnets resolve | PENDING | — |
 | S5 | UDP trackers (BEP-15) | PENDING | — |
 | S6 | DASH downloader (.mpd manifests) | PENDING | — |

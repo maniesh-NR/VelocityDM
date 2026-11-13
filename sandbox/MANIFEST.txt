@@ -1,11 +1,15 @@
-backup: 2026-11-13T11:04:56Z
-repo HEAD: ab355a8c4222c01f0ded56494b86aaa46c5bde23
+backup: 2026-11-13T16:57:44Z
+repo HEAD: 18f1e148442e6889c99050046bc99605afaf829c
 repo branch: main
 tags: v1.0.0 v1.0.0-android v1.0.0-extensions v1.0.0-linux v1.0.0-macos v1.0.0-windows 
 dirty files: 0
 
 release-assets (sha256):
 8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef  LICENSE
+79a188d25ff3067f0bd8732736112fe05a5b8fa7262be5870c1eb5b1d705f48d  SHA256SUMS-v1.0.0-extensions.txt
+d33e558dc7c2ee2f6f6b4fb9e5e89b31af70c13a4dc2e4f1cd6795f97cd29e8c  SHA256SUMS-v1.0.0-linux.txt
+3644d2f2bfbfeaff068a21214586e7ab28f53487cdd40b7a01ff09ccefa0a06c  SHA256SUMS-v1.0.0-windows.txt
+e3b42f4d8c2805770e0df6c685abb3d571c79d210d4d97892319d129b73d8edd  SHA256SUMS-v1.0.0.txt
 4756ded510a3091a37aee48ca84ed362dd1e89be916a35a81c3499a84847adc2  chromium-1.0.0.zip
 35b913c5affa03e0673c02afb390f3f117dec890ff0606062332300e54734de1  edge-1.0.0.zip
 72ed12d659b76abac537bc1f39836ee6cd115357768c50e85af06c974bfa6a44  firefox-1.0.0.zip

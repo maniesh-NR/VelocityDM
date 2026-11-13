@@ -68,9 +68,10 @@ fi
 } > sandbox/MANIFEST.txt
 
 # Record the run in the repo backup log (reaches main with the next commit).
-BACKUP_SHA="pending"
-log_entry() {
-  printf '| %s | %s | %s | %s | %s |\n' "$STAMP" "$TRIGGER" "$BRANCH" "$BACKUP_SHA" "scripts+harness+manifest"
+# The snapshot copy logs "—" for its own row (a commit cannot contain its own
+# sha); the repo-side log gets the real sha after committing.
+log_entry() { # sha
+  printf '| %s | %s | %s | %s | %s |\n' "$STAMP" "$TRIGGER" "$BRANCH" "$1" "scripts+harness+manifest"
 }
 
 git add -A
@@ -78,15 +79,15 @@ if git diff --cached --quiet; then
   echo "BACKUP NO-OP: nothing changed on $BRANCH ($STAMP)"
   exit 0
 fi
-BACKUP_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo new)
-if [ -f "$REPO_DIR/harness/BACKUPS.md" ]; then
-  log_entry >> "$REPO_DIR/harness/BACKUPS.md"
-fi
 if [ -f "$WORK/sandbox/harness/BACKUPS.md" ]; then
-  log_entry >> "$WORK/sandbox/harness/BACKUPS.md"
+  log_entry "—" >> "$WORK/sandbox/harness/BACKUPS.md"
 fi
 git add -A
 git -c user.name="vdm-harness" -c user.email="harness@velocitydm.invalid" \
   commit -q -m "sandbox backup $STAMP"
+NEW_SHA=$(git rev-parse --short HEAD)
+if [ -f "$REPO_DIR/harness/BACKUPS.md" ]; then
+  log_entry "$NEW_SHA" >> "$REPO_DIR/harness/BACKUPS.md"
+fi
 git "${AUTH[@]}" push -q origin "$BRANCH"
-echo "BACKUP OK $BRANCH $(git rev-parse --short HEAD) ($STAMP)"
+echo "BACKUP OK $BRANCH $NEW_SHA ($STAMP)"
