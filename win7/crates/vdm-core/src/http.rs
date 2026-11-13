@@ -335,6 +335,13 @@ impl Conn {
         } else {
             req.url.path_and_query.clone()
         };
+        // Same refusal as headers below, applied to the request line and the
+        // Host line: the URL is attacker-influenced on tracker announce paths
+        // (torrent metadata), and a CRLF there would split the request.
+        let bad_char = |s: &str| s.contains('\r') || s.contains('\n') || s.contains('\0');
+        if bad_char(&target) || bad_char(&req.url.host_header()) {
+            return Err(Error::Http("illegal request target or host".into()));
+        }
         head.push_str(&format!("{} {} HTTP/1.1\r\n", req.method, target));
         if !self.absolute_form {
             head.push_str(&format!("Host: {}\r\n", req.url.host_header()));

@@ -54,10 +54,10 @@ Response: `{"jsonrpc":"2.0","id":1,"result":{...}}` or
 | `downloads.list` | — | array of task snapshots |
 | `downloads.get` | `id` | one task snapshot |
 | `downloads.add` | `url`, `options` | `{id}` |
-| `downloads.addBatch` | `pattern` or `urls`, `options` | `{ids}` |
+| `downloads.addBatch` | `pattern`, `options` | `{ids}` (`urls` is an NMH-side input, expanded there) |
 | `batch.expand` | `pattern` | `{urls}` (dry expansion) |
 | `downloads.addTorrent` | `magnet` or `torrentPath`, `options` | `{id}` |
-| `torrents.files` | `id` | file list of a torrent task |
+| `torrents.files` | `magnet` or `torrentPath` | file list (pre-add inspection) |
 | `downloads.pause` | `id` | `true` |
 | `downloads.pauseAll` | — | `true` |
 | `downloads.resume` | `id` | `true` |
@@ -72,35 +72,45 @@ Response: `{"jsonrpc":"2.0","id":1,"result":{...}}` or
 
 `filename`, `outDir`, `connections`, `rateLimitBps`, `mirrors[]`,
 `checksumAlgo` (`md5|sha1|sha256`) + `checksumHex`, `quality`
-(HLS `best|worst|<bandwidth>`), `priority`, `startAt` (UNIX ts),
-`fresh` (ignore saved progress), `headers` (object, CRLF-sanitized),
-`referer`, `cookies`, `userAgent`.
+(HLS `best|worst|<bandwidth>`), `priority` (0-255), `startAt` (UNIX ts),
+`fresh` (ignore saved progress), `headers` — an **array of
+`["Name", "Value"]` pairs** (CRLF/NUL-sanitized at emission).
+
+`referer` / `cookies` / `userAgent` are *native-messaging-host* inputs:
+the NMH folds them into the `headers` array (Cookie/Referer/User-Agent)
+before calling this method; the RPC itself does not accept them.
 
 ### Task snapshot shape (camelCase)
 
-`id`, `kind` (`http|hls|torrent|magnet`), `name`, `state`, `dir`, `done`,
-`total`, `speed`, `connections`, `resumable`, `userPaused`, `createdAt`,
-`error`. States: `queued`, `probing`, `downloading`, `paused`, `verifying`,
-`completed`, `failed`, `seeding`.
+`id`, `kind` (`http|hls|torrent|magnet`), `name`, `url`, `dir`, `outPath`,
+`state`, `size`, `done`, `speed`, `etaSecs`, `connections`, `peers`,
+`seeds`, `priority`, `startAt` (null or epoch), `error` (null or string),
+`checksumOk` (null/bool), `userPaused`, `createdAt`. States: `queued`,
+`probing`, `downloading`, `paused`, `verifying`, `completed`, `failed`,
+`seeding`.
 
 ## `GET /events` — server-sent events
 
 `text/event-stream`; one `data: <event JSON>` line pair per event, plus a
-10 Hz coalesced `tasks` progress tick and a heartbeat comment every 15 s.
+10 Hz coalesced `tasks` progress tick.
 
 Events: `task-added`, `task-state`, `task-progress`, `task-completed`
 (with `id` and `path`), `task-failed`, `task-removed`, `queue-drained`,
 `config-changed`, and the periodic `tasks` snapshot delta.
 
 ```
-data: {"type":"task-added","id":1,"kind":"http","name":"file.zip"}
+data: {"type":"task-added","id":1}
 
 data: {"type":"task-completed","id":1,"path":"/home/me/Downloads/file.zip"}
 ```
 
+`task-progress` carries `{type, id}` — consumers coalesce by polling
+`downloads.list` or reading the periodic `tasks` tick.
+
 ## `GET /health`
 
-`200 {"ok":true}` — liveness probe used by the CLI's daemon auto-start.
+`200 {"ok":true}` — liveness probe. (The CLI's daemon auto-start probes
+`daemon.ping` over `/rpc`.)
 
 ## Client notes
 

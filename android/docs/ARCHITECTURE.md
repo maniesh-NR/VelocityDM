@@ -1,5 +1,15 @@
 # Android architecture notes
 
+> **Status:** this file describes the richer Room/DataStore design that
+> was built as the v1.1.0 candidate (`com.velocitydm.app`) but is NOT the
+> tree that ships 1.0.0. The shipped app is the simpler, CI-proven
+> `com.velocitydm.android` tree (`DownloadsScreen` + `DownloadsViewModel`
+> + `engine/SegmentEngine`, work-stealing segmented engine with
+> `.part`/`.vdmctl` crash-safe resume, foreground `DownloadService`,
+> sniffer `BrowserActivity`, wallpaper-based Material You theming). Read
+> the below as the design target for a future migration, not the current
+> code.
+
 ```
   Compose UI (Material 3, dynamic color)
   DownloadsScreen / AddScreen / SettingsScreen

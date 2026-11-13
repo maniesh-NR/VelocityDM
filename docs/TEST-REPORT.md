@@ -27,7 +27,7 @@ reconciled tree (2026-11-13, assessment 0002).
   Referer-bearing POST -> 403; rebound Host on `/events` and `/health`
   -> 403; missing Host (HTTP/1.0 style) -> 403; legitimate localhost
   spellings -> 200.
-- `host_allowed_matrix`: 17 assertions over loopback / wildcard /
+- `host_allowed_matrix`: 14 assertions over loopback / wildcard /
   explicit-LAN binds (IP literals ok, non-localhost hostnames refused).
 - Outgoing request headers (per-download `options.headers`, user-agent):
   CRLF/NUL-bearing names or values rejected at emission.

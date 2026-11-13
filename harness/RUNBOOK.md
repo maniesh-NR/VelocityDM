@@ -12,7 +12,10 @@ publish, and how to recover when things go wrong. Complements
      suppresses push events when more than three tags move at once),
      verifies each tag on the remote, then idempotent repo config.
 3. `bash /home/z/my-project/scripts/poll-runs.sh 1800`
-   - exit 0 = all workflows completed and green;
+   - exit 0 = all workflows for the pushed HEAD completed and green
+     (the poll window is anchored to that commit's runs; historical
+     failures on older commits are shown as context but never fail the
+     gate);
    - exit 1 = failures (see the `X` rows it prints);
    - exit 2 = budget exhausted, still pending — just run it again.
 4. Verify each of the six releases has assets and that asset timestamps
@@ -26,8 +29,11 @@ Releases are built from tags; the fix is always "move the tag and let CI
 clobber":
 
 1. Commit + verify the fix locally (full battery).
-2. Push main; force-move ONLY the affected tag(s):
-   `gitpush origin -f refs/tags/v1.0.0:refs/tags/v1.0.0` (one per command).
+2. Push main; re-cut ONLY the affected tag(s) at the new HEAD and move
+   them — one per command:
+   `git tag -fa -m "<msg>" <tag> <HEAD> && gitpush origin -f refs/tags/<tag>:refs/tags/<tag>`
+   (never push a stale local tag: an unchanged ref is a silent no-op and
+   fires no workflow).
 3. The Release workflow re-runs for that tag; its publish job
    `gh release upload --clobber` replaces the stale assets with fresh ones.
 4. Re-verify: `gh release view <tag> --json assets` timestamps and the

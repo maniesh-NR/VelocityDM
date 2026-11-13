@@ -21,11 +21,12 @@ bash scripts/build-ext.sh   # builds extensions/dist/{chromium,edge,opera,firefo
    category toggles (video, audio, archive, document, software;
    image-large/opt-in, other/off), and a hostname blocklist. HTML responses
    are never captured unless the URL extension is downloadable.
-3. **Dedupe** — a bounded LRU prevents repeat captures; the capture list
-   (max 100) lives in `chrome.storage.session` with an in-memory fallback.
-4. **Native messaging** — a long-lived port to `com.velocitydm.nmh`;
-   requests are matched by RPC id with a 10 s timeout; the host forwards
-   daemon events (completed/failed) into browser notifications.
+3. **Dedupe** — a bounded LRU prevents repeat captures; the capture
+   list (capped at 50) lives in `chrome.storage.session` with an in-memory
+   fallback.
+4. **Native messaging** — `chrome.runtime.sendNativeMessage` one-shot
+   calls to `com.velocitydm.nmh` (no long-lived port; the extension
+   re-polls `status` for progress).
 5. **Popup + options** — daemon status, manual add, capture list with
    per-item and bulk download, Material You seed pickers (see below).
 
@@ -45,7 +46,7 @@ host binary and lists the allowed extension ids:
   "description": "VelocityDM native messaging host",
   "path": "/usr/local/bin/velocitydm-nmh",
   "type": "stdio",
-  "allowed_extensions": ["velocitydm@velocitydm.local"],
+  "allowed_extensions": ["velocitydm@velocitydm.example"],
   "allowed_origins": ["chrome-extension://<extension-id>/"]
 }
 ```
@@ -96,10 +97,9 @@ docs/RPC.md for the full daemon surface.
 
 `extensions/shared/md3.js` is a clean-room MD3 dynamic-color engine: a seed
 color is mapped through CIELAB tonal palettes into a full light/dark scheme
-(role tokens). Popup and options offer the six canonical Material You
-seeds plus a custom color picker; the mode (`auto` / `light` / `dark`) and
-seed persist in `chrome.storage`. Auto mode follows
-`prefers-color-scheme`.
+(role tokens). Popup and options offer eight preset seed swatches plus a
+custom color entry; the mode (`auto` / `light` / `dark`) and seed persist in
+`chrome.storage`. Auto mode follows `prefers-color-scheme`.
 
 ## Safari
 

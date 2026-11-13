@@ -40,7 +40,7 @@ no peer verdicts). This panel complements the RED/BLUE/AUDITOR protocol
    headers (incl. the user-settable User-Agent), `webNavigation` permission
    removed (verified absent in all four rebuilt zips). Regression tests:
    `web_page_request_shapes_are_refused` (6 attack shapes refused,
-   2 legitimate shapes pass) + `host_allowed_matrix` (17 assertions).
+   2 legitimate shapes pass) + `host_allowed_matrix` (14 assertions).
 4. **FALS doc truth**: docs/RPC.md rewritten to the actual single-address
    HTTP JSON-RPC 2.0 + SSE surface (22 methods, snapshot shape, trust
    boundary); docs/EXTENSIONS.md rewritten (shipped `extensions/` tree,

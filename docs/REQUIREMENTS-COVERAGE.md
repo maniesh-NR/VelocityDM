@@ -37,8 +37,8 @@ takeover with cookies.
 
 | Suite | Count | Result |
 | --- | --- | --- |
-| `cargo test --workspace` (unit + integration) | 124 | all pass |
-| `node extensions/tests/run-tests.mjs` | 64 assertions | pass |
+| `cargo test --workspace` (unit + integration + full-stack E2E) | 127 | all pass |
+| `node extensions/tests/run-tests.mjs` | 76 assertions | pass |
 | `scripts/e2e.sh` cross-component smoke | 24 checks | all pass |
 | `scripts/e2e-cross.sh` feature-combination suite | 27 checks | all pass |
 | `scripts/bench-perf.sh` A/B performance | 4 runs | pass (byte-identical) |
