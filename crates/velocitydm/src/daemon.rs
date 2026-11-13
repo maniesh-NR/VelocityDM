@@ -82,8 +82,9 @@ pub fn run(addr: &str, portable: bool) -> i32 {
             }
         });
     }
-    // block until shutdown
-    while !SHUTDOWN.load(Ordering::SeqCst) {
+    // block until shutdown: requested locally (GUI close, Ctrl-C) or over RPC
+    // (daemon.shutdown -> the RPC server winds itself down)
+    while !SHUTDOWN.load(Ordering::SeqCst) && !server.stopped() {
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
     server.stop();

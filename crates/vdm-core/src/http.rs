@@ -341,17 +341,32 @@ impl Conn {
         } else if let Some(auth) = &self.proxy_auth {
             head.push_str(&format!("Proxy-Authorization: {}\r\n", auth));
         }
+        // Header values come from RPC callers (downloads.add options.headers,
+        // referer/cookies forwarded from the browser, settings user-agent).
+        // Refuse anything that could split the request: CR/LF/NUL in names
+        // or values, and non-token header names.
+        let push_header = |head: &mut String, k: &str, v: &str| -> Result<()> {
+            let bad_char = |s: &str| s.contains('\r') || s.contains('\n') || s.contains('\0');
+            if k.is_empty() || bad_char(k) || bad_char(v) || k.contains(' ') || k.contains(':') {
+                return Err(Error::Http(format!(
+                    "illegal header name/value: {:?}: {:?}",
+                    k, v
+                )));
+            }
+            head.push_str(&format!("{}: {}\r\n", k, v));
+            Ok(())
+        };
         let ua = if cfg.user_agent.is_empty() {
             "VelocityDM/1.0".to_string()
         } else {
             cfg.user_agent.clone()
         };
-        head.push_str(&format!("User-Agent: {}\r\n", ua));
+        push_header(&mut head, "User-Agent", &ua)?;
         for (k, v) in &cfg.extra_headers {
-            head.push_str(&format!("{}: {}\r\n", k, v));
+            push_header(&mut head, k, v)?;
         }
         for (k, v) in &req.headers {
-            head.push_str(&format!("{}: {}\r\n", k, v));
+            push_header(&mut head, k, v)?;
         }
         if req.body.is_some() {
             head.push_str(&format!(

@@ -49,10 +49,15 @@ impl RpcServer {
             }
             match listener.accept() {
                 Ok((stream, _)) => {
+                    // macOS/BSD/Windows: accepted sockets inherit the
+                    // listener's non-blocking flag (Linux does not); the RPC
+                    // connection loop is blocking I/O.
+                    let _ = stream.set_nonblocking(false);
                     let engine = engine_c.clone();
                     let stop = stop_c.clone();
+                    let bind = addr;
                     std::thread::spawn(move || {
-                        let _ = handle_conn(stream, engine, stop);
+                        let _ = handle_conn(stream, engine, stop, bind);
                     });
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -76,12 +81,56 @@ impl RpcServer {
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
     }
+
+    /// Whether a shutdown has been requested (via [`RpcServer::stop`] or the
+    /// `daemon.shutdown` RPC): the accept loop and SSE loops are winding down.
+    pub fn stopped(&self) -> bool {
+        self.stop.load(Ordering::Relaxed)
+    }
+}
+
+/// Whether a request's `Host` header may reach this server.
+///
+/// The authority's host part must be a loopback name (`localhost`,
+/// 127.0.0.0/8, ::1) when the server binds loopback — any hostname of our
+/// own would defeat DNS-rebinding protection, and a rebound attacker domain
+/// can never appear here as an IP literal. For wildcard binds (explicit
+/// LAN mode) any IP literal or `localhost` is accepted (names other than
+/// localhost are still refused). Otherwise the host must equal the bound
+/// host. The port is intentionally not checked: it is not a rebinding
+/// vector.
+fn host_allowed(host_hdr: &str, bind: std::net::SocketAddr) -> bool {
+    let authority = host_hdr.split('/').next().unwrap_or("").trim();
+    let authority = match authority.rsplit_once('@') {
+        Some((_, a)) => a,
+        None => authority,
+    };
+    let host_part = match authority.rsplit_once(':') {
+        Some((h, _)) => h,
+        None => authority,
+    };
+    let host_part = host_part.trim_start_matches('[').trim_end_matches(']');
+    let host_lc = host_part.to_ascii_lowercase();
+    let is_ip = host_lc.parse::<std::net::IpAddr>().is_ok();
+    let is_loopback_ip = host_lc
+        .parse::<std::net::IpAddr>()
+        .map(|i| i.is_loopback())
+        .unwrap_or(false);
+    let is_localhost = host_lc == "localhost";
+    match bind.ip() {
+        std::net::IpAddr::V4(v4) if v4.is_loopback() => is_localhost || is_loopback_ip,
+        std::net::IpAddr::V6(v6) if v6.is_loopback() => is_localhost || is_loopback_ip,
+        std::net::IpAddr::V4(v4) if v4.is_unspecified() => is_localhost || is_ip,
+        std::net::IpAddr::V6(v6) if v6.is_unspecified() => is_localhost || is_ip,
+        bound => host_lc == bound.to_string(),
+    }
 }
 
 fn handle_conn(
     mut stream: TcpStream,
     engine: Arc<Engine>,
     stop: Arc<AtomicBool>,
+    bind: std::net::SocketAddr,
 ) -> std::io::Result<()> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(300)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
@@ -97,9 +146,17 @@ fn handle_conn(
         let path = parts.next().unwrap_or("/").to_string();
         let mut content_length = 0usize;
         let mut keep_alive = true;
+        let mut host: Option<String> = None;
+        let mut origin_seen = false;
+        let mut referer_seen = false;
+        let mut content_type: Option<String> = None;
         loop {
             let mut line = String::new();
             if reader.read_line(&mut line)? == 0 {
+                return Ok(());
+            }
+            if line.len() > 16 * 1024 {
+                write_response(&mut stream, 431, "text/plain", b"header too large", false)?;
                 return Ok(());
             }
             let trimmed = line.trim();
@@ -107,12 +164,60 @@ fn handle_conn(
                 break;
             }
             if let Some((k, v)) = trimmed.split_once(':') {
-                if k.trim().eq_ignore_ascii_case("content-length") {
-                    content_length = v.trim().parse().unwrap_or(0);
+                let k = k.trim();
+                let v = v.trim();
+                if k.eq_ignore_ascii_case("content-length") {
+                    content_length = v.parse().unwrap_or(0);
                 }
-                if k.trim().eq_ignore_ascii_case("connection") {
-                    keep_alive = v.trim().eq_ignore_ascii_case("keep-alive");
+                if k.eq_ignore_ascii_case("connection") {
+                    keep_alive = v.eq_ignore_ascii_case("keep-alive");
                 }
+                if k.eq_ignore_ascii_case("host") {
+                    host = Some(v.to_string());
+                }
+                if k.eq_ignore_ascii_case("origin") {
+                    origin_seen = true;
+                }
+                if k.eq_ignore_ascii_case("referer") {
+                    referer_seen = true;
+                }
+                if k.eq_ignore_ascii_case("content-type") {
+                    content_type = Some(v.to_string());
+                }
+            }
+        }
+        // --- Loopback trust boundary ---------------------------------------
+        // The RPC is unauthenticated by design (local CLI / native-messaging
+        // host / in-process GUI). Three rules keep web pages out:
+        //   1. Host must be a loopback name (or the bound host) — kills DNS
+        //      rebinding, which needs the attacker's own hostname in Host.
+        //   2. Origin/Referer must be absent — browsers always send one on
+        //      cross-site fetch/sendBeacon/form POSTs; native clients never.
+        //   3. POST /rpc must be application/json — defeats no-cors `simple`
+        //      requests (text/plain form posts) that execute without
+        //      preflight.
+        let host_ok = match host.as_deref() {
+            Some(h) => host_allowed(h, bind),
+            None => false, // HTTP/1.1 requires Host; HTTP/1.0 is not a client we serve
+        };
+        if !host_ok || origin_seen || referer_seen {
+            write_response(&mut stream, 403, "text/plain", b"forbidden", false)?;
+            return Ok(());
+        }
+        if method == "POST" {
+            let ct_ok = content_type
+                .as_deref()
+                .map(|c| c.to_ascii_lowercase().starts_with("application/json"))
+                .unwrap_or(false);
+            if !ct_ok {
+                write_response(
+                    &mut stream,
+                    415,
+                    "text/plain",
+                    b"content-type must be application/json",
+                    false,
+                )?;
+                return Ok(());
             }
         }
         if content_length > 8 * 1024 * 1024 {
@@ -139,7 +244,7 @@ fn handle_conn(
                 )?;
             }
             ("POST", "/rpc") => {
-                let resp = dispatch(&engine, &body);
+                let resp = dispatch(&engine, &body, &stop);
                 let payload = serde_json::to_vec(&resp).unwrap_or_else(|_| b"{}".to_vec());
                 write_response(&mut stream, 200, "application/json", &payload, keep_alive)?;
             }
@@ -265,7 +370,11 @@ fn event_payload(evt: &Event) -> Value {
 }
 
 /// JSON-RPC 2.0 dispatch.
-pub fn dispatch(engine: &Arc<Engine>, body: &[u8]) -> Value {
+///
+/// `stop` is the owning server's shutdown flag; the `daemon.shutdown`
+/// method stops the engine AND requests the server wind-down so the daemon
+/// process exits cleanly (the daemon's main loop watches the server state).
+pub fn dispatch(engine: &Arc<Engine>, body: &[u8], stop: &AtomicBool) -> Value {
     let req: Value = match serde_json::from_slice(body) {
         Ok(v) => v,
         Err(e) => {
@@ -288,6 +397,7 @@ pub fn dispatch(engine: &Arc<Engine>, body: &[u8]) -> Value {
         ),
         "daemon.shutdown" => {
             engine.shutdown();
+            stop.store(true, Ordering::Relaxed);
             ok_response(&id, json!(true))
         }
         "downloads.list" => {
@@ -706,7 +816,7 @@ mod tests {
         assert_eq!(got["id"].as_u64().unwrap(), id);
         client.call("downloads.pause", json!({ "id": id })).unwrap();
         let paused = client.call("downloads.get", json!({ "id": id })).unwrap();
-        assert_eq!(paused["userPaused"].as_bool().unwrap(), true);
+        assert!(paused["userPaused"].as_bool().unwrap());
         client
             .call("downloads.resume", json!({ "id": id }))
             .unwrap();
@@ -762,8 +872,14 @@ mod tests {
 
         // health via raw http
         let mut s = std::net::TcpStream::connect(format!("127.0.0.1:{}", server.port())).unwrap();
-        s.write_all(b"GET /health HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
-            .unwrap();
+        s.write_all(
+            format!(
+                "GET /health HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+                server.port()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
         let mut buf = String::new();
         let _ = s.read_to_string(&mut buf);
         assert!(buf.contains("200 OK"));
@@ -779,27 +895,39 @@ mod tests {
         let server = RpcServer::start(engine.clone(), "127.0.0.1:0").unwrap();
         let mut s = std::net::TcpStream::connect(format!("127.0.0.1:{}", server.port())).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        s.write_all(b"GET /events HTTP/1.1\r\nHost: x\r\n\r\n")
-            .unwrap();
+        s.write_all(
+            format!(
+                "GET /events HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",
+                server.port()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
         s.flush().unwrap();
-        // trigger an event
+        // wait for the SSE header so the server side has subscribed
+        let mut got = String::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline && !got.contains("text/event-stream") {
+            let mut chunk = [0u8; 4096];
+            match s.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => got.push_str(&String::from_utf8_lossy(&chunk[..n])),
+                Err(_) => break,
+            }
+        }
+        assert!(got.contains("text/event-stream"), "no sse header");
+        // give the server thread a moment to enter its recv loop, then add
+        std::thread::sleep(Duration::from_millis(300));
         let client = RpcClient::new(&format!("127.0.0.1:{}", server.port()));
         let r = client
             .call("downloads.add", json!({ "url": "http://127.0.0.1:1/nope" }))
             .unwrap();
         let _ = r;
-        let mut got = String::new();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while std::time::Instant::now() < deadline {
+        while std::time::Instant::now() < deadline && !got.contains("task-added") {
             let mut chunk = [0u8; 4096];
             match s.read(&mut chunk) {
                 Ok(0) => break,
-                Ok(n) => {
-                    got.push_str(&String::from_utf8_lossy(&chunk[..n]));
-                    if got.contains("task-added") && got.contains("text/event-stream") {
-                        break;
-                    }
-                }
+                Ok(n) => got.push_str(&String::from_utf8_lossy(&chunk[..n])),
                 Err(_) => break,
             }
         }
@@ -807,5 +935,135 @@ mod tests {
         assert!(got.contains("task-added"), "no task-added event: {}", got);
         server.stop();
         engine.shutdown();
+    }
+
+    /// Loopback trust boundary: shapes a web page can produce must be
+    /// refused. Covers the ATKR round-1 attack primitives: no-cors
+    /// `text/plain` POSTs (simple requests, no preflight), Origin-bearing
+    /// requests, missing Host (HTTP/1.0 style), and DNS-rebinding hosts.
+    #[test]
+    fn web_page_request_shapes_are_refused() {
+        let engine = start_test_engine();
+        let server = RpcServer::start(engine.clone(), "127.0.0.1:0").unwrap();
+        let port = server.port();
+
+        // (request bytes, expected status substring, what it models)
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"daemon.ping","params":{}}"#;
+        let rpc_len = body.len();
+        let cases: Vec<(Vec<u8>, &str, &str)> = vec![
+            // browser simple request: text/plain cross-site POST (no preflight)
+            (
+                format!(
+                    "POST /rpc HTTP/1.1\r\nHost: 127.0.0.1:{p}\r\nContent-Type: text/plain\r\nContent-Length: {l}\r\nConnection: close\r\n\r\n",
+                    p = port, l = rpc_len
+                )
+                .into_bytes(),
+                "415",
+                "text/plain simple POST",
+            ),
+            // fetch() with an Origin header (opaque no-cors or credentialed)
+            (
+                format!(
+                    "POST /rpc HTTP/1.1\r\nHost: 127.0.0.1:{p}\r\nOrigin: http://evil.example\r\nContent-Type: application/json\r\nContent-Length: {l}\r\nConnection: close\r\n\r\n",
+                    p = port, l = rpc_len
+                )
+                .into_bytes(),
+                "403",
+                "Origin-bearing POST",
+            ),
+            // sendBeacon / form post with Referer
+            (
+                format!(
+                    "POST /rpc HTTP/1.1\r\nHost: 127.0.0.1:{p}\r\nReferer: http://evil.example/page\r\nContent-Type: application/json\r\nContent-Length: {l}\r\nConnection: close\r\n\r\n",
+                    p = port, l = rpc_len
+                )
+                .into_bytes(),
+                "403",
+                "Referer-bearing POST",
+            ),
+            // DNS rebinding: attacker hostname in Host with full read intent
+            (
+                format!(
+                    "GET /events HTTP/1.1\r\nHost: evil.example:{p}\r\n\r\n",
+                    p = port
+                )
+                .into_bytes(),
+                "403",
+                "rebound Host on /events",
+            ),
+            (
+                format!(
+                    "GET /health HTTP/1.1\r\nHost: evil.example:{p}\r\nConnection: close\r\n\r\n",
+                    p = port
+                )
+                .into_bytes(),
+                "403",
+                "rebound Host on /health",
+            ),
+            // no Host at all
+            (
+                b"GET /health HTTP/1.0\r\nConnection: close\r\n\r\n".to_vec(),
+                "403",
+                "missing Host",
+            ),
+        ];
+
+        for (req, want_status, what) in cases {
+            let mut s = std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            s.write_all(&req).unwrap();
+            let mut buf = String::new();
+            let _ = s.read_to_string(&mut buf);
+            assert!(
+                buf.contains(&format!("{} ", want_status)),
+                "{}: expected {} got: {}",
+                what,
+                want_status,
+                buf.split('\r').next().unwrap_or("")
+            );
+        }
+
+        // the shapes legitimate local clients produce still pass:
+        // localhost spelling and loopback IP without port
+        for host in [format!("localhost:{}", port), "127.0.0.1".to_string()] {
+            let mut s = std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            s.write_all(
+                format!(
+                    "GET /health HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+                    host
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            let mut buf = String::new();
+            let _ = s.read_to_string(&mut buf);
+            assert!(buf.contains("200 OK"), "host {:?} rejected: {}", host, buf);
+        }
+
+        server.stop();
+        engine.shutdown();
+    }
+
+    #[test]
+    fn host_allowed_matrix() {
+        use std::net::SocketAddr;
+        let lo: SocketAddr = "127.0.0.1:36990".parse().unwrap();
+        assert!(host_allowed("127.0.0.1:36990", lo));
+        assert!(host_allowed("127.0.0.1", lo));
+        assert!(host_allowed("localhost:36990", lo));
+        assert!(host_allowed("LOCALHOST:36990", lo));
+        assert!(host_allowed("[::1]:36990", lo));
+        assert!(!host_allowed("evil.example:36990", lo));
+        assert!(!host_allowed("sub.localhost:36990", lo));
+        assert!(!host_allowed("10.0.0.5:36990", lo));
+        let wild: SocketAddr = "0.0.0.0:36990".parse().unwrap();
+        assert!(host_allowed("192.168.1.5:36990", wild));
+        assert!(host_allowed("localhost:36990", wild));
+        assert!(!host_allowed("evil.example:36990", wild));
+        let lan: SocketAddr = "192.168.1.5:36990".parse().unwrap();
+        assert!(host_allowed("192.168.1.5:36990", lan));
+        assert!(!host_allowed("evil.example:36990", lan));
+        assert!(!host_allowed("localhost:36990", lan));
     }
 }

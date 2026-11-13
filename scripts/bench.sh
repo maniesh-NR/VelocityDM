@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
 # VelocityDM performance and memory benchmark.
-# Measures: throughput (MB/s), peak daemon RSS, event rate cap, pool reuse.
-# Requires: release binaries, bash, python3 (test file server with ranges).
+# Measures: throughput (MB/s), peak daemon RSS, SSE event rate cap,
+# rate-limit accuracy.
+# Requires: release binaries (cargo build --release), bash, python3.
 set -u
 cd "$(dirname "$0")/.."
 BIN=./target/release/velocitydm
 CLI=./target/release/velocitydm
-NMH=./target/release/velocitydm-nmh
 if [ ! -x "$BIN" ]; then echo "FAIL: release binaries missing (cargo build --release)"; exit 1; fi
 
 TMP=$(mktemp -d /tmp/vdm-bench.XXXXXX)
-DATA="$TMP/data"; DL="$TMP/downloads"; SERVE="$TMP/serve"
+DATA="$TMP/config"; DL="$TMP/downloads"; SERVE="$TMP/serve"
 mkdir -p "$DATA" "$DL" "$SERVE"
-PORT_JSON=""
-RPC_PORT=39731
-SSE_PORT=39732
+ADDR=127.0.0.1:39731
 
 # Generate a 128 MiB payload.
 python3 - "$SERVE/payload.bin" << 'PYEOF'
@@ -36,10 +34,6 @@ sha=$(sha256sum "$SERVE/payload.bin" | cut -d' ' -f1)
 echo "payload sha256: $sha"
 
 # Range-capable static server.
-python3 - "$SERVE" 39740 > "$TMP/server.log" 2>&1 &
-SRV_PID=$!
-sleep 0.5
-
 cat > "$TMP/rangesrv.py" << 'PYEOF'
 import http.server, os, sys, re
 root = sys.argv[1]
@@ -51,38 +45,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         self.serve(head_only=False)
     def serve(self, head_only):
-        path = os.path.join(root, os.path.basename(self.path))
+        path = os.path.join(root, self.path.lstrip("/"))
         if not os.path.isfile(path):
-            self.send_error(404); return
+            self.send_response(404); self.end_headers(); return
         size = os.path.getsize(path)
         rng = self.headers.get("Range")
-        if rng:
-            m = re.match(r"bytes=(\d+)-(\d*)", rng)
-            start = int(m.group(1)); end = int(m.group(2)) if m.group(2) else size - 1
+        m = re.match(r"bytes=(\d*)-(\d*)", rng or "")
+        if m and (m.group(1) or m.group(2)):
+            start = int(m.group(1) or 0)
+            end = int(m.group(2)) if m.group(2) else size - 1
+            end = min(end, size - 1)
             self.send_response(206)
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-            self.send_header("Accept-Ranges", "bytes")
             self.send_header("Content-Length", str(end - start + 1))
-            self.end_headers()
-            if not head_only:
-                with open(path, "rb") as f:
-                    f.seek(start)
-                    remaining = end - start + 1
-                    while remaining > 0:
-                        chunk = f.read(min(1024 * 1024, remaining))
-                        if not chunk: break
-                        self.wfile.write(chunk); remaining -= len(chunk)
         else:
+            start, end = 0, size - 1
             self.send_response(200)
-            self.send_header("Accept-Ranges", "bytes")
             self.send_header("Content-Length", str(size))
-            self.end_headers()
-            if not head_only:
-                with open(path, "rb") as f:
-                    while True:
-                        chunk = f.read(1024 * 1024)
-                        if not chunk: break
-                        self.wfile.write(chunk)
+        self.send_header("Accept-Ranges", "bytes")
+        self.end_headers()
+        if not head_only:
+            with open(path, "rb") as f:
+                f.seek(start)
+                remaining = end - start + 1
+                while remaining > 0:
+                    chunk = f.read(min(1024 * 1024, remaining))
+                    if not chunk: break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
     def log_message(self, *a):
         pass
 
@@ -92,17 +82,24 @@ python3 "$TMP/rangesrv.py" "$SERVE" > "$TMP/server.log" 2>&1 &
 SRV_PID=$!
 sleep 0.5
 
-# Start daemon with RSS sampling wrapper.
-"$BIN" --data-dir "$DATA" daemon --rpc-port $RPC_PORT --sse-port $SSE_PORT --download-dir "$DL" > "$TMP/daemon.log" 2>&1 &
+# Start the daemon (config isolated via XDG_CONFIG_HOME).
+XDG_CONFIG_HOME="$DATA" "$BIN" --addr $ADDR daemon > "$TMP/daemon.log" 2>&1 &
 DAEMON_PID=$!
-sleep 1.0
+CLEANUP() { kill $SRV_PID $DAEMON_PID 2>/dev/null; rm -rf "$TMP"; }
+trap CLEANUP EXIT
+
+# Wait for readiness like the CLI does.
+for _ in $(seq 1 40); do
+  "$CLI" --addr $ADDR limits >/dev/null 2>&1 && break
+  sleep 0.25
+done
+"$CLI" --addr $ADDR settings --dir "$DL" >/dev/null
 
 rss_peak() {
   if [ -r "/proc/$DAEMON_PID/status" ]; then
     awk '/VmRSS/ {print $2}' "/proc/$DAEMON_PID/status" 2>/dev/null
   fi
 }
-PEAK=0
 rm -f "$TMP/stop-sampler" "$TMP/peak"
 (
   PEAK_LOCAL=0
@@ -117,16 +114,17 @@ rm -f "$TMP/stop-sampler" "$TMP/peak"
 ) &
 SAMPLER_PID=$!
 
-# SSE event counter for the duration of the download.
-python3 - "$SSE_PORT" > "$TMP/sse.count" 2>&1 << 'PYEOF' &
+# SSE event counter for the duration of the download (same address as RPC).
+python3 - "$ADDR" > "$TMP/sse.count" 2>&1 << 'PYEOF' &
 import socket, sys, time
-port = int(sys.argv[1])
-s = socket.create_connection(("127.0.0.1", port))
-s.sendall(b"GET /events HTTP/1.1\r\nHost: localhost\r\n\r\n")
+addr = sys.argv[1]
+host, port = addr.rsplit(":", 1)
+s = socket.create_connection((host, int(port)))
+s.sendall(f"GET /events HTTP/1.1\r\nHost: {addr}\r\n\r\n".encode())
 s.settimeout(0.2)
 count = 0
 buf = b""
-deadline = time.time() + 30
+deadline = time.time() + 60
 while time.time() < deadline:
     try:
         data = s.recv(65536)
@@ -141,27 +139,36 @@ print(count)
 PYEOF
 SSE_PID=$!
 
-echo "=== download 128 MiB (8 segments) ==="
+echo "=== download 128 MiB (8 connections) ==="
 START=$(date +%s.%N)
-OUT=$("$CLI" --data-dir "$DATA" add "http://127.0.0.1:39740/payload.bin" --wait 2>&1)
+ID=$("$CLI" --addr $ADDR add "http://127.0.0.1:39740/payload.bin" --conn 8 | grep -o '#[0-9]*' | tr -d '#')
+# poll to completion
+for _ in $(seq 1 600); do
+  S=$("$CLI" --addr $ADDR status "$ID" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null)
+  [ "$S" = "completed" ] && break
+  [ "$S" = "failed" ] && break
+  sleep 0.2
+done
 END=$(date +%s.%N)
-SAMPLING=0
-
-OK=$(echo "$OUT" | grep -c "completed:")
-if [ "$OK" != "1" ]; then
-  echo "FAIL: download did not complete: $OUT"
-  kill $SAMPLER_PID $SSE_PID $SRV_PID $DAEMON_PID 2>/dev/null
+if [ "${S:-}" != "completed" ]; then
+  echo "FAIL: download did not complete (state=$S); daemon log:"
+  cat "$TMP/daemon.log" | tail -5
   exit 1
 fi
 
+# Sustained-load phase: 128 MiB at 16 MiB/s so the sampler sees real load.
+"$CLI" --addr $ADDR limits --global 16MB >/dev/null
+"$CLI" --addr $ADDR add "http://127.0.0.1:39740/payload.bin" --out sustained.bin >/dev/null
+ID2=$("$CLI" --addr $ADDR list --json | python3 -c 'import json,sys;a=json.load(sys.stdin);print([t["id"] for t in a if t["name"]=="sustained.bin"][0])' 2>/dev/null)
+for _ in $(seq 1 600); do
+  S2=$("$CLI" --addr $ADDR status "$ID2" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null)
+  [ "$S2" = "completed" ] && break
+  [ "$S2" = "failed" ] && break
+  sleep 0.2
+done
 touch "$TMP/stop-sampler"
-PEAK=$(cat "$TMP/peak" 2>/dev/null || echo 0)
-# Sustained-load phase: 32 MiB at 16 MiB/s so the sampler sees real load.
-"$CLI" --data-dir "$DATA" set global_rate_limit_bps 16777216 > /dev/null
-"$CLI" --data-dir "$DATA" add "http://127.0.0.1:39740/payload.bin" --out sustained.bin --wait > /dev/null 2>&1
-touch "$TMP/stop-sampler"
-PEAK=$(cat "$TMP/peak" 2>/dev/null | sort -n | tail -1)
-echo "sustained 32 MiB @ 16 MiB/s phase complete"
+echo "sustained @ 16 MiB/s phase complete (state=$S2)"
+
 ELAPSED=$(python3 -c "print(f'{$END - $START:.2f}')")
 MBPS=$(python3 -c "print(f'{128 / ($END - $START):.1f}')")
 echo "download time: ${ELAPSED}s  throughput: ${MBPS} MB/s"
@@ -172,17 +179,14 @@ if [ "$GOT" = "$sha" ]; then echo "sha256: MATCH"; else echo "sha256: MISMATCH";
 
 wait $SSE_PID 2>/dev/null
 EVENTS=$(cat "$TMP/sse.count" 2>/dev/null | tail -1)
-echo "SSE events during download: ${EVENTS:-n/a} (refresh cap 12 Hz)"
+echo "SSE events during download: ${EVENTS:-n/a} (10 Hz progress cap)"
 
 wait $SAMPLER_PID 2>/dev/null
+PEAK=$(cat "$TMP/peak" 2>/dev/null | sort -n | tail -1)
 echo "peak daemon RSS: ${PEAK} KiB (~$((PEAK / 1024)) MiB)"
-
-"$CLI" --data-dir "$DATA" stats | python3 -c "import json,sys; s=json.load(sys.stdin); print('pool: connects=%s reuses=%s' % (s['pool']['connects'], s['pool']['reuses']))"
 
 # Memory after idle (post-download steady state).
 IDLE=$(rss_peak)
 echo "daemon RSS after download: ${IDLE} KiB (~$((IDLE / 1024)) MiB)"
 
-kill $SRV_PID $DAEMON_PID 2>/dev/null
-rm -rf "$TMP"
 echo "BENCH-DONE"

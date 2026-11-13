@@ -1,49 +1,112 @@
 # Daemon RPC protocol
 
-Two transports, one method set.
+One HTTP server, one address (default `127.0.0.1:36990`), two endpoints and a
+health probe. Plain JSON-RPC 2.0 over `POST /rpc`, server-sent events over
+`GET /events`. The CLI, the native messaging host and the GUI all speak this
+same surface.
 
-## Framed JSON-RPC over TCP (default 127.0.0.1:36990)
-
-Each frame is `u32 LE length + UTF-8 JSON`. Requests carry an `id`; daemon
-events arrive as frames without an `id`:
-
-```json
-{"id": 1, "method": "add", "params": {"url": "https://example.com/file.zip", "segments": 8}}
-{"event": "progress", "params": {"id": 1, "state": "running", "downloaded": 123, "total": 456}}
-{"id": 1, "result": {"id": 1}}
+```sh
+./target/release/velocitydm daemon --addr 127.0.0.1:36990
+./target/release/velocitydm --addr 127.0.0.1:36990 add https://example.com/file.zip
 ```
 
-## HTTP/SSE (default 127.0.0.1:36991)
+## Loopback trust boundary
 
-- `GET /events` - `text/event-stream`; one `data: <event JSON>` per event,
-  heartbeat comment every 15 s.
-- `POST /rpc` - body `{"id":..,"method":..,"params":{..}}`; response is the
-  JSON-RPC reply.
-- `GET /health` - `ok`.
+The daemon is unauthenticated by design and binds loopback only. Three
+request-shape rules keep web pages out while local clients work untouched
+(`crates/vdm-rpc/src/lib.rs`, `host_allowed` + `handle_conn`):
 
-## Methods
+1. `Host` must name a loopback authority (`127.0.0.0/8`, `localhost`,
+   `[::1]`) when the bind is loopback — a rebound attacker hostname can
+   never satisfy this. Wildcard (`0.0.0.0`) binds accept any IP literal;
+   other binds must match the bound host.
+2. Any request carrying `Origin` or `Referer` is refused — browsers always
+   send one on cross-site fetch/sendBeacon/form posts; native clients never
+   do.
+3. `POST /rpc` must be `Content-Type: application/json` — defeats
+   no-cors "simple requests" (`text/plain` form posts) that execute without
+   a CORS preflight.
 
-| Method | Params | Result |
+Outgoing request headers (per-download `options.headers`, referer/cookies
+forwarded from the browser, the configured user-agent) are CRLF/NUL-sanitized
+before emission, so no request-splitting toward third-party hosts.
+
+## `POST /rpc` — JSON-RPC 2.0
+
+Request:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"downloads.add",
+ "params":{"url":"https://example.com/file.zip",
+           "options":{"filename":"file.zip","connections":8}}}
+```
+
+Response: `{"jsonrpc":"2.0","id":1,"result":{...}}` or
+`{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"..."}}`.
+
+### Method set
+
+| Method | Params (beyond `id`) | Result |
 | --- | --- | --- |
-| `ping` / `hello` | {} | `{name, version, protocol}` |
-| `add` | TaskSpec (url, mirrors, filename, dir, headers, segments, rate_limit_bps, checksum{algorithm,expected}, referrer, resume) | `{id}` |
-| `pause` | `{id}` | `{id, state}` (waits for the settled state) |
-| `resume` | `{id}` | `{id, state}` |
-| `remove` | `{id, purge?}` | `{id, removed}` |
-| `list` | {} | `[Snapshot]` |
-| `status` | `{id}` | Snapshot |
-| `verify` | `{id}` | `{id, ok}` |
-| `stats` | {} | task counts, pool connects/reuses, limits, uptime |
-| `get_settings` | {} | download_dir, global_rate_limit_bps, refresh_hz |
-| `set_settings` | `{key, value}` | `{key, value}` (global_rate_limit_bps, refresh_hz) |
-| `shutdown` | {} | `{ok}` then graceful exit |
+| `daemon.ping` | — | `"pong"` |
+| `daemon.info` | — | `{name, version, rpc, features[]}` |
+| `daemon.shutdown` | — | `true`; the daemon stops the engine, winds down the RPC/SSE server and exits cleanly |
+| `downloads.list` | — | array of task snapshots |
+| `downloads.get` | `id` | one task snapshot |
+| `downloads.add` | `url`, `options` | `{id}` |
+| `downloads.addBatch` | `pattern` or `urls`, `options` | `{ids}` |
+| `batch.expand` | `pattern` | `{urls}` (dry expansion) |
+| `downloads.addTorrent` | `magnet` or `torrentPath`, `options` | `{id}` |
+| `torrents.files` | `id` | file list of a torrent task |
+| `downloads.pause` | `id` | `true` |
+| `downloads.pauseAll` | — | `true` |
+| `downloads.resume` | `id` | `true` |
+| `downloads.remove` | `id`, `deleteFiles?` | `true` |
+| `downloads.refresh` | `id`, `url` | `true` (XDM-style refresh-link) |
+| `downloads.priority` | `id`, `priority` (0-255) | `true` |
+| `queue.get` / `queue.set` | `maxActive`, `stopWindow`, `onQueueDrained` | scheduler config |
+| `limits.get` / `limits.set` | `globalBps` | rate limits |
+| `settings.get` / `settings.set` | `downloadDir`, `defaultConnections`, `proxy`, `userAgent` | persisted config |
 
-Errors are JSON-RPC errors: `-32601` unknown method, `-32602` invalid params,
-`-32000` daemon errors (task not found, not paused, etc).
+### `downloads.add` options
 
-## Events
+`filename`, `outDir`, `connections`, `rateLimitBps`, `mirrors[]`,
+`checksumAlgo` (`md5|sha1|sha256`) + `checksumHex`, `quality`
+(HLS `best|worst|<bandwidth>`), `priority`, `startAt` (UNIX ts),
+`fresh` (ignore saved progress), `headers` (object, CRLF-sanitized),
+`referer`, `cookies`, `userAgent`.
 
-`added`, `progress` (throttled to the refresh rate), `state_changed`,
-`completed`, `failed`, `removed` - each `{"event": name, "params": {...}}`.
-`progress` params are full Snapshots, so consumers can render without extra
-requests.
+### Task snapshot shape (camelCase)
+
+`id`, `kind` (`http|hls|torrent|magnet`), `name`, `state`, `dir`, `done`,
+`total`, `speed`, `connections`, `resumable`, `userPaused`, `createdAt`,
+`error`. States: `queued`, `probing`, `downloading`, `paused`, `verifying`,
+`completed`, `failed`, `seeding`.
+
+## `GET /events` — server-sent events
+
+`text/event-stream`; one `data: <event JSON>` line pair per event, plus a
+10 Hz coalesced `tasks` progress tick and a heartbeat comment every 15 s.
+
+Events: `task-added`, `task-state`, `task-progress`, `task-completed`
+(with `id` and `path`), `task-failed`, `task-removed`, `queue-drained`,
+`config-changed`, and the periodic `tasks` snapshot delta.
+
+```
+data: {"type":"task-added","id":1,"kind":"http","name":"file.zip"}
+
+data: {"type":"task-completed","id":1,"path":"/home/me/Downloads/file.zip"}
+```
+
+## `GET /health`
+
+`200 {"ok":true}` — liveness probe used by the CLI's daemon auto-start.
+
+## Client notes
+
+- Keep-alive is supported (bounded to 256 requests per connection);
+  the CLI closes per call.
+- `daemon.shutdown` is also exposed as the CLI subcommand
+  `velocitydm shutdown`.
+- The native messaging host wraps this RPC for the browser extension —
+  see docs/EXTENSIONS.md.

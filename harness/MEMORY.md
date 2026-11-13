@@ -94,3 +94,39 @@ session reads this file first, then `ROADMAP.md`.
   deletions disallowed.
 - Cron job 514177 (publish retry) deleted after the push succeeded.
 - Backups executed per the event-driven rule (see BACKUPS.md).
+
+## 2026-11-13 (session 3) — post-environment-loss rebuild, 5-role panel, hardening
+
+- The sandbox was lost AGAIN after S2/S3 completed; a fresh session rebuilt
+  the repo from a stale pre-Material-You snapshot. That rebuild regressed
+  the parallel line's fixes (win7 job shape, Android tree, theme.rs, md3.js).
+  **Lesson repeated: ALWAYS `git fetch origin` and compare before building
+  anything — the remote is the source of truth, and it was 17 commits ahead.**
+- A five-role adversarial panel (ATKR security / FALS falsifier / REQ
+  requirements / INT integration / REL release-SRE) reviewed the rebuild +
+  republish plan: 5/5 OBJECT. Findings and remediation:
+  `ASSESSMENTS/0002-reconciliation-hardening.md`.
+- Notable catches beyond the panel's predecessors:
+  - **Loopback RPC was web-page-reachable** (no Host/Origin/Content-Type
+    checks; RCE via `queue.set onQueueDrained` -> `sh -c`). Fixed with the
+    three-rule trust boundary + regression tests (both trees).
+  - **The remote's `daemon.shutdown` shipped broken** (engine stopped,
+    process never exited) — reproduced live on the published musl asset.
+    Fixed: dispatch winds the server down; daemon loop exits on
+    `server.stopped()`; CLI `shutdown` restored.
+  - **`cargo test --workspace` does NOT emit plain sibling bins** into
+    `target/debug` (only `cargo build` does) — the full-stack e2e test
+    needs the NMH binary, so CI Test jobs now run
+    `cargo build --workspace --bins` before `cargo test --workspace`.
+  - **Outgoing request headers are RPC-reachable** (options.headers) —
+    now CRLF/NUL-sanitized at emission (incl. user-agent).
+- `extension/` (the dev-only v2 duplicate) cut entirely; CI counts only the
+  shipped `extensions/` suite now. `webNavigation` permission dropped
+  (unused).
+- poll-runs.sh: failure-aware (exit 1 on red runs), TIMEOUT marker
+  (exit 2), 1800 s default. publish-velocitydm.sh rewritten for the real
+  remote state (tags force-moved one-per-command, verified; idempotent
+  config; CI clobbers release assets). harness/RUNBOOK.md added.
+- Docs brought to truth: RPC.md / EXTENSIONS.md / docs README describe
+  the ACTUAL single-address protocol; bench.sh runs against the current
+  CLI; TEST-REPORT regenerated (127 + 76 + 24 + 27).

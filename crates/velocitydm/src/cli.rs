@@ -410,6 +410,12 @@ impl Commands {
                 let s = c.call("settings.get", json!({})).map_err(|e| e.to_string())?;
                 Ok(serde_json::to_string_pretty(&s).unwrap())
             }
+            Commands::Shutdown => {
+                let c = client(addr);
+                c.call("daemon.shutdown", json!({}))
+                    .map_err(|e| e.to_string())?;
+                Ok("daemon shut down".to_string())
+            }
             Commands::Version => {
                 Ok(format!(
                     "VelocityDM {} (engine {}, features: http, hls+aes128, bittorrent, magnet, batch, scheduler, proxy, refresh-link)",

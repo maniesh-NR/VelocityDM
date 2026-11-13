@@ -84,11 +84,17 @@ enum Commands {
         json: bool,
     },
     /// Show one download in detail.
-    Status { id: u64 },
+    Status {
+        id: u64,
+    },
     /// Pause a download (or all).
-    Pause { id: Option<u64> },
+    Pause {
+        id: Option<u64>,
+    },
     /// Resume a paused download.
-    Resume { id: u64 },
+    Resume {
+        id: u64,
+    },
     /// Remove a download from the list.
     Remove {
         id: u64,
@@ -184,6 +190,8 @@ enum Commands {
         user_agent: Option<String>,
     },
     /// Print version and feature summary.
+    /// Ask a running daemon to shut down cleanly.
+    Shutdown,
     Version,
 }
 

@@ -13,11 +13,11 @@ circumvention logic of any kind.
 | Component | Path | Notes |
 | --- | --- | --- |
 | `vdm-core` | `crates/vdm-core` | The download engine (see docs/ARCHITECTURE.md) |
-| `vdm-rpc` | `crates/vdm-rpc` | Framed JSON-RPC over TCP + HTTP/SSE event stream |
+| `vdm-rpc` | `crates/vdm-rpc` | HTTP JSON-RPC 2.0 + SSE on one loopback address (see docs/RPC.md) |
 | `velocitydm` | `crates/velocitydm` | Daemon + CLI (and the `gui` feature for desktop builds) |
 | `velocitydm-nmh` | `crates/velocitydm-nmh` | Native messaging host for browser extensions |
-| Companion extension | `extension/` | MV3 extension, four browser packages |
-| Android client | `android/` | Kotlin + Compose MD3, ABI-split APKs |
+| Browser extension | `extensions/` | One MV3 codebase packaged for Chrome/Edge/Opera/Firefox (+ Safari guide) |
+| Android client | `android/` | Kotlin + Compose, Material You dynamic color on 12+ |
 | Packaging | `packaging/` | Linux, Flatpak, Windows, macOS, portable |
 | `win7/` | `win7/` | Windows 7 headless workspace (daemon + CLI + NMH) |
 
@@ -42,18 +42,19 @@ circumvention logic of any kind.
 
 ```sh
 cargo build --release --workspace
-./target/release/velocitydm daemon            # starts RPC :36990 + SSE :36991
-./target/release/velocitydm add https://example.com/file.zip --wait
+./target/release/velocitydm daemon              # JSON-RPC + SSE on 127.0.0.1:36990
+./target/release/velocitydm add https://example.com/file.zip   # auto-starts a daemon
 ```
 
-Install the extension (see extension/README.md), register the NMH
-(docs/EXTENSIONS.md), and downloads from the browser land in the daemon.
+Install the extension (see docs/EXTENSIONS.md), register the NMH, and
+downloads from the browser land in the daemon.
 
 ## Tests
 
 ```sh
-cargo test --workspace      # 61 tests: unit + engine integration + full-stack E2E
-cd extension && bun tests/run.mjs   # 78 extension tests
+cargo test --workspace                      # 127 tests: unit + engine integration + full-stack E2E
+node extensions/tests/run-tests.mjs        # 76 assertions incl. the MD3 scheme
+bash scripts/e2e.sh && bash scripts/e2e-cross.sh   # 24 + 27 e2e checks
 ```
 
 ## Documentation

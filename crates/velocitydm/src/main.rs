@@ -185,6 +185,8 @@ enum Commands {
         #[arg(long)]
         user_agent: Option<String>,
     },
+    /// Ask a running daemon to shut down cleanly.
+    Shutdown,
     /// Print version and feature summary.
     Version,
 }

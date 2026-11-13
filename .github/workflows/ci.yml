@@ -45,6 +45,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: rustup default stable
       - run: sudo apt-get update -y && sudo apt-get install -y musl-tools
+      - run: cargo build --workspace --bins
       - run: cargo test --workspace
 
   test-windows:
@@ -54,6 +55,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal
       - run: rustup default stable
+      - run: cargo build --workspace --bins
       - run: cargo test --workspace
 
   test-macos:
@@ -67,6 +69,7 @@ jobs:
       # rustc in the osxcross container for the same reason.
       - run: rustup toolchain install 1.99.1 --profile minimal
       - run: rustup default 1.99.1
+      - run: cargo build --workspace --bins
       - run: cargo test --workspace
 
   win7-payload:
@@ -95,8 +98,6 @@ jobs:
           node-version: 20
       - name: shared-module suite
         run: node extensions/tests/run-tests.mjs
-      - name: companion suite
-        run: node extension/tests/run.mjs
 
   e2e:
     name: End-to-end smoke

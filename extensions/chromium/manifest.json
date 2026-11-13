@@ -12,14 +12,15 @@
   "permissions": [
     "downloads",
     "webRequest",
-    "webNavigation",
     "nativeMessaging",
     "storage",
     "contextMenus",
     "cookies",
     "tabs"
   ],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -34,8 +35,12 @@
   "options_page": "options.html",
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
