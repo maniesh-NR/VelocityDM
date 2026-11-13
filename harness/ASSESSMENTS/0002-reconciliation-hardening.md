@@ -81,4 +81,4 @@ no peer verdicts). This panel complements the RED/BLUE/AUDITOR protocol
 ## Round 2
 
 Re-review by the objecting agents against this record + the repository:
-see `0002b-round2-consensus.md` (filed after the round closes).
+**closed in `0002b-round2-consensus.md` — consensus reached (5/5 PASS over rounds 2+3).**

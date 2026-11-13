@@ -78,7 +78,8 @@ Response: `{"jsonrpc":"2.0","id":1,"result":{...}}` or
 
 `referer` / `cookies` / `userAgent` are *native-messaging-host* inputs:
 the NMH folds them into the `headers` array (Cookie/Referer/User-Agent)
-before calling this method; the RPC itself does not accept them.
+before calling this method; integrators should do the same rather than
+rely on any per-field passthrough.
 
 ### Task snapshot shape (camelCase)
 
