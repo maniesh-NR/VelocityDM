@@ -1,0 +1,19 @@
+backup: 2026-11-13T10:42:52Z
+repo HEAD: 5cd2e639515712e892b22f0c893171e628c24a0b
+repo branch: main
+tags: v1.0.0 v1.0.0-android v1.0.0-extensions v1.0.0-linux v1.0.0-macos v1.0.0-windows 
+dirty files: 0
+
+release-assets (sha256):
+8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef  LICENSE
+4756ded510a3091a37aee48ca84ed362dd1e89be916a35a81c3499a84847adc2  chromium-1.0.0.zip
+35b913c5affa03e0673c02afb390f3f117dec890ff0606062332300e54734de1  edge-1.0.0.zip
+72ed12d659b76abac537bc1f39836ee6cd115357768c50e85af06c974bfa6a44  firefox-1.0.0.zip
+bb6392b5020687a8f9c791b654a444eeea12ba61744c42a0e979b91ef5e97c93  opera-1.0.0.zip
+b5461c127a1d014c4241d953dcf237d81cbebac9a245349411c5b94bdff2ecf6  velocitydm-1.0.0-android.apk
+426d0eee90bbd081c81b30c83dbb7b73b624cdb53e8e3275373bde9f1f026da7  velocitydm-1.0.0-linux-x64-musl.tar.gz
+00d3cef68072936a797b1b9bbb2efcc4b1599dacd0e22e42e7695585f197d3db  velocitydm-1.0.0-linux-x64.tar.gz
+67293d10e4338498814c61df9d277b8ef1363fa2d04f6ee6895c3daadab56e93  velocitydm-1.0.0-windows-x64.zip
+78cc5a961e1972aeee1f1131d8514d9929906dad17fbac70a72ccc80a5f201ec  velocitydm-1.0.0-windows-x86.zip
+c0d690342f5737f06d4dde170266a409ffbece518d3312d3dcedffed61aa3ffc  velocitydm-1.0.0-windows7-x64.zip
+e7d88e6a8222ffeb3d697a79d754063358f218c35823a91f5df3552b34b25d8d  velocitydm-1.0.0-windows7-x86.zip
