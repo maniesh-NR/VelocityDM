@@ -72,3 +72,25 @@ session reads this file first, then `ROADMAP.md`.
   assets via `gh release upload --clobber`), push, delete cron job
   514177, poll CI/Release, verify the 6 releases, protect main with the 8
   required checks, run the closing backup.
+
+## 2026-11-13 (later) — S2/S3 complete
+
+- S1 gate closed (0001b, round-3 consensus: 3× PROCEED-WITH-CONDITIONS, zero BLOCK).
+- Commit 5cd2e63 pushed to main (fast-forward onto the CI-green 26343d7).
+- Six tags force-moved to 5cd2e63 — **pushed one per command**: GitHub
+  suppresses push events when >3 tags move in a single push, which would
+  have silently skipped the Release runs (RED round-3 finding).
+- All six Release workflows succeeded; all six releases verified with
+  refreshed assets (2026-11-13T10:44–10:48); `shared/md3.js` verified
+  inside the published `chromium-1.0.0.zip`.
+- CI on main: first run failed `Test (macos-latest)` — newest stable
+  (1.100) breaks `objc2 0.4.1` (eframe 0.27 macOS stack via icrate 0.0.4;
+  the Darwin release job passed only because the osxcross container pins
+  an older rustc). Fix (58c877e): pin the macOS test job to rustc 1.99.1,
+  the exact toolchain of the Nov-8 green run. CI now green: 8/8 required
+  checks.
+- Branch protection verified via API: main is protected with EXACTLY the
+  8 required checks (byte-exact names), strict=false, force-pushes and
+  deletions disallowed.
+- Cron job 514177 (publish retry) deleted after the push succeeded.
+- Backups executed per the event-driven rule (see BACKUPS.md).
