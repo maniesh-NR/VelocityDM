@@ -1,23 +1,18 @@
-backup: 2026-11-13T16:57:44Z
-repo HEAD: 18f1e148442e6889c99050046bc99605afaf829c
+backup: 2026-11-14T01:28:53Z
+repo HEAD: c9e9748147b6309812265f2ea6975030686f9442
 repo branch: main
 tags: v1.0.0 v1.0.0-android v1.0.0-extensions v1.0.0-linux v1.0.0-macos v1.0.0-windows 
 dirty files: 0
 
 release-assets (sha256):
 8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef  LICENSE
-79a188d25ff3067f0bd8732736112fe05a5b8fa7262be5870c1eb5b1d705f48d  SHA256SUMS-v1.0.0-extensions.txt
-d33e558dc7c2ee2f6f6b4fb9e5e89b31af70c13a4dc2e4f1cd6795f97cd29e8c  SHA256SUMS-v1.0.0-linux.txt
-3644d2f2bfbfeaff068a21214586e7ab28f53487cdd40b7a01ff09ccefa0a06c  SHA256SUMS-v1.0.0-windows.txt
-e3b42f4d8c2805770e0df6c685abb3d571c79d210d4d97892319d129b73d8edd  SHA256SUMS-v1.0.0.txt
-4756ded510a3091a37aee48ca84ed362dd1e89be916a35a81c3499a84847adc2  chromium-1.0.0.zip
-35b913c5affa03e0673c02afb390f3f117dec890ff0606062332300e54734de1  edge-1.0.0.zip
-72ed12d659b76abac537bc1f39836ee6cd115357768c50e85af06c974bfa6a44  firefox-1.0.0.zip
-bb6392b5020687a8f9c791b654a444eeea12ba61744c42a0e979b91ef5e97c93  opera-1.0.0.zip
-b5461c127a1d014c4241d953dcf237d81cbebac9a245349411c5b94bdff2ecf6  velocitydm-1.0.0-android.apk
+d2f888dd95150e6ede3a09d5c2a00e1cc4d8c386c5afb88ee027790bc8f2cc6b  chromium-1.0.0.zip
+9c0b5ce7d2e2054d56782db365439c1d9a1ed82c72862aeca4620dc88b7aeefb  edge-1.0.0.zip
+00a247c2f417a5ac6380ca24dfcd1abb366b02116d3f0fbfe3292b69005669ee  firefox-1.0.0.zip
+ea90aa4127562408d1e5fa690da943ab4e30c7fa094ec2a9a7d68de441a89ea3  opera-1.0.0.zip
 426d0eee90bbd081c81b30c83dbb7b73b624cdb53e8e3275373bde9f1f026da7  velocitydm-1.0.0-linux-x64-musl.tar.gz
-00d3cef68072936a797b1b9bbb2efcc4b1599dacd0e22e42e7695585f197d3db  velocitydm-1.0.0-linux-x64.tar.gz
+0a31d711f5a755aba058ee55d97d13a3812378ef5b0f14cb3315a1a58bb73571  velocitydm-1.0.0-linux-x64.tar.gz
 67293d10e4338498814c61df9d277b8ef1363fa2d04f6ee6895c3daadab56e93  velocitydm-1.0.0-windows-x64.zip
 78cc5a961e1972aeee1f1131d8514d9929906dad17fbac70a72ccc80a5f201ec  velocitydm-1.0.0-windows-x86.zip
-c0d690342f5737f06d4dde170266a409ffbece518d3312d3dcedffed61aa3ffc  velocitydm-1.0.0-windows7-x64.zip
-e7d88e6a8222ffeb3d697a79d754063358f218c35823a91f5df3552b34b25d8d  velocitydm-1.0.0-windows7-x86.zip
+f0000a30c95b6241dadfb482e721bebe66ad19676ea2cb0731328f7623b06cfb  velocitydm-1.0.0-windows7-x64.zip
+1ca44b41f4a6f576cd50c1edc60dc75f665512077cddf25e6bf9e5879a00adb3  velocitydm-1.0.0-windows7-x86.zip

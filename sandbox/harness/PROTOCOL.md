@@ -60,8 +60,30 @@ Each agent returns exactly one verdict:
 - If consensus fails: fix the blocking findings, then re-run the **whole**
   panel (all three roles, fresh).
 
+## Extended panel (standard since assessment 0002)
+
+For comprehensive coverage, gates since assessment 0002 dispatch five
+narrower mandates in place of — or in addition to — the three roles:
+
+| Role | Mandate |
+| --- | --- |
+| ATKR | Red Team / Security: attack surface, secrets, injection, supply chain |
+| FALS | Skeptic / Falsifier: docs vs wire truth, claims the code does not deliver |
+| REQ | Requirements Guardian: deliverable completeness, buildability, scope honesty |
+| INT | Integration Adversary: CI matrix, cross-compilation, dependency/toolchain reality |
+| REL | Release Blocker / SRE: tags, releases, assets, rollback, runbook readiness |
+
+Rules of engagement are unchanged: independent dispatch (agents see no
+peer verdicts), identical evidence packs, one verdict each, and consensus
+= zero `BLOCK` / zero `OBJECT` verdicts. Assessments 0001/0001b used the
+three-role panel; 0002/0002b used the five-role panel; **future stage
+gates use the five-role panel** (the three-role panel is the minimum
+quorum when agent budget is constrained). Both panels satisfy the
+project-level requirement: every stage needs a comprehensive adversarial
+assessment and independent consensus before work proceeds.
+
 ## Records
 
 Each gate produces `ASSESSMENTS/NNNN-<stage>.md` containing: date, stage,
-the three verdicts with findings, the consensus outcome, and what was done
+the verdicts with findings, the consensus outcome, and what was done
 about the conditions. The gate is only closed when the record exists.

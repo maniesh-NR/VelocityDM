@@ -17,7 +17,7 @@ agents (human or AI) must follow when working on VelocityDM.
 | `PROTOCOL.md` | Adversarial consensus protocol (roles, verdicts, gate rules) |
 | `WORKFLOW.md` | Execution-plan lifecycle; **backup is always the last step** |
 | `BACKUPS.md` | Append-only backup log |
-| `ASSESSMENTS/` | One record per stage gate: the three verdicts, findings, outcome |
+| `ASSESSMENTS/` | One record per stage gate: the panel verdicts (three-role or five-role panel), findings, outcome |
 
 ## The three rules
 
