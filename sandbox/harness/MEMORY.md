@@ -179,3 +179,35 @@ session reads this file first, then `ROADMAP.md`.
   remains the minimum quorum. README wording aligned.
 - Next actionable stage is S4 (DHT, BEP-5) — PENDING; per the protocol it
   must open with a fresh five-role gate assessment before any work starts.
+
+## 2026-11-14 (session 4, amendment) — S11 added: IDM competitive study
+
+- Owner-directed roadmap amendment: study the reference product (the
+  official IDM 6.43 build 18 installer) for download-management /
+  browser-integration methods worth adopting for performance,
+  stability, and resource use. Added as advisory stage S11 (parallel to
+  S4+, never blocks the release train) after a two-role amendment gate.
+- Artifact pinned: URL + SHA-256
+  `7346128fab42957b4254eabdb012bfdbd751e9069361e98a6916f26bb03d62ee` +
+  12,164,608 bytes + PE32 i386 (fingerprinted this session, binary
+  deleted immediately, never stored; REQ re-verified the fingerprint
+  byte-exact against the live official URL). Fail-closed re-pin policy
+  baked into the brief (vendor rotates builds).
+- Amendment gate record: `ASSESSMENTS/0003-s11-roadmap-amendment.md`
+  (RED + REQ dispatched independently; 2× PROCEED-WITH-CONDITIONS, zero
+  BLOCK → consensus). All nine conditions folded into the S11 brief
+  BEFORE commit. The load-bearing ones: T2/T3 (decompile / dynamic RE)
+  require a SEPARATE dated owner-signed legal-basis clearance on top
+  of the activation gate — a declined clearance escalates back to the
+  owner, never silently drops the directive; spec-first clean-room
+  barriers (behavior spec committed BEFORE the implementing commit;
+  T2/T3 artifacts only in a wiped throwaway dir outside the repo);
+  honest prerequisites (this sandbox has no Windows VM and no
+  decompiler — T1/T3 need an owner-provisioned Windows machine, T2
+  needs Ghidra-class tooling; until then: plan + literature analysis
+  only, never invented measurements).
+- GitHub issue #15 created on the `v1.1.0 - roadmap` milestone
+  (labels area:engine + area:extensions) BEFORE the ROADMAP commit so
+  the "tracked as issue" wording is true at commit time (REQ-1).
+- Sandbox note: `scripts/create_s11_issue.py` (issue-creation helper)
+  joined the toolbox; it ships in the next backup snapshot.
