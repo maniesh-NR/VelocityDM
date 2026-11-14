@@ -97,3 +97,55 @@ with `strict: false` and `enforce_admins: false`.
   (checksums only — rebuild from the repo), uncommitted working-tree
   changes (commit before backup; the manifest's dirty-count is a tripwire:
   non-zero at backup time means something was left uncommitted).
+
+## Ghidra headless in the sandbox (S11-T2 toolchain — verified 2026-11-14)
+
+`analyzeHeadless` runs in this sandbox. Verified end-to-end on a 16 KB
+ELF: import → auto-analysis → runtime script compilation → headless C
+decompilation of a targeted routine (`scripts/ghidra/ProbeS11.java`,
+shipped and backed up). Measurements: **~10 s wall, 407 MB peak java
+RSS, exit 0** (2 CPUs, 4 GB RAM machine). Persistent footprint
+~1.23 GB under `/home/z/my-project/tools/` (excluded from backups by
+design — re-install per this section if lost).
+
+### Install (recovery) steps
+
+1. Ghidra 12.2 zip from the official release
+   (`NationalSecurityAgency/ghidra`, tag `Ghidra_12.2_build`; SHA-256
+   `2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67`
+   — verify with `sha256sum`), unzip to
+   `/home/z/my-project/tools/ghidra`.
+2. **JDK 25 required** (`Ghidra/application.properties`:
+   `application.java.min=25` — JDK 21 is rejected). Temurin 25 from
+   `https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jdk/hotspot/normal/eclipse`,
+   untar to `/home/z/my-project/tools/jdk` (the system
+   `/usr/bin/java` is a JRE-only 21 — insufficient: script compilation
+   needs `javac`).
+3. Set `JAVA_HOME_OVERRIDE=/home/z/my-project/tools/jdk` in
+   `tools/ghidra/support/launch.properties` — the no-TTY launcher does
+   NOT honor the `JAVA_HOME` env var and otherwise dies with "Unable to
+   prompt user for JDK path".
+4. The headless project's PARENT directory must exist before the run
+   (`analyzeHeadless <projdir> <name>` will not create it).
+
+### Usage pattern
+
+```sh
+export JAVA_HOME=/home/z/my-project/tools/jdk
+tools/ghidra/support/analyzeHeadless <projdir> ProjName \
+  -import <binary> -scriptPath /home/z/my-project/scripts/ghidra \
+  -postScript <Script>.java -deleteProject
+```
+
+Notes: Ghidra's PE loader covers the S11 target format (PE32 i386,
+`x86:LE:32:default`) as a built-in capability, but the verified probe
+exercised the ELF path only — no local PE test target exists, and the
+IDM artifact itself stays untouched pending the T2 clearance. A 12 MB
+packed installer will need minutes-to-hours of analysis time and
+measured heap tuning on this 4 GB machine; budget accordingly (Ghidra
+12 computes the default heap from system RAM; the probe ran with
+defaults without OOM).
+
+Reclaim disk when the toolchain is idle: `rm -rf
+/home/z/my-project/tools/{ghidra,jdk}` (≈1.23 GB; the runbook above
+restores it).
