@@ -55,10 +55,17 @@ Each stage transition is gated by the adversarial consensus protocol
   gate re-verifies hash + size against a fresh download before any
   work starts. **Prerequisites (stated honestly):** T1/T3 need a
   Windows-capable VM or separate machine (owner-provisioned — this
-  sandbox has no KVM/qemu/wine and no Windows); T2 needs a PE RE
-  toolchain (e.g. Ghidra, Apache-2.0 — locally only binutils `objdump`
-  exists); until provisioned, the deliverable is the study plan plus
-  literature-level analysis, never invented measurements. **Question:**
+  sandbox has no KVM/qemu/wine and no Windows). T2's toolchain is
+  now provisioned and verified in the sandbox (2026-11-14 probe:
+  Ghidra 12.2 `analyzeHeadless` + Temurin JDK 25 at `tools/`,
+  import → analysis → runtime script compile → headless C
+  decompilation of a targeted routine in ~10 s / 407 MB peak RSS on a
+  16 KB ELF; install/recovery in `RUNBOOK.md`; the probe exercised
+  the ELF path — PE32 i386 is a documented built-in Ghidra loader —
+  and the pinned IDM artifact remains untouched pending the T2
+  clearance). T2 legal clearance is still outstanding; until it and
+  the activation gate are recorded, the deliverable is the study plan
+  plus literature-level analysis, never invented measurements. **Question:**
   does the reference product contain methods of download management or
   browser integration worth adopting here for performance, stability,
   and resource use? Method tiers:

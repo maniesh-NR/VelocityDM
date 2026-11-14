@@ -9,3 +9,4 @@ execution plan / every output that changed something), never fixed-interval
 | 2026-11-13T10:42:52Z | S1 close: harness + Material You extensions commit | sandbox-backup | new | scripts+harness+manifest |
 | 2026-11-13T16:57:44Z | S1R close: adversarial consensus publish (b27549a) + harness completion record (18f1e14) | sandbox-backup | 3ae0623 | scripts+harness+manifest |
 | 2026-11-14T01:28:53Z | session-4 close: environment-loss recovery verified, harness codified, CI green at c9e9748 | sandbox-backup | e86adbc | scripts+harness+manifest |
+| 2026-11-14T01:47:40Z | S11 roadmap amendment close: IDM competitive study added (gate 0003 consensus, issue #15, CI green at dccb25b) | sandbox-backup | fbf8a2e | scripts+harness+manifest |

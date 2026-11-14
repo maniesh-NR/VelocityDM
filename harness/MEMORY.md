@@ -211,3 +211,35 @@ session reads this file first, then `ROADMAP.md`.
   the "tracked as issue" wording is true at commit time (REQ-1).
 - Sandbox note: `scripts/create_s11_issue.py` (issue-creation helper)
   joined the toolbox; it ships in the next backup snapshot.
+
+## 2026-11-14 (session 4, T2 probe) — Ghidra analyzeHeadless: FEASIBLE in this sandbox
+
+- Owner question: can Ghidra CLI (`analyzeHeadless`) run here? Answer:
+  **yes, verified end-to-end.** Probe (`scripts/ghidra/ProbeS11.java`,
+  backed up with the toolbox): import a 16 KB gcc-built ELF →
+  auto-analysis → runtime script compilation → headless C decompilation
+  of `main`; decompiled output matched the C source semantically,
+  line-for-line. ~10 s wall, 407 MB peak java RSS, exit 0, on this
+  2-CPU / 4 GB-RAM / glibc-2.41 machine.
+- Toolchain now provisioned persistently at `/home/z/my-project/tools/`
+  (survives sandbox recycles; NOT pushed to backups — ~1.23 GB):
+  Ghidra 12.2 (zip SHA-256 verified against the release) + Temurin JDK
+  25. Re-install recipe in `RUNBOOK.md` ("Ghidra headless in the
+  sandbox").
+- Hard-won setup facts (all bit us, all in the runbook):
+  - Ghidra 12.2 requires **JDK 25** (`Ghidra/application.properties`
+    `application.java.min=25`) — a full JDK, not the JRE: script
+    compilation needs `javac`. System java is a JRE-only 21 — rejected;
+    Temurin 21 — rejected too.
+  - The no-TTY launcher ignores the `JAVA_HOME` env var and dies with
+    "Unable to prompt user for JDK path" — set
+    `JAVA_HOME_OVERRIDE` in `tools/ghidra/support/launch.properties`.
+  - The headless project PARENT directory must pre-exist.
+- Scope honesty: the probe exercised the ELF path; PE32 i386 (the S11
+  target format) is a documented built-in Ghidra loader, not something
+  this probe ran (no local PE test target; the IDM artifact itself
+  stays untouched pending the T2 legal clearance). A 12 MB packed
+  installer will need real analysis time + heap budgeting on 4 GB RAM.
+- ROADMAP S11 prerequisites updated to the new truth (T2 toolchain:
+  provisioned; T2 clearance: still outstanding; T1/T3 Windows VM:
+  still needed). Issue #15 commented with the probe evidence.
