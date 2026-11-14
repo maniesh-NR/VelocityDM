@@ -149,3 +149,33 @@ session reads this file first, then `ROADMAP.md`.
   cycle ended) — nothing to delete.
 - Local tags note: the working repo's tags now point at the new tag
   objects (re-cut by the publisher at runtime), matching the remote.
+
+## 2026-11-14 (session 4) — recovery verification: the harness survived an environment loss
+
+- The sandbox was recycled again after the S1R close; this session
+  bootstrapped exactly as `harness/README.md` prescribes (MEMORY → ROADMAP
+  → PROTOCOL → WORKFLOW) instead of rebuilding blind. Remote main was 29
+  commits ahead of the stale local snapshot and already contained ALL
+  S1/S2/S3/S1R work (Material You, harness, adversarial gates, publishes).
+  Fast-forwarded to `b41d5b8`; zero rework, zero regression. **The backup
+  rule and the memory-first bootstrap did their job — this is the third
+  environment loss and the first one recovered with no rework.**
+- Token re-verified writable via a Contents API probe (commit `b41d5b8`;
+  the probe file `harness/.write-probe` is removed by this session's
+  closing commit, as sessions 2/3 did with theirs).
+- Live GitHub state verified by API in this session:
+  - 6 releases, all carrying assets (v1.0.0: 14 assets; -linux/-macos: 3;
+    -windows/-extensions: 5; -android: 2).
+  - Branch protection on `main`: EXACTLY the 8 byte-exact required checks;
+    enforce_admins false; force-pushes and deletions disallowed.
+  - All six remote tags point at `b27549a` (the S1R publish HEAD).
+  - Cron job 514177 is gone (deleted after the successful publish; the
+    retry cycle is closed).
+- Sandbox tooling restored from the `sandbox-backup` branch snapshot
+  (`backup-sandbox.sh`, `poll-runs.sh`, `move_test_mod.py`) — the branch
+  carried them across the recycle, as designed.
+- `PROTOCOL.md` codified: the five-role panel (ATKR/FALS/REQ/INT/REL) is
+  the comprehensive standard for future stage gates; RED/BLUE/AUDITOR
+  remains the minimum quorum. README wording aligned.
+- Next actionable stage is S4 (DHT, BEP-5) — PENDING; per the protocol it
+  must open with a fresh five-role gate assessment before any work starts.
