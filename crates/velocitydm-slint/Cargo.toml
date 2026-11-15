@@ -1,0 +1,24 @@
+[package]
+name = "velocitydm-slint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VelocityDM Linux desktop frontend — Slint (modern Linux stack), Material You themed, in-process shared Rust core"
+
+[[bin]]
+name = "velocitydm-slint"
+path = "src/main.rs"
+
+[dependencies]
+vdm-core = { workspace = true }
+vdm-rpc = { workspace = true }
+vdm-md3 = { workspace = true }
+slint = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[build-dependencies]
+slint-build = { version = "1.18", default-features = false, features = ["compat-1-18"] }
+
+[dev-dependencies]
+sha2 = { workspace = true }

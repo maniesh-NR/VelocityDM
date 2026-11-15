@@ -112,3 +112,30 @@ jobs:
         run: bash scripts/e2e.sh
       - name: e2e cross-feature
         run: bash scripts/e2e-cross.sh
+
+  # Non-required preview frontends (S12): the native stacks build on
+  # their real OSes; promotion to shipped assets is a later gated stage.
+
+  win32-frontend:
+    name: Windows frontend (Win32 + Direct2D)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - run: rustup default stable
+      - name: cargo fmt (frontend)
+        run: cargo fmt --manifest-path frontend/win32/Cargo.toml --all -- --check
+      - name: cargo clippy (frontend)
+        run: cargo clippy --manifest-path frontend/win32/Cargo.toml --all-targets -- -D warnings
+      - name: cargo build (frontend)
+        run: cargo build --manifest-path frontend/win32/Cargo.toml --release
+
+  swift-frontend:
+    name: macOS frontend (Swift + AppKit)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift build
+        run: |
+          cd macos-app
+          swift build

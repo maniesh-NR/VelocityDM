@@ -1,0 +1,547 @@
+// VelocityDM — Slint frontend (Linux desktop, modern stack).
+//
+// Material You chrome (cards, chips, filled/tonal buttons, progress
+// bars) is drawn from primitives bound to the Theme global, which the
+// Rust side fills from the shared `vdm-md3` token engine — so the
+// seed color renders the same roles here as on every other platform.
+// Text inputs, checkboxes and sliders use the toolkit's native
+// widgets: platform-standard interaction is the OS-specific layer.
+
+import { LineEdit, CheckBox, Slider, ScrollView } from "std-widgets.slint";
+
+export global Theme {
+    // MD3 scheme roles, set from Rust (vdm-md3 engine).
+    in property <color> primary;
+    in property <color> on-primary;
+    in property <color> primary-container;
+    in property <color> on-primary-container;
+    in property <color> secondary-container;
+    in property <color> on-secondary-container;
+    in property <color> tertiary;
+    in property <color> error;
+    in property <color> on-error;
+    in property <color> surface;
+    in property <color> surface-container-lowest;
+    in property <color> surface-container-low;
+    in property <color> surface-container;
+    in property <color> surface-container-high;
+    in property <color> surface-container-highest;
+    in property <color> on-surface;
+    in property <color> on-surface-variant;
+    in property <color> outline;
+    in property <color> outline-variant;
+    in property <length> radius: 12px;
+}
+
+export struct TaskItem {
+    id: int,
+    name: string,
+    state-text: string,
+    state-color: color,
+    stats: string,
+    detail: string,
+    error-text: string,
+    progress: float,
+    can-pause: bool,
+    can-resume: bool,
+}
+
+component FilledButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 34px;
+    border-radius: 17px;
+    background: root.enabled ? Theme.primary : Theme.surface-container-highest;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        Text {
+            text: root.text;
+            color: root.enabled ? Theme.on-primary : Theme.on-surface-variant;
+            vertical-alignment: center;
+            font-size: 14px;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component TonalButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 34px;
+    border-radius: 17px;
+    background: root.enabled ? Theme.secondary-container : Theme.surface-container-highest;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        Text {
+            text: root.text;
+            color: root.enabled ? Theme.on-secondary-container : Theme.on-surface-variant;
+            vertical-alignment: center;
+            font-size: 14px;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component TextButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 34px;
+    border-radius: 17px;
+    background: transparent;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        Text {
+            text: root.text;
+            color: root.enabled ? Theme.primary : Theme.on-surface-variant;
+            vertical-alignment: center;
+            font-size: 14px;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <color> fg;
+    height: 22px;
+    border-radius: 8px;
+    background: Theme.surface-container-low;
+    border-width: 1px;
+    border-color: Theme.outline-variant;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        Text {
+            text: root.text;
+            color: root.fg;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component ProgressBar inherits Rectangle {
+    in property <float> progress; // 0..1
+    height: 8px;
+    border-radius: 4px;
+    background: Theme.surface-container-highest;
+    Rectangle {
+        x: 0;
+        y: 0;
+        height: parent.height;
+        width: parent.width * clamp(root.progress, 0, 1);
+        background: Theme.primary;
+        border-radius: 4px;
+    }
+}
+
+component TaskCard inherits Rectangle {
+    in property <int> task-id;
+    in property <string> name;
+    in property <string> state-text;
+    in property <color> state-color;
+    in property <string> stats;
+    in property <string> detail;
+    in property <string> error-text;
+    in property <float> progress;
+    in property <bool> can-pause;
+    in property <bool> can-resume;
+    callback pause();
+    callback resume();
+    callback remove();
+
+    background: Theme.surface-container;
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: Theme.outline-variant;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 8px;
+            Chip { text: root.state-text; fg: root.state-color; }
+            Text {
+                text: "#" + root.task-id;
+                color: Theme.on-surface-variant;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: 14px;
+                font-weight: 700;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.stats;
+                color: Theme.on-surface-variant;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            TonalButton {
+                text: "Pause";
+
+                enabled: root.can-pause;
+                clicked => { root.pause(); }
+            }
+            TonalButton {
+                text: "Resume";
+
+                enabled: root.can-resume;
+                clicked => { root.resume(); }
+            }
+            TextButton {
+                text: "Remove";
+
+                clicked => { root.remove(); }
+            }
+        }
+        ProgressBar { progress: root.progress; }
+        if root.error-text != "": Text {
+            text: root.error-text;
+            color: Theme.error;
+            font-size: 12px;
+            overflow: elide;
+        }
+        if root.error-text == "": Text {
+            text: root.detail;
+            color: Theme.on-surface-variant;
+            font-size: 11px;
+            overflow: elide;
+        }
+    }
+}
+
+component SettingsPanel inherits Rectangle {
+    in-out property <string> settings-dir;
+    in-out property <int> settings-connections;
+    in-out property <int> settings-max-active;
+    in-out property <string> settings-limit;
+    in-out property <string> settings-proxy;
+    in-out property <string> settings-stop-start;
+    in-out property <string> settings-stop-end;
+    in-out property <bool> settings-shutdown;
+    in-out property <string> theme-seed-label;
+    in-out property <bool> theme-dark;
+    callback apply-settings();
+    callback cycle-theme();
+    callback toggle-dark();
+
+    background: Theme.surface-container-low;
+    border-radius: Theme.radius;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        Text {
+            text: "Settings";
+            color: Theme.primary;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Download folder";
+                color: Theme.on-surface;
+                vertical-alignment: center;
+                width: 130px;
+            }
+            LineEdit {
+                text <=> root.settings-dir;
+                horizontal-stretch: 1;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Connections";
+                color: Theme.on-surface;
+                vertical-alignment: center;
+                width: 130px;
+            }
+            Slider {
+                minimum: 1;
+                maximum: 32;
+                value: root.settings-connections;
+                changed(value) => {
+                    root.settings-connections = round(value);
+                }
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.settings-connections;
+                color: Theme.on-surface-variant;
+                vertical-alignment: center;
+                width: 30px;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Global limit";
+                color: Theme.on-surface;
+                vertical-alignment: center;
+                width: 130px;
+            }
+            LineEdit {
+                placeholder-text: "off";
+                text <=> root.settings-limit;
+                width: 120px;
+            }
+            Text {
+                text: "Proxy";
+                color: Theme.on-surface;
+                vertical-alignment: center;
+                width: 60px;
+            }
+            LineEdit {
+                placeholder-text: "http://h:port or socks5://h:port";
+                text <=> root.settings-proxy;
+                horizontal-stretch: 1;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Stop window";
+                color: Theme.on-surface;
+                vertical-alignment: center;
+                width: 130px;
+            }
+            LineEdit {
+                placeholder-text: "22:00";
+                text <=> root.settings-stop-start;
+                width: 64px;
+            }
+            Text {
+                text: "to";
+                color: Theme.on-surface-variant;
+                vertical-alignment: center;
+            }
+            LineEdit {
+                placeholder-text: "06:00";
+                text <=> root.settings-stop-end;
+                width: 64px;
+            }
+            CheckBox {
+                text: "Shut down when queue drains";
+                checked <=> root.settings-shutdown;
+                horizontal-stretch: 1;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Max simultaneous";
+                color: Theme.on-surface;
+                vertical-alignment: center;
+                width: 130px;
+            }
+            Slider {
+                minimum: 1;
+                maximum: 16;
+                value: root.settings-max-active;
+                changed(value) => {
+                    root.settings-max-active = round(value);
+                }
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.settings-max-active;
+                color: Theme.on-surface-variant;
+                vertical-alignment: center;
+                width: 30px;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Material You";
+                color: Theme.on-surface;
+                vertical-alignment: center;
+                width: 130px;
+            }
+            TonalButton {
+                text: root.theme-seed-label;
+
+                clicked => { root.cycle-theme(); }
+            }
+            TonalButton {
+                text: root.theme-dark ? "Dark" : "Light";
+
+                clicked => { root.toggle-dark(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            FilledButton {
+                text: "Apply";
+
+                clicked => { root.apply-settings(); }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    in-out property <string> add-url;
+    in-out property <string> add-quality: "best";
+    in-out property <string> add-limit;
+    in-out property <string> total-speed: "idle";
+    in-out property <bool> show-settings: false;
+    in-out property <bool> empty: true;
+    in-out property <[TaskItem]> tasks;
+
+    in-out property <string> settings-dir;
+    in-out property <int> settings-connections;
+    in-out property <int> settings-max-active;
+    in-out property <string> settings-limit;
+    in-out property <string> settings-proxy;
+    in-out property <string> settings-stop-start;
+    in-out property <string> settings-stop-end;
+    in-out property <bool> settings-shutdown;
+    in-out property <string> theme-seed-label;
+    in-out property <bool> theme-dark: true;
+
+    callback add-download();
+    callback pause-task(int);
+    callback resume-task(int);
+    callback remove-task(int);
+    callback apply-settings();
+    callback cycle-theme();
+    callback toggle-dark();
+
+    title: "VelocityDM";
+    preferred-width: 980px;
+    preferred-height: 640px;
+    min-width: 760px;
+    min-height: 480px;
+    background: Theme.surface;
+
+    VerticalLayout {
+        // Header bar
+        Rectangle {
+            height: 60px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 12px;
+                Text {
+                    text: "VelocityDM";
+                    color: Theme.primary;
+                    font-size: 20px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                TonalButton {
+                text: "Settings";
+
+                    clicked => { root.show-settings = !root.show-settings; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text: root.total-speed;
+                    color: Theme.on-surface-variant;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        if root.show-settings: SettingsPanel {
+            settings-dir <=> root.settings-dir;
+            settings-connections <=> root.settings-connections;
+            settings-max-active <=> root.settings-max-active;
+            settings-limit <=> root.settings-limit;
+            settings-proxy <=> root.settings-proxy;
+            settings-stop-start <=> root.settings-stop-start;
+            settings-stop-end <=> root.settings-stop-end;
+            settings-shutdown <=> root.settings-shutdown;
+            theme-seed-label <=> root.theme-seed-label;
+            theme-dark <=> root.theme-dark;
+            apply-settings => { root.apply-settings(); }
+            cycle-theme => { root.cycle-theme(); }
+            toggle-dark => { root.toggle-dark(); }
+        }
+        // Add-download bar
+        Rectangle {
+            height: 60px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 8px;
+                LineEdit {
+                    placeholder-text: "Paste a URL, magnet: or path to .torrent";
+                    text <=> root.add-url;
+                    horizontal-stretch: 1;
+                }
+                LineEdit {
+                    placeholder-text: "best";
+                    text <=> root.add-quality;
+                    width: 72px;
+                }
+                LineEdit {
+                    placeholder-text: "off";
+                    text <=> root.add-limit;
+                    width: 72px;
+                }
+                FilledButton {
+                text: "Add";
+
+                    clicked => { root.add-download(); }
+                }
+            }
+        }
+        // Download list
+        Rectangle {
+            background: Theme.surface;
+            if root.empty: Text {
+                text: "No downloads yet.\nPaste a link above or use the browser extension.";
+                color: Theme.on-surface-variant;
+                font-size: 16px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            if !root.empty: ScrollView {
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 6px;
+                    for task in root.tasks: TaskCard {
+                        task-id: task.id;
+                        name: task.name;
+                        state-text: task.state-text;
+                        state-color: task.state-color;
+                        stats: task.stats;
+                        detail: task.detail;
+                        error-text: task.error-text;
+                        progress: task.progress;
+                        can-pause: task.can-pause;
+                        can-resume: task.can-resume;
+                        pause => { root.pause-task(task.id); }
+                        resume => { root.resume-task(task.id); }
+                        remove => { root.remove-task(task.id); }
+                    }
+                }
+            }
+        }
+    }
+}

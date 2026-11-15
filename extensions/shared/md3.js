@@ -2,10 +2,12 @@
  * VelocityDM shared module: Material You (Material Design 3) dynamic color.
  *
  * Seed color -> tonal palettes -> MD3 light/dark scheme, applied to the page
- * as CSS custom properties (--md-*). The same generation model as the
- * desktop egui GUI (crates/velocitydm/src/theme.rs) and the Android
+ * as CSS custom properties (--md-*). Same generation model as the shared
+ * Rust token engine (crates/vdm-md3 — the canonical engine the egui GUI,
+ * Slint, Win32 and Swift frontends consume) and the Android
  * dynamicColorScheme fallback: tones are CIELAB L* with chroma clipped to
- * the sRGB gamut at constant tone.
+ * the sRGB gamut at constant tone (the Rust/Swift engine uses the
+ * equivalent OKLab formulation; tone tables are identical).
  *
  * Theme prefs live in chrome.storage.local under "theme":
  *   { seed: "#4156A4", mode: "system" | "light" | "dark" }

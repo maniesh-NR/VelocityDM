@@ -1,0 +1,47 @@
+[package]
+name = "velocitydm-win32"
+version = "1.0.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "VelocityDM Windows frontend — Raw Win32 + Direct2D (GPU-accelerated 2D vector drawing), Material You themed, in-process shared Rust core"
+
+[[bin]]
+name = "velocitydm-win32"
+path = "src/main.rs"
+
+[dependencies]
+vdm-core = { path = "../../crates/vdm-core", default-features = false }
+vdm-rpc = { path = "../../crates/vdm-rpc", default-features = false }
+vdm-md3 = { path = "../../crates/vdm-md3" }
+serde = "1"
+serde_json = "1"
+
+[features]
+default = ["tls"]
+tls = ["vdm-core/tls", "vdm-rpc/tls"]
+
+[dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Controls",
+]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+
+# Standalone workspace: Windows-only dependencies must not be resolved by
+# the root workspace (Linux/macOS CI jobs would fail on `windows`).
+[workspace]

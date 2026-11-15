@@ -11,12 +11,13 @@ path = "src/main.rs"
 
 [features]
 default = ["gui", "tls"]
-gui = ["dep:eframe"]
+gui = ["dep:eframe", "dep:vdm-md3"]
 tls = ["vdm-core/tls"]
 
 [dependencies]
 vdm-core = { workspace = true }
 vdm-rpc = { workspace = true }
+vdm-md3 = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }

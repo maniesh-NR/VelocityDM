@@ -1,0 +1,18 @@
+[package]
+name = "vdm-md3"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VelocityDM shared Material You (MD3) dynamic-color token engine — one seed color to full light/dark schemes for every platform frontend"
+
+[[bin]]
+name = "md3-tokens"
+path = "src/bin/md3_tokens.rs"
+
+[dependencies]
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[features]
+default = ["json"]
+json = ["dep:serde", "dep:serde_json"]

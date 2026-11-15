@@ -19,6 +19,7 @@ Each stage transition is gated by the adversarial consensus protocol
 | S9 | Safari native app extension (Xcode conversion) | PENDING | — |
 | S10 | Flathub submission | PENDING | — |
 | S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | PENDING | — |
+| S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; Android/Views+KMP + gtk3 + Qt + SwiftUI variants are gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` |
 
 ## Stage briefs
 
@@ -121,3 +122,44 @@ Each stage transition is gated by the adversarial consensus protocol
   - Advisory stage: runs in parallel with S4+ and feeds them; it never
     blocks the release train. Tracked as GitHub issue #15 on the
     `v1.1.0 - roadmap` milestone like S4–S10.
+- **S12**: Owner-directed platform matrix — specific UI stacks per
+  operating system around the **shared Rust core** (`vdm-core` +
+  `vdm-rpc`), **Material You across all operating systems for
+  consistency while keeping OS-specific elements**. The design contract
+  is `docs/DESIGN-MATERIAL-YOU.md`; the gate record is
+  `ASSESSMENTS/0004-s12-native-frontends.md`. Stack status:
+  - **Foundation (DONE):** `crates/vdm-md3` — the shared Material You
+    token engine (seed → OKLCH tonal palettes → MD3 light/dark
+    schemes), consumed by every frontend; the egui `theme.rs` now
+    delegates to it (single source of truth); `md3-tokens` CLI
+    exports JSON for non-Rust consumers.
+  - **Windows (DONE, preview):** Raw Win32 + Direct2D frontend at
+    `frontend/win32/` — hand-rolled message loop, GPU-accelerated MD3
+    vector chrome, DirectWrite text, native EDIT/BUTTON children, DPI
+    awareness; standalone workspace (Windows-only deps); CI-built on
+    windows-latest (non-required job). Type-checked locally against
+    the msvc target.
+  - **Linux modern (DONE, preview):** Slint frontend at
+    `crates/velocitydm-slint/` — a root-workspace member, so the
+    required fmt/clippy/test checks cover it on all three CI OSes
+    (the win7 payload and extension-test jobs target other trees);
+    `.slint` UI, MD3 chrome from primitives, native input widgets,
+    in-process shared core.
+  - **macOS (DONE, preview):** Swift + AppKit package at
+    `macos-app/` — programmatic AppKit, Material You via the
+    `Md3.swift` port of the shared token engine, JSON-RPC client of
+    the shared core over the documented loopback protocol; CI-built
+    on macos-latest (non-required job).
+  - **Sub-stages (each needs its own five-role gate before work):**
+    S12-e Android **Views + Kotlin Multiplatform** restructure (the
+    shipped Compose app stays the v1.0.x default until then);
+    S12-lin2 **gtk-rs/gtk3-rs** frontend for older Linux (needs GTK3
+    dev libs on CI); S12-lin3 **Qt (cxx-qt)** alternative; S12-mac2
+    **SwiftUI** variant for newer macOS; SSE event-stream wiring for
+    the Swift client; promotion gates that move each frontend from
+    preview to shipped (owner runtime verification + parity +
+    release.yml packaging — the six v1.0.0 releases stay frozen
+    until then). Tracked as GitHub issue #16 on the
+    `v1.1.0 - roadmap` milestone.
+  - Windows 7 stays the headless payload by design (out of scope,
+    as in S1).

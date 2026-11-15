@@ -2,9 +2,11 @@
 resolver = "2"
 members = [
     "crates/vdm-core",
+    "crates/vdm-md3",
     "crates/vdm-rpc",
     "crates/velocitydm",
     "crates/velocitydm-nmh",
+    "crates/velocitydm-slint",
 ]
 
 [workspace.package]
@@ -27,7 +29,9 @@ webpki-roots = "0.26"
 rustls-pki-types = "1"
 clap = { version = "4", features = ["derive"] }
 eframe = "0.27"
+slint = { version = "1.18", default-features = false, features = ["backend-winit", "renderer-software", "std", "compat-1-18"] }
 vdm-core = { path = "crates/vdm-core" }
+vdm-md3 = { path = "crates/vdm-md3" }
 vdm-rpc = { path = "crates/vdm-rpc" }
 
 [profile.release]

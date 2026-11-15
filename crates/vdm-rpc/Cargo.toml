@@ -10,7 +10,7 @@ default = ["tls"]
 tls = ["vdm-core/tls"]
 
 [dependencies]
-vdm-core = { workspace = true }
+vdm-core = { path = "../vdm-core", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
