@@ -11,4 +11,5 @@ execution plan / every output that changed something), never fixed-interval
 | 2026-11-14T01:28:53Z | session-4 close: environment-loss recovery verified, harness codified, CI green at c9e9748 | sandbox-backup | e86adbc | scripts+harness+manifest |
 | 2026-11-14T01:47:40Z | S11 roadmap amendment close: IDM competitive study added (gate 0003 consensus, issue #15, CI green at dccb25b) | sandbox-backup | fbf8a2e | scripts+harness+manifest |
 | 2026-11-15T02:29:51Z | S12 close: native UI stacks (vdm-md3 + Win32/D2D + Slint + Swift/AppKit), gate 0004, CI 10/10 green at 9aa79bd | sandbox-backup | b72eeff | scripts+harness+manifest |
-| 2026-11-15T02:30:13Z | S12 close final: backup-log commit pushed, debug artifacts cleaned (disk 7.1G free) | sandbox-backup | — | scripts+harness+manifest |
+| 2026-11-15T02:30:13Z | S12 close final: backup-log commit pushed, debug artifacts cleaned (disk 7.1G free) | sandbox-backup | a274d96 | scripts+harness+manifest |
+| 2026-11-15T06:55:06Z | S12-e close: Android Views+KMP built (preview), gate 0005, 11/11 CI green at 6215abf, tag ruleset active, issue #16 updated | sandbox-backup | — | scripts+harness+manifest |

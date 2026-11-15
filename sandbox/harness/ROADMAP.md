@@ -15,11 +15,11 @@ Each stage transition is gated by the adversarial consensus protocol
 | S5 | UDP trackers (BEP-15) | PENDING | — |
 | S6 | DASH downloader (.mpd manifests) | PENDING | — |
 | S7 | HLS: SAMPLE-AES + fMP4 EXT-X-MAP | PENDING | — |
-| S8 | Android ↔ desktop daemon over LAN (shared RPC) | PENDING | — |
+| S8 | Android ↔ desktop daemon over LAN (shared RPC); also owns the Android engine unification onto the shared Rust core (the Android app ships a Kotlin-port engine until S8) | PENDING | — |
 | S9 | Safari native app extension (Xcode conversion) | PENDING | — |
 | S10 | Flathub submission | PENDING | — |
 | S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | PENDING | — |
-| S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; Android/Views+KMP + gtk3 + Qt + SwiftUI variants are gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` |
+| S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept (Android leg runs on the Kotlin-port engine today; Rust-core unification is S8's) | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; S12-e Android Views+KMP built (preview) under gate 0005; gtk3 + Qt + SwiftUI variants are gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` |
 
 ## Stage briefs
 
@@ -151,8 +151,10 @@ Each stage transition is gated by the adversarial consensus protocol
     the shared core over the documented loopback protocol; CI-built
     on macos-latest (non-required job).
   - **Sub-stages (each needs its own five-role gate before work):**
-    S12-e Android **Views + Kotlin Multiplatform** restructure (the
-    shipped Compose app stays the v1.0.x default until then);
+    S12-e Android **Views + Kotlin Multiplatform** restructure —
+    **DONE (preview)**, gate 0005, tag-rule-protected until the
+    promotion gate (the frozen v1.0.0-family release ASSETS keep the
+    Compose APK);
     S12-lin2 **gtk-rs/gtk3-rs** frontend for older Linux (needs GTK3
     dev libs on CI); S12-lin3 **Qt (cxx-qt)** alternative; S12-mac2
     **SwiftUI** variant for newer macOS; SSE event-stream wiring for
@@ -161,5 +163,105 @@ Each stage transition is gated by the adversarial consensus protocol
     release.yml packaging — the six v1.0.0 releases stay frozen
     until then). Tracked as GitHub issue #16 on the
     `v1.1.0 - roadmap` milestone.
+  - **S12-e execution plan (gate 0005 consensus — 5× PROCEED-WITH-
+    CONDITIONS, zero BLOCK; conditions folded below):** replace the
+    Compose UI with an **Android View-based Material 3** UI (MDC 1.12.0
+    — the View-system MD3, `android.view` widgets throughout) and
+    restructure the Kotlin code into a **Kotlin Multiplatform
+    `:shared` module**. The Compose `Theme.kt` hand-copied baseline
+    literals go away.
+    (a) `android/shared/` — `kotlin("multiplatform")` 2.0.21 +
+    `com.android.library` 8.7.0 (both added apply-false to the root
+    build); targets `androidTarget()` + `jvm()`; a custom `jvmCommon`
+    intermediate source set (androidMain and jvmMain both depend on it)
+    carries the JVM-family code — the moved `SegmentEngine`
+    orchestration (OkHttp 4.12.0, `RandomAccessFile`, atomics,
+    coroutines pinned 1.8.1 to match :app) — so every `expect` has an
+    actual for BOTH targets and `:shared:jvmTest` compiles. `commonMain`
+    holds the pure logic: the Kotlin `Md3` token-engine port (full Rust
+    role set, NOT the truncated Md3.swift API), with goldens asserted
+    against a **checked-in `md3-tokens-baseline.json` generated from
+    the Rust `md3-tokens` CLI** (the Rust↔Kotlin drift tripwire — not
+    hand-copied literals); `RangePool` interval-leasing math; the
+    `.vdmctl` schema (kotlinx-serialization 1.7.3) **with validation**
+    (`0 ≤ start ≤ end < size`, sum ≤ size, unknown keys ⇒ restart from
+    zero; refuse resume when the server sends no ETag unless stored
+    size == probe size); token-bucket wait math; speed/ETA/size
+    formatting + `parseLimit`; task models on String paths (no
+    `java.io.File` in commonMain); `sanitizeFilename()` and real URL
+    validation (http/https only — replaces `startsWith("http")`;
+    rejects path separators/`..`/absolute paths/control chars, caps
+    length, falls back "download") applied on every `add()` path.
+    (b) `:app` Views restructure — Compose plugin/BOM/deps **removed**
+    from root and app; MDC `material` 1.12.0 + `recyclerview` 1.3.2 +
+    serialization/coroutines pinned through an **activated
+    `gradle/libs.versions.toml` catalog** (dead Compose entries pruned,
+    coroutines reconciled to 1.8.1); manifest theme stays
+    `Theme.VelocityDM`, re-parented `Theme.Material3.DayNight` in ONE
+    `values/themes.xml` (the `values-night` copy deleted; MDC widgets
+    crash under the framework parents); hardcoded windowBackground
+    colors dropped (MDC colorSurface owns the background); runtime
+    theming: wallpaper **dynamic color on Android 12+**
+    (OS-specific element), pre-12 static scheme from the Kotlin Md3
+    port seeded **0x4156A4 — the actual `vdm_md3::DEFAULT_SEED`**
+    (gate 0005 corrected the draft's 0x6750A4 "desktop seed" mislabel),
+    with a documented **Scheme→MDC-attr mapping table** naming every
+    attr intentionally left to MDC defaults and an explicit
+    "pre-12 colors visibly change vs the old Google baseline" note;
+    programmatic View tree with **full Compose parity**: MDC toolbar +
+    Browser action, FAB → add-URL dialog (URL + filename override +
+    speed limit, validated), RecyclerView cards (filename, state label
+    with semantic colors, `LinearProgressIndicator`, done/total/speed,
+    per-task error text, pause/resume/remove) + empty state;
+    VIEW-intent auto-add preserved; **`browser/BrowserActivity.kt`
+    rewritten as a real View-based Activity** (the manifest's dangling
+    entry finally points at an existing class): MDC toolbar + address
+    field + sniffed-media list + WebView; ViewModel/DownloadService/
+    BootReceiver imports re-pointed to `:shared` (behavior preserved,
+    imports and construction change); **versionCode 1 / versionName
+    1.0.0 / applicationId frozen** (the promotion gate owns bumps);
+    `proguard-rules.pro` extended (`-keep` for `com.velocitydm.shared.**`
+    + kotlinx.serialization rules) with CI exercising
+    `assembleRelease` so the R8 path compiles on every change; the
+    unreferenced `res/xml/network_security_config.xml` deleted (the
+    manifest `usesCleartextTraffic` attribute carries unchanged — one
+    source of truth); the orphan `gradle-wrapper.properties` (no
+    jar/scripts exist) deleted with docs updated to the setup-gradle
+    reality; empty `dm/` tree cruft removed.
+    (c) CI: one **non-required** `android-frontend` job —
+    **ubuntu-22.04** for byte-parity with the frozen release job;
+    `actions/checkout@v4` + `actions/setup-java@v4` temurin 17 +
+    `gradle/actions/setup-gradle@v4` pinned `8.9` (byte-identical
+    mechanism to release.yml; no new third-party actions, no secrets):
+    `gradle -p android :shared:jvmTest :app:assembleDebug
+    :app:assembleRelease --no-daemon`; the 10 existing jobs untouched;
+    branch protection re-verified at close-out (8 contexts unchanged,
+    `android-frontend` absent). Compile witness: the first CI run on
+    main (KMP-on-Gradle-8.9 is unproven in-repo; runtime verification
+    stays in the promotion criteria, per the 0004 pattern) — or a
+    locally provisioned SDK build before the push, if provisioning
+    succeeds.
+    (d) Release integrity: a GitHub **ruleset (tag target, pattern
+    `v*`, restrict creation/update)** is added BEFORE the
+    implementation merge — the six frozen v1.0.0-family releases stay
+    frozen (re-running release on a v1.0.x tag would attach the Views
+    build: the freeze is procedural, now guarded by the ruleset); the
+    S12-e commit is **push-main-only** (no `publish-velocitydm.sh`, no
+    tag moves, no release.yml edits — release.yml `workflow_dispatch`
+    is forbidden until the promotion gate); one revertable
+    implementation commit (android/** + the additive ci.yml job only).
+    (e) Docs: `android/README.md`, `android/docs/ARCHITECTURE.md`
+    (Views tree, real BrowserActivity, Scheme→MDC mapping),
+    `docs/DESIGN-MATERIAL-YOU.md` Android row, stale `README.md` /
+    `docs/BUILDING.md` wrapper + ABI-splits fixes;
+    `harness/RUNBOOK.md` gains an "Android preview (S12-e)" section
+    (local/CI build, `:shared`, failure policy: required-green +
+    android-frontend-red ⇒ block all tag cuts until green + promotion
+    gate; rollback = git revert of the S12-e commit + device reinstall
+    of the v1.0.0 APK). Honest scope: the KMP module ships android+jvm
+    targets only; the Android engine remains the Kotlin port — S8's
+    brief now explicitly owns "Android engine unification onto the
+    shared Rust core", and the stage row notes the Android leg runs on
+    the Kotlin port today.
   - Windows 7 stays the headless payload by design (out of scope,
     as in S1).
