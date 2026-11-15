@@ -295,3 +295,16 @@ session reads this file first, then `ROADMAP.md`.
 - Environment re-provisions this session: rustup stable (1.100) +
   rustfmt + clippy + `x86_64-pc-windows-msvc` target (rustc/toolchains
   do not survive recycles; tools/ghidra+jdk DO — under my-project).
+- CI witness (final): **ALL GREEN at 9aa79bd** — 10/10 jobs, including
+  the two new non-required frontend builds: Win32+Direct2D compiled
+  and LINKED on real MSVC (windows-latest), Swift+AppKit compiled on
+  macos-latest. Two fix iterations were needed: ubuntu jobs needed
+  `libfontconfig1-dev` (slint's font stack; the dev sandbox happened
+  to have it, the runners did not — lesson: verify system-lib deps
+  against the CI image, not the sandbox), and Swift blind-write nits
+  (NSButton `.rounded` vs NSTextField `.roundedBezel`;
+  `UInt32(bitPattern:)` takes Int32 — use truncatingIfNeeded; a
+  renamed helper). Also: the local tree had silently lost the T2
+  commit 939c3b9 (a recycle between sessions) — the push was rejected
+  non-FF and a rebase onto origin/main recovered it; ALWAYS fetch
+  before planning (the standing lesson, now twice-proven).
