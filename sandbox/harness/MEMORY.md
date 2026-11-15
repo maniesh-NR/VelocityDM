@@ -243,3 +243,68 @@ session reads this file first, then `ROADMAP.md`.
 - ROADMAP S11 prerequisites updated to the new truth (T2 toolchain:
   provisioned; T2 clearance: still outstanding; T1/T3 Windows VM:
   still needed). Issue #15 commented with the probe evidence.
+
+## 2026-11-15 (session 5) — S12: native UI stacks per OS + shared MD3 engine
+
+- Owner directive: specific UI stacks per OS around the shared Rust
+  core, Material You everywhere, OS-specific elements kept. Delivered
+  (gate 0004, RED+REQ 2× PROCEED-WITH-CONDITIONS, zero BLOCK, all
+  conditions fixed pre-commit): `crates/vdm-md3` (the shared Material
+  You token engine — egui theme.rs now delegates; md3-tokens JSON
+  export; golden-literal tests), `frontend/win32/` (Raw Win32 +
+  Direct2D, hand-rolled wndproc, vector MD3 chrome, native
+  EDIT/BUTTON children, DPI-scaled chrome, WM_DPICHANGED),
+  `crates/velocitydm-slint/` (root-workspace member → covered by the
+  required fmt/clippy/test checks on all 3 CI OSes; native input
+  widgets), `macos-app/` (SwiftPM Swift+AppKit; Md3.swift port of the
+  token engine; JSON-RPC client per docs/RPC.md; structured proxy
+  round-trip; limits.get/set). Two NON-required CI jobs added
+  (win32-frontend windows-latest, swift-frontend macos-latest); the
+  8 required checks and all six releases untouched.
+- Deferred as gated sub-stages + issue #16 (honest, not silent):
+  Android Views+KMP (S12-e), gtk3-rs (S12-lin2), Qt (S12-lin3),
+  SwiftUI (S12-mac2), Swift SSE, promotion gates.
+- Hard-won session learnings:
+  - windows-rs 0.62 API facts that cost iterations (grep the crate
+    source in ~/.cargo/registry — the type-checker plus greps beat
+    docs): rects are `Common::D2D_RECT_F`; `D2D1CreateFactory` takes
+    (factory_type, Option<&D2D1_FACTORY_OPTIONS>); `DrawText` takes
+    `&[u16]` + 6 args on the hwnd target; `CreateWindowExW` parent/
+    hinstance are Options; `BS_*` are i32 (cast to WINDOW_STYLE);
+    `EndDraw(Option, Option)`; `RegisterClassW` returns u16; HiDpi
+    feature spelled `Win32_UI_HiDpi`; WM_SIZE size lives in lparam.
+  - `cargo fmt --all` REFORMATS after edits — batch string edits
+    against post-fmt text, or rewrite whole functions.
+  - Slint 1.18: needs `compat-1-18` feature; `build.rs` +
+    `slint-build::compile(...)` (no `.build()`); globals use `in`
+    property for Rust-settable; `ui.global::<Theme>()`; `VecModel`
+    shared via `Rc`, updated with `set_vec`; Timer needs an instance
+    (`Timer::default()` then `.start(...)`); element bodies use
+    semicolons and `id` is reserved (renamed task-id).
+  - `ring` cannot cross-compile to msvc from Linux — local win32
+    type-checks run `--no-default-features` (tls off; vdm-rpc gained
+    `default-features=false` + tls passthrough so this is possible);
+    CI windows-latest builds the real thing with tls.
+  - Root Cargo.lock is now **v4** (policy change, verified): cargo
+    1.100 rewrites it on any dep change; all 1.75 builds use the
+    standalone `win7/ --locked` workspace so v4 is harmless.
+    win7/Cargo.lock stays v3.
+  - The `.gitignore` missed `frontend/win32/target/` (182 MB one
+    `git add` away) — REQ catch; new standalone workspaces must add
+    their `target/` to `.gitignore` immediately.
+- Environment re-provisions this session: rustup stable (1.100) +
+  rustfmt + clippy + `x86_64-pc-windows-msvc` target (rustc/toolchains
+  do not survive recycles; tools/ghidra+jdk DO — under my-project).
+- CI witness (final): **ALL GREEN at 9aa79bd** — 10/10 jobs, including
+  the two new non-required frontend builds: Win32+Direct2D compiled
+  and LINKED on real MSVC (windows-latest), Swift+AppKit compiled on
+  macos-latest. Two fix iterations were needed: ubuntu jobs needed
+  `libfontconfig1-dev` (slint's font stack; the dev sandbox happened
+  to have it, the runners did not — lesson: verify system-lib deps
+  against the CI image, not the sandbox), and Swift blind-write nits
+  (NSButton `.rounded` vs NSTextField `.roundedBezel`;
+  `UInt32(bitPattern:)` takes Int32 — use truncatingIfNeeded; a
+  renamed helper). Also: the local tree had silently lost the T2
+  commit 939c3b9 (a recycle between sessions) — the push was rejected
+  non-FF and a rebase onto origin/main recovered it; ALWAYS fetch
+  before planning (the standing lesson, now twice-proven).
