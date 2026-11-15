@@ -141,3 +141,23 @@ jobs:
         run: |
           cd macos-app
           swift build
+
+  android-frontend:
+    name: Android frontend (Views + KMP)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      # S12-e: byte-identical mechanism to the frozen release.yml android
+      # job (ubuntu-22.04 / temurin 17 / Gradle 8.9) — this is the only
+      # automated compile witness for KMP-on-Gradle-8.9 and the R8 path.
+      - name: shared unit tests (JVM)
+        run: gradle -p android :shared:jvmTest --no-daemon
+      - name: app builds (debug + minified release/R8)
+        run: gradle -p android :app:assembleDebug :app:assembleRelease --no-daemon

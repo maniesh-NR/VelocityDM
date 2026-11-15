@@ -3,9 +3,9 @@ package com.velocitydm.android.data
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.velocitydm.android.engine.DownloadOptions
-import com.velocitydm.android.engine.SegmentEngine
-import com.velocitydm.android.engine.TaskState
+import com.velocitydm.shared.engine.DownloadOptions
+import com.velocitydm.shared.engine.SegmentEngine
+import com.velocitydm.shared.engine.TaskState
 import com.velocitydm.android.service.DownloadService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +14,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 
+/**
+ * Unchanged behavior (S12-e only re-pointed the wiring): the engine and
+ * task models now live in the shared KMP module `:shared`; construction
+ * and imports changed, the contract did not.
+ */
 class DownloadsViewModel(
     private val app: Application,
     private val engineScope: CoroutineScope,
@@ -40,7 +45,7 @@ class DownloadsViewModel(
             DownloadService.ensureRunning(app)
             engine.add(
                 url = url,
-                dir = _downloadDir.value,
+                dirPath = _downloadDir.value.absolutePath,
                 opts = DownloadOptions(filename = filename, rateLimitBps = limitBps),
             )
             _tasks.value = engine.tasks.toList()

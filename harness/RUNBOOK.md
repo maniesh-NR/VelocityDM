@@ -149,3 +149,61 @@ defaults without OOM).
 Reclaim disk when the toolchain is idle: `rm -rf
 /home/z/my-project/tools/{ghidra,jdk}` (≈1.23 GB; the runbook above
 restores it).
+
+## Android preview (S12-e — Views + KMP restructure)
+
+The in-tree Android app is the S12-e **preview** (View-based Material 3
++ KMP `:shared` module, gate 0005). The six frozen v1.0.0-family
+releases keep their Compose APKs; the Views app ships only via the
+Android promotion gate (owner runtime verification + parity +
+release.yml packaging decision).
+
+**Enforcement:** a GitHub ruleset (`protect-v-tags-until-android-
+promotion`, id 27298722, target=tag, pattern `refs/tags/v*`,
+restrict creation+update, active) blocks ALL `v*` tag creation/moves —
+including by the admin token (probed: "push declined due to repository
+rule violations"). The promotion gate relaxes/edits the ruleset
+deliberately. Consequences:
+
+- The "Normal publish flow" above (publish-velocitydm.sh force-moves
+  tags) CANNOT run until the promotion gate — and must not be worked
+  around by deleting the ruleset ad hoc.
+- `release.yml` `workflow_dispatch` is likewise forbidden until the
+  promotion gate: a manual dispatch with a `tag_name` builds from the
+  branch HEAD and would clobber frozen assets with the Views build.
+
+**CI failure policy:** `android-frontend` (ubuntu-22.04, non-required —
+same mechanism as the frozen release job: temurin 17 + Gradle 8.9)
+runs `:shared:jvmTest` + `:app:assembleDebug` + `:app:assembleRelease`
+(R8). If it is red while the 8 required checks are green: **block all
+tag cuts** (moot while the ruleset is active, but the standing rule)
+and fix forward on main — a red android-frontend means the Android
+tree does not compile, and the next tag would ship a broken APK.
+
+**Rollback:** `git revert` of the S12-e implementation commit
+(allow_force_pushes=false on main — revert only). It touches only
+`android/**` + the additive ci.yml job, so the revert byte-restores
+the Compose app. Device-side rollback: reinstall the v1.0.0 APK (same
+`applicationId`/versionCode — overwrite-install works).
+
+**Local Android build (provisioned 2026-11-15, persistent under
+`/home/z/my-project/tools/`):** JDK 17 (`tools/jdk17`, Temurin
+17.0.21), Gradle 8.9 (`tools/gradle-8.9`), Android SDK
+(`tools/android-sdk`: platform-34, build-tools 34.0.0, platform-tools),
+Rust (`tools/cargo` + `tools/rustup` — RUSTUP_HOME/CARGO_HOME point
+there). Run:
+
+```sh
+export JAVA_HOME=/home/z/my-project/tools/jdk17
+export ANDROID_HOME=/home/z/my-project/tools/android-sdk
+export GRADLE_USER_HOME=/home/z/my-project/tools/gradle-home
+export PATH=$JAVA_HOME/bin:/home/z/my-project/tools/gradle-8.9/bin:$PATH
+gradle -p /home/z/my-project/velocitydm-repo/android \
+  :shared:jvmTest :app:assembleDebug :app:assembleRelease --no-daemon
+```
+
+`android/local.properties` (gitignored) pins `sdk.dir`. No Gradle
+wrapper is committed — setup-gradle 8.9 in CI is the canonical build
+mechanism. The `md3-tokens-baseline.json` drift tripwire regenerates
+via `python3 scripts/gen-md3-baseline.py` (needs the Rust toolchain
+above).

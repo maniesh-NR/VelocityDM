@@ -19,7 +19,7 @@ Each stage transition is gated by the adversarial consensus protocol
 | S9 | Safari native app extension (Xcode conversion) | PENDING | — |
 | S10 | Flathub submission | PENDING | — |
 | S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | PENDING | — |
-| S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept (Android leg runs on the Kotlin-port engine today; Rust-core unification is S8's) | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; S12-e Android Views+KMP in flight under gate 0005; gtk3 + Qt + SwiftUI variants are gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` |
+| S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept (Android leg runs on the Kotlin-port engine today; Rust-core unification is S8's) | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; S12-e Android Views+KMP built (preview) under gate 0005; gtk3 + Qt + SwiftUI variants are gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` |
 
 ## Stage briefs
 
@@ -151,8 +151,10 @@ Each stage transition is gated by the adversarial consensus protocol
     the shared core over the documented loopback protocol; CI-built
     on macos-latest (non-required job).
   - **Sub-stages (each needs its own five-role gate before work):**
-    S12-e Android **Views + Kotlin Multiplatform** restructure (the
-    shipped Compose app stays the v1.0.x default until then);
+    S12-e Android **Views + Kotlin Multiplatform** restructure —
+    **DONE (preview)**, gate 0005, tag-rule-protected until the
+    promotion gate (the frozen v1.0.0-family release ASSETS keep the
+    Compose APK);
     S12-lin2 **gtk-rs/gtk3-rs** frontend for older Linux (needs GTK3
     dev libs on CI); S12-lin3 **Qt (cxx-qt)** alternative; S12-mac2
     **SwiftUI** variant for newer macOS; SSE event-stream wiring for

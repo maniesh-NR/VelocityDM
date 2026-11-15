@@ -14,6 +14,8 @@ node_modules/
 android/.gradle/
 android/build/
 android/app/build/
+android/shared/build/
+android/shared/.gradle/
 android/local.properties
 android/.idea/
 *.apk.idsig

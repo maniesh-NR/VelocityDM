@@ -308,3 +308,88 @@ session reads this file first, then `ROADMAP.md`.
   commit 939c3b9 (a recycle between sessions) — the push was rejected
   non-FF and a rebase onto origin/main recovered it; ALWAYS fetch
   before planning (the standing lesson, now twice-proven).
+
+## Session 6 (2026-11-15) — S12-e: Android Views + Kotlin Multiplatform
+
+- **S12-e activated, built, and closed (preview) under gate 0005**
+  (five-role panel: ATKR/FALS/REQ/INT/REL, all PROCEED-WITH-CONDITIONS,
+  zero BLOCK — the first full five-role gate of the project; all 20
+  condition clusters folded pre-implementation, recorded in
+  `ASSESSMENTS/0005-s12e-android-views-kmp.md`).
+- Built: `android/shared/` KMP module (`androidTarget()` + `jvm()` +
+  custom **`jvmCommon` intermediate source set** that both JVM-family
+  targets compile — this is the pattern that makes `:shared:jvmTest`
+  work with only JVM actuals); commonMain = Kotlin Md3 port (full
+  27-field Rust role set) + RangePool + strict-validated `.vdmctl`
+  schema (kotlinx.serialization) + token-bucket wait math + formatting
+  + URL/filename sanitization + task models on String paths; jvmCommon
+  = the SegmentEngine orchestration (OkHttp/RandomAccessFile/atomics).
+  `:app` = View-based Material 3 (MDC 1.12: MaterialToolbar,
+  RecyclerView of MaterialCardViews, FAB, MaterialAlertDialog +
+  TextInputLayout dialog with 3 fields), Compose fully removed,
+  `BrowserActivity` is now a REAL activity (the manifest entry stopped
+  dangling), themes.xml single DayNight Material3 parent.
+- **Rust↔Kotlin drift tripwire**: `Md3GoldenTest` (jvmTest) asserts
+  every field of all 8 named seeds × light/dark against
+  `md3-tokens-baseline.json` generated from the canonical Rust engine
+  by `scripts/gen-md3-baseline.py` — a third hand-copied literal set
+  was explicitly a gate BLOCK-risk (FALS-1); the baseline file + test
+  close it.
+- **Release integrity (REL)**: GitHub ruleset `protect-v-tags-until-
+  android-promotion` (id 27298722, tag target `refs/tags/v*`,
+  restrict create+update, ACTIVE) — probed: even the admin token gets
+  "push declined due to repository rule violations". The frozen six
+  releases are now machine-guarded, not prose-guarded. RUNBOOK gained
+  the "Android preview (S12-e)" section (failure policy, rollback,
+  dispatch prohibition).
+- **Gate catch worth remembering**: the draft said the pre-12 seed was
+  0x6750A4 "the desktop seed" — ATKR + FALS caught it: the actual
+  desktop DEFAULT_SEED is **0x4156A4** (brand blue; 0x6750A4 is
+  "Baseline purple"). The shipped Chrome.kt seeds 0x4156A4 — verified
+  consistent with egui/Slint/Win32.
+- **Local Android build provisioned persistently** under
+  `tools/`: jdk17 (Temurin 17.0.21), gradle-8.9, android-sdk
+  (platform-34 + build-tools 34.0.0), cargo 1.100 (RUSTUP_HOME/
+  CARGO_HOME under tools/ — survives recycles now). Local battery
+  green: `:shared:jvmTest` (31 tests incl. goldens) +
+  `:app:assembleDebug` + `:app:assembleRelease` (R8). Debug APK
+  6.6 MB vs the Compose era's 10.5 MB (−37%; promotion gate should
+  record the release-mode delta).
+- Hard-won session learnings:
+  - Kotlin/Java interop: **overloaded Java setters do not synthesize a
+    Kotlin `var`** — `MaterialCardView.cardBackgroundColor` is read-only
+    (two setCardBackgroundColor overloads) → call `setCardBackgroundColor(...)`
+    explicitly. Same class of fix: `setRadius(dp(...).toFloat())`.
+  - MDC attrs: `colorOnPrimary` is NOT in appcompat's R — it lives in
+    `com.google.android.material.R.attr` (appcompat has colorPrimary/
+    colorError). Compile-checked R.attr references fail fast, which is
+    the cheap way to get this right.
+  - The Write tool emitted a literal NUL byte inside a quoted char
+    literal once (`it != '<NUL>'`) — the file compiled nothing useful;
+    hexdump (od -c) the line when a match "should" work but doesn't.
+    Also: bash `$'\x00'` cannot pass NUL args (rg then matches
+    everything — the "56 matches" false alarm).
+  - Background-job precedence: `cd X && curl A & curl B &` parses as
+    `(cd X && curl A) & (curl B) &` — B lands in the OLD cwd. Use
+    absolute `-o` paths for background downloads.
+  - Maven Central 429s (rate-limited shared sandbox IP) resolve with
+    a 90 s backoff + retry; Gradle caches partial dependency progress.
+  - Adoptium's "latest 17" redirect supports Range resume (`curl -C -`).
+  - jvmTest resource loading: commonTest cannot use java.lang — the
+    golden test lives in `src/jvmTest/kotlin` with the JSON in
+    `src/jvmTest/resources` (standard KMP pattern; the pure-logic tests
+    stay in commonTest).
+  - KMP gradle: `kotlin("multiplatform")` + `com.android.library` +
+    `kotlin("plugin.serialization")` all declared apply-false in the
+    ROOT build with the same KGP version as kotlin.android; the
+    intermediate source set wiring is
+    `val jvmCommon by creating { dependsOn(commonMain.get()) }` then
+    androidMain/jvmMain `dependsOn(jvmCommon)`; jvmCommon-level
+    dependencies (OkHttp) work via `jvmCommon.dependencies { }`.
+- CI: one new **non-required** `android-frontend` job (ubuntu-22.04,
+  temurin 17, setup-gradle 8.9 — byte-parity with the frozen release
+  job): `:shared:jvmTest` + `:app:assembleDebug` + `:app:assembleRelease`.
+  The first CI run on main is the official compile witness (KMP-on-
+  Gradle-8.9 was unproven in-repo); local battery is already green.
+  Branch protection re-verified at close-out (8 contexts unchanged,
+  android-frontend absent).

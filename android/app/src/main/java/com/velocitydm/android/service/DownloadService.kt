@@ -11,7 +11,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.velocitydm.android.MainActivity
 import com.velocitydm.android.R
-import com.velocitydm.android.engine.TaskState
+import com.velocitydm.shared.engine.TaskState
 
 /**
  * Foreground download service: keeps the engine alive and posts progress

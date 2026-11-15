@@ -16,7 +16,7 @@ frontends (CI-built) until each passes its promotion gate.
 | Linux (modern) | Rust + Slint | `crates/velocitydm-slint/` — workspace member, covered by the required fmt/clippy/test checks on all three CI OSes; in-process shared core |
 | Linux (older) | Rust + gtk-rs / gtk3-rs | sub-stage (S12-lin2): needs GTK3 dev libs on CI (absent in the dev sandbox); Slint with the software renderer covers older hardware in the meantime |
 | Linux (Qt alternative) | Qt (cxx-qt) | sub-stage (S12-lin3): requires a C++/Qt toolchain; tracked, not built |
-| Android | Android Views + Kotlin Multiplatform | sub-stage (S12-e): the shipped app (Compose, dynamic color) stays v1.0.x default; the Views+KMP restructure is its own gated stage |
+| Android | Android Views + Kotlin Multiplatform | built (S12-e, preview): the frozen v1.0.0-family release ASSETS keep the Compose APK; the tree now carries the Views+KMP app, which ships only after the promotion gate (tags are rule-protected until then) |
 | Browser extensions | MV3 + JS (`extensions/shared/md3.js`) | shipped since S1 |
 | All | shared Rust core (`vdm-core`) + shared MD3 token engine | the engine is in-process for egui/Slint/Win32; remote (JSON-RPC+SSE, `docs/RPC.md`) for the macOS Swift client |
 
@@ -40,7 +40,7 @@ Consumers today:
 | Win32/Direct2D frontend | in-process (brushes built from scheme roles) |
 | macOS Swift | **Swift port of the same math** (`Md3.swift` — identical constants; deterministic parity, no build step) |
 | Browser extensions | the JS engine (`md3.js`), same model (tone tables aligned; CIELAB vs OKLab color space documented there) |
-| Android (today, Compose) | OS dynamic color on 12+, seeded fallback; the KMP restructure will carry a Kotlin port of the crate |
+| Android (Views, S12-e) | OS dynamic color on 12+; below 12 the **Kotlin port of the same math** (`android/shared` commonMain), goldens asserted against the Rust-generated `md3-tokens-baseline.json` (drift tripwire) |
 
 `vdm-md3::SEEDS` is the canonical seed list across all pickers.
 

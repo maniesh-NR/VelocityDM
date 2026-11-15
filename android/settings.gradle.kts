@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "VelocityDM"
-include(":app")
+include(":app", ":shared")

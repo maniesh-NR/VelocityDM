@@ -1,7 +1,6 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -12,6 +11,8 @@ android {
         applicationId = "com.velocitydm.android"
         minSdk = 26
         targetSdk = 34
+        // FROZEN with the v1.0.0-family releases (gate 0005): the S12-e
+        // restructure is UI-only; the Android promotion gate owns any bump.
         versionCode = 1
         versionName = "1.0.0"
     }
@@ -29,12 +30,6 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-    buildFeatures {
-        compose = true
-    }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
@@ -43,16 +38,14 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
-    implementation(composeBom)
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // S12-e: Android View-based Material 3 (MDC) — the Compose BOM stack is gone.
+    implementation(project(":shared"))
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.activity.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.material)
+    implementation(libs.kotlinx.coroutines.android)
 }

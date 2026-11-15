@@ -1,9 +1,14 @@
 <resources>
-    <!-- Material You day theme: light surface behind the Compose UI -->
-    <style name="Theme.VelocityDM" parent="android:Theme.Material.Light.NoActionBar">
+    <!-- S12-e: View-based Material 3 (MDC). One DayNight definition:
+         dark mode follows the system; MDC owns the surface colors.
+         Runtime chrome colors resolve via DynamicColors (Android 12+
+         wallpaper Material You) or the seeded Kotlin Md3 port
+         (ui/Chrome.kt) on older versions. The old values-night copy
+         and hardcoded windowBackground colors are gone (MDC defaults
+         take over; pre-12 colors visibly change vs the old Google
+         baseline — engine tone tables, brand-blue seed). -->
+    <style name="Theme.VelocityDM" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowBackground">#FEF7FF</item>
-        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>

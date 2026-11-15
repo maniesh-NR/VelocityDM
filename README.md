@@ -69,7 +69,7 @@ crates/
   velocitydm/       daemon + CLI + egui GUI
   velocitydm-nmh/   browser native messaging host
 extensions/         Chrome/Edge/Opera/Firefox (+ Safari guide)
-android/            Kotlin/Compose app (segmented engine, sniffer browser)
+android/            Kotlin Views+KMP app (MDC Material 3, shared module, sniffer browser)
 packaging/          Inno Setup, Linux install, Flatpak, macOS bundle, portable
 docs/               architecture, algorithms, clean-room notes, coverage
 scripts/            e2e.sh (integration smoke), testserver.py, builders

@@ -1,47 +1,42 @@
-package com.velocitydm.android.engine
+package com.velocitydm.shared.engine
 
-import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
+import com.velocitydm.shared.net.filenameFromUrl
+import com.velocitydm.shared.net.sanitizeFilename
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Segmented HTTP download engine (Android side of VelocityDM).
+ * Segmented HTTP download engine (the JVM side of VelocityDM's Android
+ * client).
  *
- * Mirrors the Rust engine's model: HEAD/ranged probe, N worker coroutines
- * leasing chunks from a work-stealing range pool, mirror failover, per-task
- * token-bucket rate limit, crash-safe `.part`/`.vdmctl` resume state.
+ * Mirrors the Rust engine's model: HEAD/ranged probe, N worker
+ * coroutines leasing chunks from a work-stealing range pool, mirror
+ * failover, per-task token-bucket rate limit, crash-safe
+ * `.part`/`.vdmctl` resume state. Lives in the shared KMP module's
+ * `jvmCommon` source set so both JVM-family targets (android + jvm)
+ * compile it; the pure math (range pool, control-file schema, bucket)
+ * is in commonMain and unit-tested there.
+ *
+ * S12-e hardening (gate 0005): the `.vdmctl` resume state is strictly
+ * validated (bounds, coverage, unknown keys — violations restart from
+ * zero; a missing server ETag only resumes on an exact size match),
+ * and every filename passes [sanitizeFilename].
  */
-data class DownloadOptions(
-    val connections: Int = 4,
-    val mirrors: List<String> = emptyList(),
-    val headers: Map<String, String> = emptyMap(),
-    val rateLimitBps: Long = 0,
-    val filename: String? = null,
-)
-
-data class TaskState(
-    val id: Long,
-    val url: String,
-    val filename: String,
-    val dir: File,
-    var size: Long,
-    var done: Long = 0,
-    var speed: Long = 0,
-    var state: String = "queued", // queued|probing|downloading|paused|completed|failed
-    var error: String? = null,
-)
-
 class SegmentEngine(private val scope: CoroutineScope) {
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -54,16 +49,17 @@ class SegmentEngine(private val scope: CoroutineScope) {
     private val stops = mutableMapOf<Long, AtomicBoolean>()
     var listener: ((TaskState) -> Unit)? = null
 
-    suspend fun add(url: String, dir: File, opts: DownloadOptions): Long = mutex.withLock {
+    suspend fun add(url: String, dirPath: String, opts: DownloadOptions): Long = mutex.withLock {
         val id = (tasks.maxOfOrNull { it.id } ?: 0L) + 1
-        val filename = opts.filename ?: url.substringAfterLast('/').substringBefore('?')
-            .ifBlank { "download" }
-        tasks.add(TaskState(id, url, filename, dir, 0))
+        val filename = opts.filename?.let { sanitizeFilename(it) } ?: filenameFromUrl(url)
+        tasks.add(TaskState(id, url, filename, dirPath))
         jobs[id] = scope.launch { run(id, opts) }
         id
     }
 
-    fun pause(id: Long) { stops[id]?.set(true) }
+    fun pause(id: Long) {
+        stops[id]?.set(true)
+    }
 
     suspend fun resume(id: Long) = mutex.withLock {
         val t = tasks.firstOrNull { it.id == id } ?: return
@@ -90,9 +86,10 @@ class SegmentEngine(private val scope: CoroutineScope) {
         try {
             val head = probe(t.url, opts)
             t.size = head.size
-            val file = File(t.dir, t.filename)
-            val part = File(t.dir, "${t.filename}.part")
-            val ctl = File(t.dir, "${t.filename}.vdmctl")
+            val dir = File(t.dirPath)
+            val file = File(dir, t.filename)
+            val part = File(dir, "${t.filename}.part")
+            val ctl = File(dir, "${t.filename}.vdmctl")
             if (head.size <= 0L || !head.acceptsRanges) {
                 singleStream(t, opts, stop, part, file)
             } else {
@@ -121,7 +118,7 @@ class SegmentEngine(private val scope: CoroutineScope) {
         http.newCall(b.build()).execute().use { r ->
             val size = r.header("Content-Length")?.toLongOrNull() ?: 0L
             val ranges = r.header("Accept-Ranges")?.contains("bytes") == true
-            var etag = r.header("ETag")
+            val etag = r.header("ETag")
             if (size > 0 && ranges) return Probe(size, ranges, etag)
         }
         // fallback ranged GET
@@ -176,60 +173,43 @@ class SegmentEngine(private val scope: CoroutineScope) {
         out: File,
         ctl: File,
     ) {
-        // resume state
+        // resume state — strictly validated (gate 0005): a tampered or
+        // stale .vdmctl restarts the download instead of seeking wild
+        // offsets or resuming a changed resource.
         var intervals = mutableListOf(0L to head.size - 1)
         if (ctl.exists() && part.exists()) {
-            try {
-                val st = JSONObject(ctl.readText())
-                if (st.optString("etag", "") == (head.etag ?: "") || head.etag == null) {
-                    val arr = st.getJSONArray("remaining")
-                    intervals = (0 until arr.length()).map { i ->
-                        val iv = arr.getJSONObject(i)
-                        iv.getLong("start") to iv.getLong("end")
-                    }.toMutableList()
-                }
-            } catch (_: Exception) { }
+            val stored = Vdmctl.parse(ctl.readText())
+            if (Vdmctl.resumableWith(stored, head.size, head.etag) && stored != null) {
+                intervals = stored.remaining.map { it.start to it.end }.toMutableList()
+            }
         }
         if (part.exists() && intervals.size == 1 && intervals[0].first == 0L) {
             part.delete()
         }
         RandomAccessFile(part, "rw").use { raf -> raf.setLength(head.size) }
 
-        val done = AtomicLong(head.size - intervals.sumOf { it.second - it.first + 1 })
+        val done = AtomicLong(head.size - poolBytes(intervals))
         t.done = done.get()
         val mirrors = listOf(t.url) + opts.mirrors
         val lock = Any()
-        val mirrorsIdx = java.util.concurrent.atomic.AtomicInteger(0)
+        val mirrorsIdx = AtomicInteger(0)
         val bucket = TokenBucket(opts.rateLimitBps)
 
-        fun saveState(remaining: List<Pair<Long, Long>>) {
-            val st = JSONObject()
-            st.put("url", t.url)
-            st.put("size", head.size)
-            st.put("etag", head.etag ?: "")
-            val arr = JSONArray()
-            remaining.forEach { (s, e) ->
-                arr.put(JSONObject().put("start", s).put("end", e))
-            }
-            st.put("remaining", arr)
-            ctl.writeText(st.toString())
+        fun saveState(remaining: List<Interval>) {
+            val f = VdmctlFile(
+                url = t.url,
+                size = head.size,
+                etag = head.etag ?: "",
+                remaining = remaining.map { VdmctlInterval(it.first, it.second) },
+            )
+            ctl.writeText(Vdmctl.encode(f))
         }
 
-        val chans = Channel<Unit>(opts.connections)
-        val workers = (0 until opts.connections.coerceIn(1, 8)).map { w ->
+        val workers = (0 until opts.connections.coerceIn(1, 8)).map {
             scope.launch {
                 var retries = 0
                 while (!stop.get()) {
-                    val lease: Pair<Long, Long>? = synchronized(lock) {
-                        val idx = intervals.indexOfFirst { it.second - it.first + 1 > 0 }
-                        if (idx < 0) null else {
-                            val (s, e) = intervals[idx]
-                            val leaseLen = minOf(4L * 1024 * 1024, e - s + 1)
-                            val ls = e - leaseLen + 1
-                            intervals[idx] = s to ls - 1
-                            ls to e
-                        }
-                    }
+                    val lease: Interval? = synchronized(lock) { leaseInterval(intervals, 4L * 1024 * 1024) }
                     if (lease == null) break
                     var (pos, end) = lease
                     val url = mirrors[Math.floorMod(mirrorsIdx.getAndIncrement(), mirrors.size)]
@@ -246,7 +226,7 @@ class SegmentEngine(private val scope: CoroutineScope) {
                                 RandomAccessFile(part, "rw").use { f ->
                                     while (pos <= end) {
                                         if (stop.get()) {
-                                            synchronized(lock) { intervals.add(pos to end) }
+                                            synchronized(lock) { releaseInterval(intervals, pos to end) }
                                             return@launch
                                         }
                                         val n = input.read(buf)
@@ -265,7 +245,7 @@ class SegmentEngine(private val scope: CoroutineScope) {
                     } catch (e: Exception) {
                         retries++
                         if (retries > 12) throw e
-                        synchronized(lock) { intervals.add(pos to end) }
+                        synchronized(lock) { releaseInterval(intervals, pos to end) }
                         delay(minOf(250L shl (retries.coerceAtMost(4)), 4000L))
                         continue
                     }
@@ -290,7 +270,7 @@ class SegmentEngine(private val scope: CoroutineScope) {
         monitor.cancel()
         if (!stop.get()) {
             synchronized(lock) {
-                if (intervals.isNotEmpty() && intervals.any { it.second >= it.first }) {
+                if (!poolExhausted(intervals)) {
                     throw IOException("download ended with missing ranges")
                 }
             }
@@ -303,7 +283,10 @@ class SegmentEngine(private val scope: CoroutineScope) {
         listener?.invoke(t.copy())
     }
 
-    /** Simple token bucket for per-download limits. */
+    /**
+     * Token-bucket rate limiter; the wait math lives in commonMain
+     * (`tokenBucketStep`) so it is unit-tested with a virtual clock.
+     */
     class TokenBucket(private val rateBps: Long) {
         private var tokens = 0.0
         private var last = System.currentTimeMillis()
@@ -311,14 +294,22 @@ class SegmentEngine(private val scope: CoroutineScope) {
         fun take(n: Long) {
             if (rateBps <= 0) return
             while (true) {
-                val now = System.currentTimeMillis()
-                tokens = minOf(
-                    tokens + (now - last) * rateBps / 1000.0,
-                    256.0 * 1024
+                val step = tokenBucketStep(
+                    tokens = tokens,
+                    lastRefillMs = last,
+                    nowMs = System.currentTimeMillis(),
+                    rateBps = rateBps,
+                    demand = n,
                 )
-                last = now
-                if (tokens >= n) { tokens -= n; return }
-                Thread.sleep(((n - tokens) * 1000 / rateBps).toLong().coerceIn(1, 100))
+                tokens = step.tokens
+                last = step.lastRefillMs
+                if (step.waitMs <= 0L) return
+                try {
+                    Thread.sleep(step.waitMs)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return
+                }
             }
         }
     }

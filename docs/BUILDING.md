@@ -102,6 +102,9 @@ cargo build --release -p velocitydm -p velocitydm-nmh
 
 ## Android
 
-See `android/README.md` — Android Studio or
-`./gradlew assembleRelease` with the SDK installed; ABI splits produce
-armv7 (20001) and arm64 (20002) APKs.
+See `android/README.md`. No Gradle wrapper is committed: install
+Gradle 8.9 + JDK 17 + the Android SDK (`platforms;android-34`,
+`build-tools;34.0.0`) and run `gradle -p android :shared:jvmTest
+:app:assembleDebug` (or `assembleRelease` for the minified build).
+One universal APK per release — no per-ABI splits. CI runs the same
+commands on the non-required `android-frontend` job.
