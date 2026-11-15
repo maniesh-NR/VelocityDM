@@ -206,7 +206,7 @@ final class AppController: NSObject, NSTableViewDataSource, NSTableViewDelegate 
 
     private func setupInput(_ field: NSTextField, placeholder: String) {
         field.placeholderString = placeholder
-        field.bezelStyle = .rounded
+        field.bezelStyle = .roundedBezel
         field.translatesAutoresizingMaskIntoConstraints = false
     }
 
