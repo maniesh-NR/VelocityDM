@@ -393,3 +393,17 @@ session reads this file first, then `ROADMAP.md`.
   Gradle-8.9 was unproven in-repo); local battery is already green.
   Branch protection re-verified at close-out (8 contexts unchanged,
   android-frontend absent).
+- **CI witness (final): ALL 11 CHECKS GREEN at 4e78213** — including
+  the new non-required `Android frontend (Views + KMP)` job
+  (`:shared:jvmTest` 31 tests + assembleDebug + the R8 release build,
+  ubuntu-22.04). KMP-on-Gradle-8.9 is now proven in-repo by CI, not
+  just locally. Branch protection re-verified via API after the run:
+  exactly the 8 unchanged required contexts, `android-frontend` absent,
+  enforce_admins off, force-pushes off. Ruleset 27298722 still active
+  (tag target). Zero CI fix iterations needed this time — the locally
+  provisioned SDK build (tools/jdk17 + gradle-8.9 + android-sdk) paid
+  for itself: every compile error was caught before the push.
+- gh CLI died with this sandbox recycle (it lives outside my-project);
+  `scripts/poll-checks.sh` (new, committed) polls check-runs via the
+  REST API with the token file — the gh-free replacement used for this
+  witness.
