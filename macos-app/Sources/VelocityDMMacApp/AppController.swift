@@ -206,7 +206,7 @@ final class AppController: NSObject, NSTableViewDataSource, NSTableViewDelegate 
 
     private func setupInput(_ field: NSTextField, placeholder: String) {
         field.placeholderString = placeholder
-        field.bezelStyle = .roundedBezel
+        field.bezelStyle = .rounded
         field.translatesAutoresizingMaskIntoConstraints = false
     }
 
@@ -225,7 +225,7 @@ final class AppController: NSObject, NSTableViewDataSource, NSTableViewDelegate 
 
     private func configureButton(_ button: NSButton, title: String, action: @escaping () -> Void) {
         button.title = title
-        button.bezelStyle = .roundedBezel
+        button.bezelStyle = .rounded
         button.wantsLayer = true
         button.layer?.cornerRadius = 14
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -373,7 +373,7 @@ final class AppController: NSObject, NSTableViewDataSource, NSTableViewDelegate 
     private func loadPrefs() {
         let defaults = UserDefaults.standard
         if let hex = defaults.object(forKey: "vdm.seed") as? Int {
-            prefsSeed = UInt32(bitPattern: hex)
+            prefsSeed = UInt32(truncatingIfNeeded: hex)
         }
         if let dark = defaults.object(forKey: "vdm.dark") as? Bool {
             prefsDark = dark
@@ -382,7 +382,7 @@ final class AppController: NSObject, NSTableViewDataSource, NSTableViewDelegate 
 
     private func savePrefs() {
         let defaults = UserDefaults.standard
-        defaults.set(Int(bitPattern: prefsSeed), forKey: "vdm.seed")
+        defaults.set(Int(prefsSeed), forKey: "vdm.seed")
         defaults.set(prefsDark, forKey: "vdm.dark")
     }
 
@@ -503,7 +503,7 @@ private final class TaskRowView: NSView {
         top.addArrangedSubview(stats)
         for (b, t) in [(pauseButton, "Pause"), (resumeButton, "Resume"), (removeButton, "Remove")] {
             b.title = t
-            b.bezelStyle = .roundedBezel
+            b.bezelStyle = .rounded
             b.wantsLayer = true
             b.layer?.cornerRadius = 14
             b.font = NSFont.systemFont(ofSize: 12)

@@ -112,7 +112,7 @@ public struct Md3Scheme {
         let r = UInt8((seedHex >> 16) & 0xFF)
         let g = UInt8((seedHex >> 8) & 0xFF)
         let b = UInt8(seedHex & 0xFF)
-        let (_, c, h) = rgbToOklab(r: r, g: g, b: b)
+        let (_, c, h) = rgbToOklch(r: r, g: g, b: b)
         let boost = max(c, dark ? 0.115 : 0.13)
         func palette(_ hue: Double, _ chroma: Double) -> (Double) -> UInt32 {
             { tone in oklchToHex(tone: tone, chroma: chroma, hueDeg: hue) }
