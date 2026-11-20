@@ -12,3 +12,4 @@ execution plan / every output that changed something), never fixed-interval
 | 2026-11-14T01:47:40Z | S11 roadmap amendment close: IDM competitive study added (gate 0003 consensus, issue #15, CI green at dccb25b) | sandbox-backup | fbf8a2e | scripts+harness+manifest |
 | 2026-11-15T02:29:51Z | S12 close: native UI stacks (vdm-md3 + Win32/D2D + Slint + Swift/AppKit), gate 0004, CI 10/10 green at 9aa79bd | sandbox-backup | b72eeff | scripts+harness+manifest |
 | 2026-11-15T02:30:13Z | S12 close final: backup-log commit pushed, debug artifacts cleaned (disk 7.1G free) | sandbox-backup | a274d96 | scripts+harness+manifest |
+| 2026-11-20T16:40:25Z | S11-T2 close: IDM static study executed (findings+backlog at d0afd29, CI 11/11 green, issue #15 commented) | sandbox-backup | 3e7e31c | scripts+harness+manifest |
