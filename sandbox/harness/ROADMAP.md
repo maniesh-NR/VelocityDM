@@ -18,7 +18,7 @@ Each stage transition is gated by the adversarial consensus protocol
 | S8 | Android ↔ desktop daemon over LAN (shared RPC); also owns the Android engine unification onto the shared Rust core (the Android app ships a Kotlin-port engine until S8) | PENDING | — |
 | S9 | Safari native app extension (Xcode conversion) | PENDING | — |
 | S10 | Flathub submission | PENDING | — |
-| S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | PENDING | — |
+| S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | ACTIVE (T2 executed 2026-11-21: findings + backlog in `docs/RESEARCH-IDM-STUDY.md`; T1/T3 remain gated on an owner-provisioned Windows VM; adoption remains gated per brief) | — |
 | S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept (Android leg runs on the Kotlin-port engine today; Rust-core unification is S8's) | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; S12-e Android Views+KMP built (preview) under gate 0005; gtk3 + Qt + SwiftUI variants are gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` |
 
 ## Stage briefs
@@ -64,9 +64,15 @@ Each stage transition is gated by the adversarial consensus protocol
   16 KB ELF; install/recovery in `RUNBOOK.md`; the probe exercised
   the ELF path — PE32 i386 is a documented built-in Ghidra loader —
   and the pinned IDM artifact remains untouched pending the T2
-  clearance). T2 legal clearance is still outstanding; until it and
-  the activation gate are recorded, the deliverable is the study plan
-  plus literature-level analysis, never invented measurements. **Question:**
+  clearance). T2 legal clearance: **executed and recorded 2026-11-21**
+  (owner's dated in-chat directive, quoted verbatim in the research
+  doc's provenance table; activation-gate hash/size re-verification
+  passed byte-exact against a fresh official download before work
+  began). T2 findings + adoption backlog: `docs/RESEARCH-IDM-STUDY.md`;
+  clean-room disclosure: `docs/CLEAN_ROOM.md` S11 section. Still
+  outstanding: T1/T3 (Windows VM, owner-provisioned) and any
+  incorporation work (five-role gate + spec-first + A/B bench per
+  brief). **Question:**
   does the reference product contain methods of download management or
   browser integration worth adopting here for performance, stability,
   and resource use? Method tiers:

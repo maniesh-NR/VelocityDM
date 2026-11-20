@@ -407,3 +407,55 @@ session reads this file first, then `ROADMAP.md`.
   `scripts/poll-checks.sh` (new, committed) polls check-runs via the
   REST API with the token file — the gh-free replacement used for this
   witness.
+
+## 2026-11-21 (session 6) — S11-T2 executed: IDM static study delivered
+
+- Owner directive (the dated T2 clearance the S11 brief demands) received
+  in-chat 2026-11-21, quoted verbatim in the research doc's provenance
+  table. Activation-gate re-verification passed byte-exact (12,164,608
+  bytes + full SHA-256 vs the pinned fingerprint) on a fresh official-URL
+  download BEFORE any work — fail-closed honored, no re-pin needed.
+- Sandbox recycled again (5th loss): `tools/ghidra+jdk` were GONE (the
+  "tools/ survives recycles" assumption is dead — treat tools/ as
+  volatile and re-provision from RUNBOOK "Ghidra headless" every loss).
+  Re-provisioned and zip-hash-verified in minutes. Remote main had
+  diverged 3 commits (parallel S12-e session: gate 0005, Android
+  Views+KMP, CI 11/11 at 4e78213) — fetched and fast-forwarded to 6215abf
+  per the standing fetch-first lesson (now three-times-proven).
+- T2 work performed (all static; no studied binary executed):
+  - Unpacked the installer: custom zlib container — `!--END FILE--!`
+    marker in the last 0x5000 bytes, u32 table-offset 4 bytes before it,
+    entries `[u32 usize][u32 clen][3xFILETIME][zlib stream]`, entry 0 is
+    a text manifest (P1..P127 names, LNK shortcuts, REGISTRY section).
+    188 payloads extracted to the throwaway dir.
+  - Ghidra full-decompiled: installer stub (272 fns), IDMMsgHost.exe
+    (83 fns), MediumILStart.exe (172 fns). IDMan.exe (2.97 MB of code)
+    was bounded to strings/imports/RTTI honestly — full decompile
+    exceeds this sandbox's foreground-10-min/2-CPU/4-GB budget.
+  - Extension JS read in full: Chrome MV3 CRX + Firefox MV2 WebExtension
+    + two XUL/XPCOM generations; strings/imports for 16 helper DLLs/EXEs.
+- Deliverable: `docs/RESEARCH-IDM-STUDY.md` — findings + adoption
+  backlog B1–B16 (recommended/candidate) + N1–N6 (observed, not
+  adopting). Headlines: cross-segment integrity verification with
+  single-connection fallback; optional-connection dynamic scaling;
+  HTTP/2 engine; EXT-X-BYTERANGE + ts2mp4 remux; four integration
+  generations ending in MV3+DNR+native-messaging; NMH pipe-peer
+  verification + COM cold-start; WFP/TDI kernel layer (explicitly not
+  adopting); cookie-jar forwarding; video geometry gating. CLEAN_ROOM.md
+  gained the S11 section + provenance row; ROADMAP S11 is ACTIVE.
+- Clean-room discipline: every T2 artifact stayed in
+  `/home/z/my-project/idm-t2/` (outside the repo), wiped after
+  distillation; findings are functional descriptions only, spec-first
+  barrier restated at every gate.
+- Hard-won session learnings:
+  - Ghidra 12.2 script API: `ExternalManager.getExternalLibraryNames()`
+    is NOT for-each-able in this build (runtime script compile fails) —
+    derive imports via objdump instead.
+  - Foreground-only Ghidra (background jobs die between tool calls);
+    a ~47KB-code PE stub decompiles fully in ~2.5 min on this box;
+    budget bounded scripts for anything bigger.
+  - Unauthenticated GitHub API calls are rate-limited from this IP;
+    Bearer-token API calls still work — use the poll-checks.sh pattern.
+  - Ghidra 12.2 release asset lives at tag `Ghidra_12.2_build`,
+    `ghidra_12.2_PUBLIC_20261016.zip` (570 MB) — exact URL recorded in
+    this entry because the API rate-limit can block discovery next time.
