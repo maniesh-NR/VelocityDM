@@ -15,6 +15,7 @@ protocol standards and public feature descriptions:
 | Extension handshake, ut_metadata | BEP-10, BEP-9 |
 | Magnet URIs | the `magnet:` scheme (MAGNET-URI, with base32 per RFC 4648) |
 | Material Design 3 | public Material 3 color/type guidance (dark baseline palette) |
+| IDM behavioral observation (S11) | `RESEARCH-IDM-STUDY.md` — functional descriptions only, never code (see the S11 section below) |
 
 Product ideas taken from public feature pages of XDM, Motrix and Gopeed
 (segmentation behavior, refresh-link, scheduler, batch patterns, per-file
@@ -33,6 +34,28 @@ referer, user-agent — captured by the browser extension from the user's own
 session) legitimately return. There is no DRM code, no key extraction, no
 protocol circumvention. Encrypted HLS segments are decrypted with the key
 the server itself hands out in the playlist.
+
+## S11 — reference-product behavioral observation (T2, 2026-11-21)
+
+Per the S11 brief's clean-room hygiene rules, a static (T2) study of the
+reference product's official installer (IDM 6.43 build 18, fingerprinted
+and re-verified before work began) was performed on 2026-11-21, owner-
+authorized in-chat. Rules honored, restated:
+
+- All reverse-engineering artifacts (the installer binary, extracted
+  payloads, disassembly/decompiler output) lived only in a throwaway
+  directory outside this repository and were wiped after distillation.
+  None of them was ever committed, pushed, or backed up.
+- Findings entered the repository exclusively as functional behavior
+  descriptions in our own words (`RESEARCH-IDM-STUDY.md`): no code, no
+  data structures chosen for implementation reasons, no resources, no
+  string tables, no UI were copied.
+- Any technique adopted from that document still requires: the behavior
+  spec committed BEFORE the implementing commit (spec-first barrier),
+  a five-role incorporation gate, and a measured A/B win via
+  `scripts/bench-perf.sh` with no regressions in the existing batteries.
+- Adoption backlog items derived from T2 observation are flagged for
+  stricter spec review at those gates.
 
 ## License
 
