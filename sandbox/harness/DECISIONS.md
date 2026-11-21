@@ -27,6 +27,26 @@ verification happens (after wave-2 close + SSE wiring). Neither
 contradicts the other — preparation runs first, the verification moment
 runs last.
 
+## Round 2 — answered in-chat 2026-11-21: "D8:now"
+
+The round-2 menu was issued in-chat in a round that was later lost to
+context compression; its literal text was never committed (this entry
+is written at the answer's arrival, from the durable queue state of
+round 1 + gates 0007/0008). Honest reconstruction: after round 1 the
+only commissioned-but-unscheduled item was the D7:B IDMan.exe bounded
+deep-dive (scheduler + segment-allocator function-level decompile),
+whose start timing was the open question; every other queue position
+was already bound (wave 2 active per D1:C, S4 parallel per D2:B, S12
+queue per D3:D/D5:A, T1/T3 protocol-prepared per D4:B).
+
+| ID | Decision | Answer | Binding |
+| --- | --- | --- | --- |
+| D8 | D7 deep-dive start timing (the commissioned IDMan.exe scheduler/segment-allocator decompile) | **now** | The deep-dive starts IMMEDIATELY (session 10, 2026-11-21) as its own multi-session effort under the standing T2 barriers — fingerprint re-verified per the fail-closed policy at session start, toolchain re-provisioned per RUNBOOK — while the wave-2/S4 implementation queue continues unchanged as the parallel track. |
+
+If the owner intended a different D8 semantics, this ledger is the
+amendment point: append a correction row; the deep-dive work itself is
+clean-room-bounded either way.
+
 Future rounds: the owner may answer by code ("D1:C, rest default");
 unanswered items keep the menu's marked defaults. This ledger is the
 source of truth after context loss; the chat menu is the interface.

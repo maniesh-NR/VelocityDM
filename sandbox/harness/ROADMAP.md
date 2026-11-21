@@ -126,6 +126,16 @@ Each stage transition is gated by the adversarial consensus protocol
     measured win on performance, stability, or resource use) with no
     regression in the existing test batteries and no idle-RSS
     regression.
+  - **Deep-dive (D7:B commissioned, D8:now — ACTIVE, multi-session):**
+    the bounded function-level decompile of the reference engine's
+    scheduler and segment allocator. Session 1 (2026-11-21) delivered
+    the connection-scaling policy, queue-persistence model, limits
+    quota, and completion path (`RESEARCH-IDM-STUDY.md` §4b, 184
+    bounded-decompiled functions; tooling + pattern in the toolbox and
+    RUNBOOK). Sessions 2+ (worker-thread range arithmetic,
+    queue-state writer, site-login/refresh-link) re-verify the
+    artifact fingerprint (fail-closed) at each session start and
+    record a CLEAN_ROOM session entry each time.
   - Advisory stage: runs in parallel with S4+ and feeds them; it never
     blocks the release train. Tracked as GitHub issue #15 on the
     `v1.1.0 - roadmap` milestone like S4–S10.
