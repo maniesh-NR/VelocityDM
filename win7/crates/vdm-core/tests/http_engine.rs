@@ -470,9 +470,9 @@ fn small_file_avoids_connection_churn() {
 #[test]
 fn inconsistent_edge_triggers_single_connection_recovery() {
     let server = TestServer::start();
-    // 24 MiB: comfortably past the 8 MiB audit stride; the recovery
-    // re-download lasts long enough for the notice to be observed.
-    let data: Vec<u8> = (0..24 * 1024 * 1024u32)
+    // 12 MiB: one audit stride window (>= 8 MiB) with marks arriving
+    // mid-download; small enough for slow shared CI runners.
+    let data: Vec<u8> = (0..12 * 1024 * 1024u32)
         .map(|i| (i * 31 + 7) as u8)
         .collect();
     server.set_file("/inconsistent/data.bin", data.clone());
@@ -523,19 +523,20 @@ fn inconsistent_edge_triggers_single_connection_recovery() {
 #[test]
 fn optional_connections_spawn_when_live_underperform() {
     let server = TestServer::start();
-    // 96 MiB: the two base connections deliver their first (fast) leases
+    // 80 MiB: the two base connections deliver their first (fast) leases
     // (16 MiB each; the probe HEAD + two leases are the fast requests),
-    // then the server degrades every further response (~2 MiB/s) —
-    // ~32 MiB of unleased ranges remain in the pool when the spawn acts
-    // after its 3-tick persistence, and the degraded connections
-    // complete within the (CI-runner-generous) window in parallel.
-    let data: Vec<u8> = (0..96 * 1024 * 1024u32)
+    // then the server degrades every further response (~4 MiB/s) —
+    // 16 MiB of unleased ranges remain in the pool when the spawn acts
+    // after its 3-tick persistence. Sizes and sleeps chosen for
+    // shared-CI-runner budgets (contended runners measured ~8x slower
+    // than the dev sandbox).
+    let data: Vec<u8> = (0..80 * 1024 * 1024u32)
         .map(|i| (i * 17 + 11) as u8)
         .collect();
     server.set_file("/degrade.bin", data.clone());
     // fast: probe HEAD + first two leases; degraded afterwards, globally
     server.set_degrade_after(3);
-    server.set_slow(2); // degraded: ~2 MiB/s per connection
+    server.set_slow(1); // degraded: ~4 MiB/s per connection
     let dir = tempfile::tempdir().unwrap();
     let engine = engine_in(dir.path()); // default 4; explicit base below
     let id = engine

@@ -21,10 +21,15 @@ pub struct TestServer {
     pub flaky_remaining: Arc<AtomicU32>,
     /// ms to sleep per 4 KiB written for paths under "/slow"
     pub slow_ms: Arc<AtomicU32>,
-    /// S11-i B1 e2e: when set, the first range request whose bytes were
-    /// already fully served before (by prior range responses) is served
-    /// with every byte flipped — the deterministic "inconsistent edge".
+    /// S11-i B1 e2e: when set (budget of flips armed), covered-repetition
+    /// requests whose range is exactly a 256 KiB-aligned block — the
+    /// engine-audit request shape; worker leases are guided and never
+    /// block-shaped — are served with flipped bytes. Budget of 2: an
+    /// interrupted (inconclusive) audit may waste one flip and a later
+    /// audit still detects the inconsistency.
     pub flip_first_covered_repetition: Arc<AtomicBool>,
+    /// remaining flip budget (see above)
+    flip_budget: Arc<AtomicU32>,
     /// S11-i B2 e2e: when > 0, responses beyond the first N range requests
     /// FOR THE PATH (globally, any connection) get `slow_ms` applied — the
     /// "aging server" degradation that makes parallel optional
@@ -52,6 +57,8 @@ impl TestServer {
         let flaky = Arc::new(AtomicU32::new(0));
         let slow_ms = Arc::new(AtomicU32::new(0));
         let flip = Arc::new(AtomicBool::new(false));
+        let flip_budget = Arc::new(AtomicU32::new(0));
+        let flip_budget_c = flip_budget.clone();
         let degrade = Arc::new(AtomicU32::new(0));
         let covered: Arc<Mutex<Coverage>> = Arc::new(Mutex::new(HashMap::new()));
         let conns = Arc::new(AtomicU32::new(0));
@@ -78,11 +85,22 @@ impl TestServer {
                     let flaky = flaky_c.clone();
                     let slow = slow_c.clone();
                     let flip = flip_c.clone();
+                    let flip_budget = flip_budget_c.clone();
                     let degrade = degrade_c.clone();
                     let covered = covered_c.clone();
                     let reqs = reqs_c.clone();
                     std::thread::spawn(move || {
-                        let _ = serve(stream, files, flaky, slow, flip, degrade, covered, reqs);
+                        let _ = serve(
+                            stream,
+                            files,
+                            flaky,
+                            slow,
+                            flip,
+                            flip_budget,
+                            degrade,
+                            covered,
+                            reqs,
+                        );
                     });
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -97,6 +115,7 @@ impl TestServer {
             flaky_remaining: flaky,
             slow_ms,
             flip_first_covered_repetition: flip,
+            flip_budget,
             degrade_after: degrade,
             covered,
             connections_accepted: conns,
@@ -122,10 +141,14 @@ impl TestServer {
         self.slow_ms.store(ms_per_4k, Ordering::SeqCst);
     }
 
-    /// Arm the one-shot inconsistent edge (S11-i B1 e2e).
+    /// Arm the inconsistent edge (S11-i B1 e2e): a budget of 2 flips,
+    /// each applying only to covered-repetition requests shaped like the
+    /// engine's 256 KiB audit blocks (worker leases never match the
+    /// shape, so only audits can consume the budget).
     pub fn set_inconsistent_edge(&self) {
         self.flip_first_covered_repetition
             .store(true, Ordering::SeqCst);
+        self.flip_budget.store(2, Ordering::SeqCst);
     }
 
     /// Degrade responses (apply slow_ms) beyond the first N range requests
@@ -149,6 +172,7 @@ fn serve(
     flaky: Arc<AtomicU32>,
     slow_ms: Arc<AtomicU32>,
     flip: Arc<AtomicBool>,
+    flip_budget: Arc<AtomicU32>,
     degrade_after: Arc<AtomicU32>,
     covered: Arc<Mutex<Coverage>>,
     requests_per_path: Arc<Mutex<HashMap<String, u32>>>,
@@ -235,18 +259,25 @@ fn serve(
                             write_simple(&mut stream, 416, "Range Not Satisfiable", b"range")?;
                             continue;
                         }
-                        // S11-i B1: the inconsistent-edge flip — one-shot on
-                        // the first range request whose bytes were fully
-                        // served before
+                        // S11-i B1: the inconsistent-edge flip — armed,
+                        // covered-repetition, exactly the engine-audit
+                        // block shape (256 KiB-aligned), and budget left.
+                        // Worker leases are guided (>= 512 KiB) and never
+                        // match the shape, so only audits consume flips.
+                        const AUDIT_BLOCK: u64 = 256 * 1024;
                         let prior_covered = {
                             let cov = covered.lock().unwrap();
                             cov.get(path)
                                 .map(|v| range_covered(v, start as u64, end as u64))
                                 .unwrap_or(false)
                         };
+                        let block_shaped = (start as u64) % AUDIT_BLOCK == 0
+                            && (end - start) as u64 == AUDIT_BLOCK;
                         let flip_this = path.starts_with("/inconsistent")
                             && prior_covered
-                            && flip.swap(false, Ordering::SeqCst);
+                            && block_shaped
+                            && flip.load(Ordering::SeqCst)
+                            && flip_budget.fetch_sub(1, Ordering::SeqCst) > 0;
                         {
                             let mut cov = covered.lock().unwrap();
                             cov.entry(path.to_string())
