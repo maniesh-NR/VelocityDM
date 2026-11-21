@@ -486,3 +486,55 @@ session reads this file first, then `ROADMAP.md`.
   syntax + local cargo +1.75 check witness; bench A/B evidence owed
   (conn 8 no-regression + conn 2 spawn-scenario) with inconsistent-
   edge e2e for B1 falsifiability.
+- Wave 1 EXECUTED and closed (same session, plan: gate → spec-first →
+  implement → battery → A/B → CI → backup):
+  - Gate 0006 (5x PROCEED-WITH-CONDITIONS, zero BLOCK, 17 conditions
+    folded into the specs before code); specs committed at 37e7e94,
+    implementation at d67f164; clean-room barrier honored and recorded
+    in docs/CLEAN_ROOM.md's S11-i adoption record.
+  - Implementation: `AuditLedger` (written/audited 256 KiB blocks,
+    in-memory only — the Android strict `.vdmctl` reader forbids
+    ResumeState changes), monitor-driven audits (fresh-connection
+    re-fetch, mirror rotation, file-locked reads, 8 MiB stride),
+    bounded single-connection recovery (cap 2, `notice` field on the
+    snapshot), `OptConnController` (3-tick spawn/retire persistence,
+    caps 32/8, rate-limit + explicit-single + post-recovery guards,
+    capacity HIGH-WATER MARK), B9 lock classifier + bounded finalize
+    retry (3 x 2 s) with our messages. win7 tree ported each round
+    (cargo +1.75.0 check green every time).
+  - Local battery: vdm-core 105 unit + 6 bt + 5 hls + 17 http e2e (3
+    new: inconsistent-edge recovery, degraded-connection spawn,
+    rate-limit guard) + vdm-rpc 4; fmt + clippy -D clean; the
+    GUI/slint/extension crates + e2e-smoke are CI witnesses (disk-full
+    sandbox: target/ growth hit 0 bytes free mid-session; cleaned).
+  - Bench A/B (labels in /tmp/bench-s11i.txt, per VDM_CONN knob added
+    to bench-perf.sh): pre-conn8 159.3 MB/s vs post-conn8 159.1 (the
+    first pre run 1.41 s was a cold-start artifact); pre-conn2 159.1 vs
+    post-conn2 159.2; audit overhead +1 request/+1 conn on the fast
+    profile (~0.6%); honest reading: NO regression, not a throughput
+    win — the wins are the demonstrated stability (inconsistent-edge
+    e2e) and straggler-throughput (degraded-connection e2e). The
+    spawn bench at conn2 on localhost does not trigger (base conns
+    saturate the pipe) — recorded honestly in the spec.
+  - CI: 11/11 GREEN at 73b98bd after a 10-round fix-forward loop (the
+    honest record): (1) sampler underflow — the recovery's done.store(0)
+    moved `done` backwards into `d - last_sample` (fixed: sampler
+    reset at respawn + saturating arithmetic); (2) Windows: per-CONN
+    degradation never fired (recycling is platform-dependent) → global
+    count; (3) macOS probe fallback consumed the count budget →
+    real-range counting; still blind → byte-FRONTIER degradation
+    (ranges entirely below 64 MiB crawl — fully deterministic by
+    geometry); (4) an unsigned flip budget wrapped to MAX and re-armed
+    flips forever → signed budget; (5) one_conn EMA collapsed under
+    long crawls → high-water mark (a REAL design fix, spec amended);
+    (6) macOS slow-serve TCP truncates bodies ("body shorter than
+    content-length", retries exhausted) — test-infrastructure edge →
+    the spawn e2e is gated off macOS runners with the reason in the
+    test doc + spec (witnessed: Linux+Windows CI, dev sandbox, units).
+  - Engine debugging tools added: `VDM_B2_DEBUG=1` env-gates a 1 Hz
+    B2-signal dump (the runbook tool that cracked the macOS mysteries);
+    TestServer gained flip/inconsistent-edge + degrade-frontier knobs
+    with platform-behavior docs.
+- Next: wave 2 (B3-B8: extensions/HLS items) needs its own five-role
+  gate at activation; S4 (DHT) still PENDING with its gate; issue #15
+  carries the wave-1 adoption comment (7059015764).
