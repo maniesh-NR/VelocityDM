@@ -13,4 +13,5 @@ execution plan / every output that changed something), never fixed-interval
 | 2026-11-15T02:29:51Z | S12 close: native UI stacks (vdm-md3 + Win32/D2D + Slint + Swift/AppKit), gate 0004, CI 10/10 green at 9aa79bd | sandbox-backup | b72eeff | scripts+harness+manifest |
 | 2026-11-15T02:30:13Z | S12 close final: backup-log commit pushed, debug artifacts cleaned (disk 7.1G free) | sandbox-backup | a274d96 | scripts+harness+manifest |
 | 2026-11-20T16:40:25Z | S11-T2 close: IDM static study executed (findings+backlog at d0afd29, CI 11/11 green, issue #15 commented) | sandbox-backup | 3e7e31c | scripts+harness+manifest |
-| 2026-11-21T07:05:08Z | S11-i wave 1 close: B1/B2/B9 adopted (gate 0006, specs, implementation, A/B, CI 11/11 at 73b98bd; memory + roadmap + issue #15) | sandbox-backup | — | scripts+harness+manifest |
+| 2026-11-21T07:05:08Z | S11-i wave 1 close: B1/B2/B9 adopted (gate 0006, specs, implementation, A/B, CI 11/11 at 73b98bd; memory + roadmap + issue #15) | sandbox-backup | bebf4f7 | scripts+harness+manifest |
+| 2026-11-21T08:59:33Z | session-8: owner decision menu issued (D1-D7) + wave-2 staging + Rust toolchain re-provision + battery witness | sandbox-backup | — | scripts+harness+manifest |

@@ -538,3 +538,59 @@ session reads this file first, then `ROADMAP.md`.
 - Next: wave 2 (B3-B8: extensions/HLS items) needs its own five-role
   gate at activation; S4 (DHT) still PENDING with its gate; issue #15
   carries the wave-1 adoption comment (7059015764).
+
+## 2026-11-21 (session 8) — context refresh + owner decision menu + wave-2 staging
+
+- Sandbox recycled again (7th loss). Remote main had diverged 15 commits
+  (parallel sessions closed S12-e Android Views+KMP under gate 0005, the
+  S11-T2 static study, and S11-i wave 1 = B1/B2/B9 under gate 0006 with
+  CI 11/11 at 73b98bd); local had a stale uncommitted BACKUPS.md line
+  byte-identical on origin — discarded, then fast-forwarded to 99e430d.
+  **The fetch-first lesson is now five-times-proven.**
+- Environment: tools/ghidra + tools/jdk SURVIVED this recycle (present,
+  verified); Rust did not — re-provisioned under tools/rustup|cargo
+  (stable 1.100.0 + rustfmt + clippy + 1.75.0 for the wave-2 win7 port
+  check). Battery witness on the recovered tree: fmt clean on BOTH
+  trees, clippy vdm-core `-D warnings` clean, vdm-core lib tests
+  105/105 green.
+- **The owner requested an in-chat decision menu** ("input any decisions
+  I have to make, while the rest of the development continues in
+  parallel"). Menu issued in-chat and recorded here for post-loss
+  reconciliation (defaults marked, owner may answer by code, e.g.
+  "D1:A, rest default"):
+  - D1 wave-2 scope: A full B3+B4+B5+B6+B7+B8 (default) / B
+    extensions-only B4-B8, B3 folds into S7 / C A + parked B13+B16 /
+    D hold wave 2, go straight to S4.
+  - D2 S4 (DHT BEP-5) activation: A after wave 2 closes (default —
+    sequential engine surgery) / B parallel with wave 2 / C after the
+    S12 sub-stages.
+  - D3 S12 sub-stage order: A SSE wiring for the Swift client, then
+    S12-mac2 SwiftUI (default) / B S12-lin2 gtk3-rs / C S12-lin3 Qt /
+    D promotion gates first.
+  - D4 T1/T3 (Windows VM tiers): A defer — T2 findings suffice for now
+    (default) / B owner provisions a Windows VM later, protocol
+    prepared meanwhile / C close S11 research after the waves.
+  - D5 promotion gates (previews → shipped; owner runtime verification
+    owed): A after wave 2 + SSE wiring, verify a full surface (default)
+    / B owner verifies current previews now / C at the v1.1.0 release
+    train.
+  - D6 v1.1.0 milestone shape: A single train, ordering via gates
+    (default) / B split the UI restack to v2.0.0 / C unbind milestones
+    for now.
+  - D7 IDMan.exe bounded deep-dive (the study's documented follow-up:
+    scheduler/segment-allocator function-level decompile): A accept the
+    bounded study, proceed to adoption (default) / B commission the
+    bounded multi-session decompile (Ghidra toolchain present) / C
+    close the research question after the waves.
+- Wave-2 STAGING (deliberately NOT committed; activation waits on the
+  D1 answer): `/home/z/my-project/staging/s11i-wave2/` holds
+  `S11-ADOPTIONS-WAVE2-DRAFT.md` (behavior-spec drafts for B3 HLS
+  BYTERANGE / B4 NMH resilience / B5 cookie forwarding / B6 takeover UX
+  / B7 detector hardening / B8 MIME table / B2-presets + measurement
+  plan; ground-in-code TODOs marked) and `0007-GATE-PLAN-DRAFT.md`
+  (evidence pack, scope variants, per-role focus questions, activation
+  checklist). Staging lives outside the repo (never in backups —
+  volatile across recycles; this entry summarizes its substance).
+- Next: on the owner's answers — dispatch gate 0007 for the chosen
+  wave-2 scope → refine+commit specs (spec-first) → implement →
+  batteries + A/B → CI witness → issue #15 comment → backup close.
