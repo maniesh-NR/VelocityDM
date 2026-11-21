@@ -18,7 +18,8 @@ Each stage transition is gated by the adversarial consensus protocol
 | S8 | Android ↔ desktop daemon over LAN (shared RPC); also owns the Android engine unification onto the shared Rust core (the Android app ships a Kotlin-port engine until S8) | PENDING | — |
 | S9 | Safari native app extension (Xcode conversion) | PENDING | — |
 | S10 | Flathub submission | PENDING | — |
-| S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | ACTIVE (T2 executed 2026-11-21: findings + backlog in `docs/RESEARCH-IDM-STUDY.md`; T1/T3 remain gated on an owner-provisioned Windows VM; adoption remains gated per brief) | — |
+| S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | ACTIVE (T2 executed 2026-11-21: findings + backlog in `docs/RESEARCH-IDM-STUDY.md`; T1/T3 remain gated on an owner-provisioned Windows VM; adoption runs as S11-i) | — |
+| S11-i | S11 incorporation waves: adopt study-backlog techniques spec-first (wave 1 = B1 cross-connection content audit + single-connection recovery, B2 optional connections, B9 file-lock classification/retry → engine; wave 2 = B3 HLS BYTERANGE + B4 NMH resilience + B5 cookie forwarding + B6 takeover UX + B7 detector hardening + B8 MIME table → extensions/HLS; B10–B16 parked with observe-first; N1–N6 rejected) | ACTIVE (wave 1 DONE 2026-11-21: gate 0006 + specs + implementation + A/B + CI 11/11 at 73b98bd; wave 2 pending its own gate) | `ASSESSMENTS/0006-s11i-adoption-wave1.md` |
 | S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept (Android leg runs on the Kotlin-port engine today; Rust-core unification is S8's) | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; S12-e Android Views+KMP built (preview) under gate 0005; gtk3 + Qt + SwiftUI variants are gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` |
 
 ## Stage briefs
@@ -128,6 +129,32 @@ Each stage transition is gated by the adversarial consensus protocol
   - Advisory stage: runs in parallel with S4+ and feeds them; it never
     blocks the release train. Tracked as GitHub issue #15 on the
     `v1.1.0 - roadmap` milestone like S4–S10.
+- **S11-i**: S11 incorporation waves — the adoption half of the study's
+  purpose ("methods ... that can be incorporated in to this project to
+  improve performance, stability, and resource use"). Each wave runs the
+  full S11 adoption bar: five-role activation gate, spec-first (behavior
+  specs in `docs/SPECS/S11-ADOPTIONS.md` committed BEFORE the
+  implementing commit), bench-perf A/B evidence, no battery regressions.
+  Wave 1 (gate 0006): **B1** cross-connection content audit +
+  single-connection recovery, **B2** optional connections (mid-download
+  spawn/retire), **B9** file-lock classification + finalize retry —
+  engine-side (`vdm-core/src/engine/task.rs` + additive snapshot
+  `notice` field; win7 tree ported with MSRV-1.75 syntax; NO
+  `ResumeState` change — the Android `.vdmctl` reader is strict-schema).
+  Wave 2 (deferred sub-stages, each gets its own gate at activation):
+  **B3** EXT-X-BYTERANGE (`hls.rs`, S7-adjacent), **B4** NMH port
+  resilience (`extensions/shared/messaging.js` + `velocitydm-nmh`),
+  **B5** cookie-jar forwarding, **B6** takeover UX (shelf suppression +
+  cancel-then-resume handoff), **B7** video detection hardening
+  (`detector.js`), **B8** MIME→extension table (ours from scratch).
+  **B10–B16** parked with observe-first (DNR session rules, MAIN-world
+  body re-association, session-scoped IPC naming, per-queue scheduler
+  state, TS→MP4 remux, segment-info parsing, browser-proxy
+  propagation). **N1–N6** rejected (kernel WFP/TDI layer, runtime
+  LoadLibrary, custom installer container, profile-dir XPI writes, COM
+  link intake, dial-up scheduling) — reasons recorded in the study.
+  Adoption status per backlog item lands in
+  `docs/RESEARCH-IDM-STUDY.md` §5 as waves close.
 - **S12**: Owner-directed platform matrix — specific UI stacks per
   operating system around the **shared Rust core** (`vdm-core` +
   `vdm-rpc`), **Material You across all operating systems for
