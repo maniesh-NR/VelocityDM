@@ -523,20 +523,19 @@ fn inconsistent_edge_triggers_single_connection_recovery() {
 #[test]
 fn optional_connections_spawn_when_live_underperform() {
     let server = TestServer::start();
-    // 80 MiB: the two base connections deliver their first (fast) leases
-    // (16 MiB each; the probe HEAD + two leases are the fast requests),
-    // then the server degrades every further response (~4 MiB/s) —
-    // 16 MiB of unleased ranges remain in the pool when the spawn acts
-    // after its 3-tick persistence. Sizes and sleeps chosen for
-    // shared-CI-runner budgets (contended runners measured ~8x slower
-    // than the dev sandbox).
+    // 80 MiB, frontier at 64 MiB: the first lease round ([64,80) per
+    // worker) sits above the frontier — fast, establishing the capacity
+    // reference — and the second round ([48,64)) is already below it and
+    // crawls (~4 MiB/s locally, less on shared CI runners) while ~48 MiB
+    // of unleased ranges remain in the pool for the spawn to steal after
+    // its 3-tick persistence. Byte-frontier degradation is deterministic
+    // on every platform (no request-count budget for probe fallbacks or
+    // ordering to disturb).
     let data: Vec<u8> = (0..80 * 1024 * 1024u32)
         .map(|i| (i * 17 + 11) as u8)
         .collect();
     server.set_file("/degrade.bin", data.clone());
-    // fast: the first two real range requests (the first leases);
-    // degraded afterwards, globally; probe fallbacks never count
-    server.set_degrade_after(2);
+    server.set_degrade_below(64 * 1024 * 1024);
     server.set_slow(1); // degraded: ~4 MiB/s per connection
     let dir = tempfile::tempdir().unwrap();
     let engine = engine_in(dir.path()); // default 4; explicit base below

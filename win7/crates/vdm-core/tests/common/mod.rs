@@ -30,15 +30,13 @@ pub struct TestServer {
     pub flip_first_covered_repetition: Arc<AtomicBool>,
     /// remaining flip budget (signed; see above)
     flip_budget: Arc<std::sync::atomic::AtomicI32>,
-    /// S11-i B2 e2e: when > 0, range requests (bodies > 1 byte — probe
-    /// fallbacks like ranged(0,0) and HEAD/GET probes never count) beyond
-    /// the first N such requests FOR THE PATH get `slow_ms` applied — the
-    /// "aging server" degradation. Counting only real range bodies keeps
-    /// the fast budget deterministic across platforms (the HEAD probe's
-    /// fallback behavior is platform-dependent and must not consume it).
+    /// S11-i B2 e2e: when > 0, range requests ENTIRELY BELOW this byte
+    /// frontier are degraded (slow_ms applied) — the "aging server".
+    /// Worker leases are taken from the pool's high end first, so early
+    /// leases sit above the frontier (fast, establishing the capacity
+    /// reference) and late leases crawl — deterministic on every platform,
+    /// independent of probe fallbacks or request ordering.
     pub degrade_after: Arc<AtomicU32>,
-    /// count of real range requests served (the degrade index)
-    range_reqs: Arc<AtomicU32>,
     /// byte ranges (exclusive end) already served per path (for the
     /// inconsistent-edge flip)
     covered: Arc<Mutex<Coverage>>,
@@ -61,8 +59,6 @@ impl TestServer {
         let flip_budget = Arc::new(std::sync::atomic::AtomicI32::new(0));
         let flip_budget_c = flip_budget.clone();
         let degrade = Arc::new(AtomicU32::new(0));
-        let range_reqs = Arc::new(AtomicU32::new(0));
-        let range_reqs_c = range_reqs.clone();
         let covered: Arc<Mutex<Coverage>> = Arc::new(Mutex::new(HashMap::new()));
         let conns = Arc::new(AtomicU32::new(0));
         let reqs: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -90,7 +86,6 @@ impl TestServer {
                     let flip = flip_c.clone();
                     let flip_budget = flip_budget_c.clone();
                     let degrade = degrade_c.clone();
-                    let range_reqs = range_reqs_c.clone();
                     let covered = covered_c.clone();
                     let reqs = reqs_c.clone();
                     std::thread::spawn(move || {
@@ -102,7 +97,6 @@ impl TestServer {
                             flip,
                             flip_budget,
                             degrade,
-                            range_reqs,
                             covered,
                             reqs,
                         );
@@ -122,7 +116,6 @@ impl TestServer {
             flip_first_covered_repetition: flip,
             flip_budget,
             degrade_after: degrade,
-            range_reqs,
             covered,
             connections_accepted: conns,
             requests_per_path: reqs,
@@ -157,10 +150,10 @@ impl TestServer {
         self.flip_budget.store(2, Ordering::SeqCst);
     }
 
-    /// Degrade responses (apply slow_ms) beyond the first N range requests
-    /// for the path, globally (S11-i B2 e2e).
-    pub fn set_degrade_after(&self, reqs: u32) {
-        self.degrade_after.store(reqs, Ordering::SeqCst);
+    /// Degrade (apply slow_ms) to range requests entirely below the byte
+    /// frontier (S11-i B2 e2e) — see the field docs.
+    pub fn set_degrade_below(&self, frontier_bytes: u32) {
+        self.degrade_after.store(frontier_bytes, Ordering::SeqCst);
     }
 
     pub fn stop(mut self) {
@@ -180,7 +173,6 @@ fn serve(
     flip: Arc<AtomicBool>,
     flip_budget: Arc<std::sync::atomic::AtomicI32>,
     degrade_after: Arc<AtomicU32>,
-    range_reqs: Arc<AtomicU32>,
     covered: Arc<Mutex<Coverage>>,
     requests_per_path: Arc<Mutex<HashMap<String, u32>>>,
 ) -> std::io::Result<()> {
@@ -303,18 +295,13 @@ fn serve(
                             None
                         };
                         let slice: &[u8] = owned.as_deref().unwrap_or(&body[start..end]);
-                        // S11-i B2: aging-server degradation — beyond the
-                        // first N real range bodies for this path. Probe
-                        // fallbacks (ranged(0,0), HEAD, full GET) never count,
-                        // so the fast budget is platform-independent.
-                        let degrade_n = degrade_after.load(Ordering::SeqCst);
-                        let real_range = (end - start) as u64 > 1;
-                        let range_index = if real_range {
-                            range_reqs.fetch_add(1, Ordering::SeqCst) + 1
-                        } else {
-                            0
-                        };
-                        let degraded = degrade_n > 0 && range_index > degrade_n;
+                        // S11-i B2: aging-server degradation — ranges
+                        // entirely below the byte frontier crawl. Leases
+                        // come from the pool's high end first, so early
+                        // leases are fast (capacity reference) and late
+                        // leases crawl — deterministic on every platform.
+                        let frontier = degrade_after.load(Ordering::SeqCst);
+                        let degraded = frontier > 0 && (end as u32) <= frontier;
                         let slow = if path.starts_with("/slow") || degraded {
                             slow_ms.load(Ordering::Relaxed)
                         } else {
