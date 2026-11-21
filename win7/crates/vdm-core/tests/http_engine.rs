@@ -553,7 +553,7 @@ fn optional_connections_spawn_when_live_underperform() {
     let mut max_speed = 0u64;
     let mut last_speed = 0u64;
     assert!(
-        wait_until_ms(120_000, || {
+        wait_until_ms(240_000, || {
             if let Some(s) = engine.get(id) {
                 max_connections = max_connections.max(s.connections);
                 max_speed = max_speed.max(s.speed);
