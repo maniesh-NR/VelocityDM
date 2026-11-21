@@ -42,11 +42,11 @@ range across connections.
   when the neighboring lease completes them. No insertion on
   failure/pause releases (those bytes are not written).
 - `audited` records blocks verified by a completed audit. The ledger
-  tracks, per task, the sets and a cursor for O(1) amortized selection.
+  tracks the two sets per task.
 - **Determinism:** the next audit anchor is the LOWEST block index
-  present in `written` and absent from `audited` (cursor walks forward
-  monotonically; blocks below the cursor are all audited or
-  non-writable).
+  present in `written` and absent from `audited`. An inconclusive audit
+  changes neither set, so its anchor stays the lowest and is retried at
+  the next stride tick; late-written low blocks are still picked.
 - The ledger is never persisted: **no `ResumeState` field may be added**
   (hard constraint — the Android `.vdmctl` reader is strict-schema). On
   task resume the ledger starts empty (fresh audits re-verify against

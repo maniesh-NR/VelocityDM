@@ -1,6 +1,7 @@
-//! Shared integration-test HTTP server with Range, flaky and slow paths.
-//! Each test binary uses a subset of the knobs, so unused-field warnings
-//! are expected and allowed.
+//! Shared integration-test HTTP server with Range, flaky, slow,
+//! inconsistent-edge and connection-degradation paths. Each test binary
+//! uses a subset of the knobs, so unused-field warnings are expected and
+//! allowed.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
@@ -10,6 +11,9 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// Served-range coverage map (S11-i B1): path -> served byte intervals.
+type Coverage = HashMap<String, Vec<(u64, u64)>>;
+
 pub struct TestServer {
     pub addr: SocketAddr,
     pub files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
@@ -17,6 +21,18 @@ pub struct TestServer {
     pub flaky_remaining: Arc<AtomicU32>,
     /// ms to sleep per 4 KiB written for paths under "/slow"
     pub slow_ms: Arc<AtomicU32>,
+    /// S11-i B1 e2e: when set, the first range request whose bytes were
+    /// already fully served before (by prior range responses) is served
+    /// with every byte flipped — the deterministic "inconsistent edge".
+    pub flip_first_covered_repetition: Arc<AtomicBool>,
+    /// S11-i B2 e2e: when > 0, responses after the first N requests ON THE
+    /// SAME TCP CONNECTION get `slow_ms` applied regardless of path — the
+    /// "aging connection" degradation that makes fresh optional
+    /// connections worthwhile.
+    pub degrade_after: Arc<AtomicU32>,
+    /// byte ranges (exclusive end) already served per path (for the
+    /// inconsistent-edge flip)
+    covered: Arc<Mutex<Coverage>>,
     /// total accepted TCP connections (keep-alive reuse verification)
     pub connections_accepted: Arc<AtomicU32>,
     /// requests served per path (mirror weighting verification)
@@ -32,12 +48,18 @@ impl TestServer {
         let files: Arc<Mutex<HashMap<String, Vec<u8>>>> = Arc::new(Mutex::new(HashMap::new()));
         let flaky = Arc::new(AtomicU32::new(0));
         let slow_ms = Arc::new(AtomicU32::new(0));
+        let flip = Arc::new(AtomicBool::new(false));
+        let degrade = Arc::new(AtomicU32::new(0));
+        let covered: Arc<Mutex<Coverage>> = Arc::new(Mutex::new(HashMap::new()));
         let conns = Arc::new(AtomicU32::new(0));
         let reqs: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
         let stop = Arc::new(AtomicBool::new(false));
         let files_c = files.clone();
         let flaky_c = flaky.clone();
         let slow_c = slow_ms.clone();
+        let flip_c = flip.clone();
+        let degrade_c = degrade.clone();
+        let covered_c = covered.clone();
         let conns_c = conns.clone();
         let reqs_c = reqs.clone();
         let stop_c = stop.clone();
@@ -52,9 +74,12 @@ impl TestServer {
                     let files = files_c.clone();
                     let flaky = flaky_c.clone();
                     let slow = slow_c.clone();
+                    let flip = flip_c.clone();
+                    let degrade = degrade_c.clone();
+                    let covered = covered_c.clone();
                     let reqs = reqs_c.clone();
                     std::thread::spawn(move || {
-                        let _ = serve(stream, files, flaky, slow, reqs);
+                        let _ = serve(stream, files, flaky, slow, flip, degrade, covered, reqs);
                     });
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -68,6 +93,9 @@ impl TestServer {
             files,
             flaky_remaining: flaky,
             slow_ms,
+            flip_first_covered_repetition: flip,
+            degrade_after: degrade,
+            covered,
             connections_accepted: conns,
             requests_per_path: reqs,
             stop,
@@ -91,6 +119,18 @@ impl TestServer {
         self.slow_ms.store(ms_per_4k, Ordering::SeqCst);
     }
 
+    /// Arm the one-shot inconsistent edge (S11-i B1 e2e).
+    pub fn set_inconsistent_edge(&self) {
+        self.flip_first_covered_repetition
+            .store(true, Ordering::SeqCst);
+    }
+
+    /// Degrade connections (apply slow_ms) after N requests per TCP
+    /// connection (S11-i B2 e2e).
+    pub fn set_degrade_after(&self, reqs: u32) {
+        self.degrade_after.store(reqs, Ordering::SeqCst);
+    }
+
     pub fn stop(mut self) {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(h) = self.handle.take() {
@@ -99,21 +139,28 @@ impl TestServer {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn serve(
     mut stream: TcpStream,
     files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     flaky: Arc<AtomicU32>,
     slow_ms: Arc<AtomicU32>,
+    flip: Arc<AtomicBool>,
+    degrade_after: Arc<AtomicU32>,
+    covered: Arc<Mutex<Coverage>>,
     requests_per_path: Arc<Mutex<HashMap<String, u32>>>,
 ) -> std::io::Result<()> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
+    // per-connection request counter (S11-i B2 degradation)
+    let mut reqs_on_conn: u32 = 0;
     // support several pipelined requests per connection (keep-alive)
     for _ in 0..1024 {
         let head = match read_head(&mut stream) {
             Some(h) => h,
             None => return Ok(()),
         };
+        reqs_on_conn += 1;
         let mut lines = head.split("\r\n");
         let first = lines.next().unwrap_or("");
         let mut parts = first.split_whitespace();
@@ -140,7 +187,7 @@ fn serve(
         }
         // flaky handling
         if path.starts_with("/flaky") {
-            let prev = flaky.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+            let prev = flaky.try_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
                 if v > 0 {
                     Some(v - 1)
                 } else {
@@ -178,7 +225,6 @@ fn serve(
                     stream.flush()?;
                     continue;
                 }
-                let slow = slow_ms.load(Ordering::Relaxed);
                 match range {
                     Some((start, end)) => {
                         let start = start.min(body.len() as u64) as usize;
@@ -189,7 +235,39 @@ fn serve(
                             write_simple(&mut stream, 416, "Range Not Satisfiable", b"range")?;
                             continue;
                         }
-                        let slice = &body[start..end];
+                        // S11-i B1: the inconsistent-edge flip — one-shot on
+                        // the first range request whose bytes were fully
+                        // served before
+                        let prior_covered = {
+                            let cov = covered.lock().unwrap();
+                            cov.get(path)
+                                .map(|v| range_covered(v, start as u64, end as u64))
+                                .unwrap_or(false)
+                        };
+                        let flip_this = path.starts_with("/inconsistent")
+                            && prior_covered
+                            && flip.swap(false, Ordering::SeqCst);
+                        {
+                            let mut cov = covered.lock().unwrap();
+                            cov.entry(path.to_string())
+                                .or_default()
+                                .push((start as u64, end as u64));
+                        }
+                        let owned: Option<Vec<u8>> = if flip_this {
+                            Some(body[start..end].iter().map(|b| !*b).collect())
+                        } else {
+                            None
+                        };
+                        let slice: &[u8] = owned.as_deref().unwrap_or(&body[start..end]);
+                        // S11-i B2: aging-connection degradation (strictly
+                        // after the first N requests on this connection)
+                        let degrade_n = degrade_after.load(Ordering::SeqCst);
+                        let degraded = degrade_n > 0 && reqs_on_conn > degrade_n;
+                        let slow = if path.starts_with("/slow") || degraded {
+                            slow_ms.load(Ordering::Relaxed)
+                        } else {
+                            0
+                        };
                         let resp = format!(
                             "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nAccept-Ranges: bytes\r\nETag: {}\r\nContent-Type: {}\r\nConnection: keep-alive\r\n\r\n",
                             slice.len(),
@@ -200,7 +278,7 @@ fn serve(
                             content_type
                         );
                         stream.write_all(resp.as_bytes())?;
-                        if path.starts_with("/slow") && slow > 0 {
+                        if slow > 0 {
                             for chunk in slice.chunks(4096) {
                                 stream.write_all(chunk)?;
                                 stream.flush()?;
@@ -286,8 +364,28 @@ fn hex_of(s: &str) -> String {
     format!("{:016x}", h)
 }
 
+/// Whether the recorded served intervals (exclusive ends) already cover
+/// `[s, e)` entirely (S11-i B1 inconsistent-edge flip).
+fn range_covered(list: &[(u64, u64)], s: u64, e: u64) -> bool {
+    let mut sorted: Vec<(u64, u64)> = list.to_vec();
+    sorted.sort_unstable();
+    let mut reach = s;
+    for &(a, b) in sorted.iter() {
+        if a > reach {
+            break;
+        }
+        if b > reach {
+            reach = b;
+        }
+        if reach >= e {
+            return true;
+        }
+    }
+    reach >= e
+}
+
 /// Wait until the predicate holds or the timeout elapses (ms).
-pub fn wait_until_ms(timeout_ms: u64, pred: impl Fn() -> bool) -> bool {
+pub fn wait_until_ms(timeout_ms: u64, mut pred: impl FnMut() -> bool) -> bool {
     let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
     while std::time::Instant::now() < deadline {
         if pred() {

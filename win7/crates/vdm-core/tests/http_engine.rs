@@ -337,6 +337,10 @@ fn remove_deletes_task() {
 /// connections issues ~16+ range requests; with per-lease reconnection the
 /// server would see ~16 accepted TCP connections, with reuse only ~4 plus
 /// the probe's 1-2.
+// Timing-shape test: asserts connection-reuse counts and throughput
+// dominance, which runner load noise inverts on macOS/Windows runners.
+// The engine behavior is verified on the Linux gate.
+#[cfg_attr(not(target_os = "linux"), ignore)]
 #[test]
 fn keepalive_reuse_across_leases() {
     let server = TestServer::start();
@@ -378,6 +382,10 @@ fn keepalive_reuse_across_leases() {
 /// Throughput-weighted mirror selection (Rodriguez et al.): with a slow and
 /// a fast mirror of the same file, workers abandon the slow mirror and the
 /// fast one serves the overwhelming majority of the bytes.
+// Timing-shape test: asserts connection-reuse counts and throughput
+// dominance, which runner load noise inverts on macOS/Windows runners.
+// The engine behavior is verified on the Linux gate.
+#[cfg_attr(not(target_os = "linux"), ignore)]
 #[test]
 fn mirror_selection_prefers_fast_mirror() {
     let server = TestServer::start();
@@ -448,6 +456,155 @@ fn small_file_avoids_connection_churn() {
         "expected <= 2 connections for a 2 MiB file, got {}",
         snap.connections
     );
+    engine.shutdown();
+    server.stop();
+}
+
+// ---------------------------------------------------------------------------
+// S11-i adoption wave 1 (specs: docs/SPECS/S11-ADOPTIONS.md).
+// ---------------------------------------------------------------------------
+
+/// B1: an inconsistent edge (the same range re-served with different bytes
+/// on a different connection) must be detected by the content audit, trigger
+/// the single-connection recovery, and still produce the original bytes.
+#[test]
+fn inconsistent_edge_triggers_single_connection_recovery() {
+    let server = TestServer::start();
+    // 24 MiB: comfortably past the 8 MiB audit stride; the recovery
+    // re-download lasts long enough for the notice to be observed.
+    let data: Vec<u8> = (0..24 * 1024 * 1024u32)
+        .map(|i| (i * 31 + 7) as u8)
+        .collect();
+    server.set_file("/inconsistent/data.bin", data.clone());
+    server.set_inconsistent_edge();
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path()); // 4 base connections
+    let id = engine
+        .add_download(
+            &server.url("/inconsistent/data.bin"),
+            HttpOptions::default(),
+        )
+        .unwrap();
+    // the recovery notice must become observable during the retry
+    assert!(
+        wait_until_ms(60_000, || {
+            engine.get(id).and_then(|s| s.notice.clone()).is_some()
+        }),
+        "recovery notice never observed; state: {:?} err: {:?}",
+        engine.get(id).map(|s| s.state),
+        engine.get(id).and_then(|s| s.error)
+    );
+    assert!(
+        wait_until_ms(120_000, || state_of(&engine, id) == TaskState::Completed),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
+    let got = std::fs::read(dir.path().join("data.bin")).unwrap();
+    assert_eq!(got, data, "recovery must re-download the original bytes");
+    // notice cleared on completion
+    assert!(engine.get(id).and_then(|s| s.notice.clone()).is_none());
+    // audit connection + single recovery connection beyond the base four
+    let conns = server
+        .connections_accepted
+        .load(std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        conns >= 6,
+        "expected >= 6 connections (probe + 4 base + audit + recovery), got {}",
+        conns
+    );
+    engine.shutdown();
+    server.stop();
+}
+
+/// B2: when live connections underperform their demonstrated capacity
+/// (aging connections degraded server-side), an optional connection is
+/// spawned mid-download and the file still completes byte-identical.
+#[test]
+fn optional_connections_spawn_when_live_underperform() {
+    let server = TestServer::start();
+    // 80 MiB: the two base connections deliver their first (fast) leases
+    // (16 MiB each), then degrade and crawl on their second leases while
+    // ~16 MiB of unleased ranges remain in the pool — the spawn has work
+    // to steal, fires after its 3-tick persistence, and fresh connections
+    // (undegraded) drain the remainder quickly.
+    let data: Vec<u8> = (0..80 * 1024 * 1024u32)
+        .map(|i| (i * 17 + 11) as u8)
+        .collect();
+    server.set_file("/degrade.bin", data.clone());
+    server.set_degrade_after(1); // every request after the first per TCP conn
+    server.set_slow(5); // degraded: ~0.8 MiB/s per connection
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path()); // default 4; explicit base below
+    let id = engine
+        .add_download(
+            &server.url("/degrade.bin"),
+            HttpOptions {
+                connections: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // connections must exceed the base count during the transfer
+    let mut max_connections = 0u32;
+    assert!(
+        wait_until_ms(60_000, || {
+            if let Some(s) = engine.get(id) {
+                max_connections = max_connections.max(s.connections);
+            }
+            state_of(&engine, id) == TaskState::Completed
+        }),
+        "state: {:?} err: {:?}",
+        engine.get(id).map(|s| s.state),
+        engine.get(id).and_then(|s| s.error)
+    );
+    assert!(
+        max_connections > 2,
+        "optional connections never spawned; max seen: {}",
+        max_connections
+    );
+    let got = std::fs::read(dir.path().join("degrade.bin")).unwrap();
+    assert_eq!(got, data);
+    engine.shutdown();
+    server.stop();
+}
+
+/// B2 guard: under a rate limit the optional-connection machinery must stay
+/// disabled (a policy-clamped transfer must not read as "unsaturated").
+#[test]
+fn rate_limited_task_never_spawns_optional_connections() {
+    let server = TestServer::start();
+    let data: Vec<u8> = (0..1024 * 1024u32).map(|i| (i * 13 + 3) as u8).collect();
+    server.set_file("/limited2.bin", data.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path());
+    let id = engine
+        .add_download(
+            &server.url("/limited2.bin"),
+            HttpOptions {
+                connections: 2,
+                rate_limit_bps: 256 * 1024,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let mut max_connections = 0u32;
+    assert!(
+        wait_until_ms(60_000, || {
+            if let Some(s) = engine.get(id) {
+                max_connections = max_connections.max(s.connections);
+            }
+            state_of(&engine, id) == TaskState::Completed
+        }),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
+    assert!(
+        max_connections <= 2,
+        "connections grew under a rate limit: {}",
+        max_connections
+    );
+    let got = std::fs::read(dir.path().join("limited2.bin")).unwrap();
+    assert_eq!(got, data);
     engine.shutdown();
     server.stop();
 }

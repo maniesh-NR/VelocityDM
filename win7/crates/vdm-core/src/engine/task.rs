@@ -9,9 +9,10 @@ use crate::http::{self, ClientCfg, Conn, Request, Url};
 use crate::range_pool::RangePool;
 use crate::token_bucket::TokenBucket;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -50,6 +51,10 @@ pub struct HttpOptions {
     /// Do not resume: discard any `.part` state.
     #[serde(default)]
     pub fresh: bool,
+    /// Disable the cross-connection content audit (S11-i B1) for this
+    /// task. Default `false` (audits on).
+    #[serde(default)]
+    pub no_audit: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -188,6 +193,10 @@ enum WorkerExit {
     Done,
     Paused,
     Failed(String),
+    /// S11-i B2: optional worker retired gracefully (after its lease).
+    Retired,
+    /// S11-i B1: torn down by the single-connection recovery reset.
+    Reset,
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +220,43 @@ enum WorkerExit {
 const MIN_BYTES_PER_CONN: u64 = 1024 * 1024;
 const LEASE_MIN: u64 = 512 * 1024;
 const LEASE_MAX: u64 = 16 * 1024 * 1024;
+
+// ---------------------------------------------------------------------------
+// S11-i adoption wave 1 (specs: docs/SPECS/S11-ADOPTIONS.md, gate 0006).
+// Provenance: T2 reference-product study (docs/RESEARCH-IDM-STUDY.md) —
+// behavior re-specified in our own words, clean-room barrier honored.
+// ---------------------------------------------------------------------------
+
+/// B1: audit anchor block size.
+const AUDIT_BLOCK: u64 = 256 * 1024;
+/// B1: new completed bytes required between audit starts.
+const AUDIT_STRIDE: u64 = 8 * 1024 * 1024;
+/// B1: full-file recoveries allowed per task (third mismatch fails).
+const AUDIT_RECOVERIES_MAX: u32 = 2;
+const NOTICE_RECOVERY: &str =
+    "cross-connection data mismatch detected; restarting the file over a single connection";
+
+/// B2: maximum optional (dynamically spawned) workers per task.
+const OPT_EXTRA_MAX: usize = 8;
+/// B2: minimum file size for optional connections.
+const OPT_MIN_SIZE: u64 = 16 * 1024 * 1024;
+/// B2: minimum remaining bytes to bother spawning.
+const OPT_MIN_REMAINING: u64 = 8 * 1024 * 1024;
+/// B2: retire when remaining bytes per live connection fall below this.
+const OPT_RETIRE_MIN_PER: u64 = 4 * 1024 * 1024;
+/// B2: spawn when aggregate speed is below this fraction of the live
+/// connections' demonstrated capacity.
+const OPT_SPAWN_HEADROOM: f64 = 0.55;
+/// B2: retire when aggregate speed is at/above this fraction of what
+/// live-1 connections demonstrated.
+const OPT_RETIRE_HEADROOM: f64 = 0.85;
+/// B2: consecutive decision ticks required to act (anti-flap).
+const OPT_TICKS_TO_ACT: u32 = 3;
+
+// S11-i B9: file-lock conflict messages (ours).
+const LOCK_FINALIZE_MSG: &str = "output file is locked by another application (for example antivirus or a media player); the download is complete — resume the task to retry saving it";
+const LOCK_WRITE_MSG: &str =
+    "file is locked by another application; pause the task and resume when the lock is released";
 
 /// Guided lease size (guided self-scheduling): `remaining / workers`
 /// clamped to [512 KiB, 16 MiB]. Early in a transfer leases are large so
@@ -301,6 +347,313 @@ fn pick_mirror(stats: &[MirrorStat], current: usize, now_ms: u64) -> usize {
         }
     }
     best
+}
+
+// ---------------------------------------------------------------------------
+// S11-i B1: written-block ledger (which 256 KiB blocks are fully written,
+// which are content-verified). In-memory only — NEVER persisted (the
+// Android `.vdmctl` reader is strict-schema; spec §B1 non-goals).
+// ---------------------------------------------------------------------------
+struct AuditLedger {
+    written: Mutex<BTreeSet<u64>>,
+    audited: Mutex<BTreeSet<u64>>,
+}
+
+impl AuditLedger {
+    fn new() -> Self {
+        AuditLedger {
+            written: Mutex::new(BTreeSet::new()),
+            audited: Mutex::new(BTreeSet::new()),
+        }
+    }
+
+    /// Insert every block index whose block lies entirely within
+    /// `[start, end]` (partial straddling blocks become eligible when a
+    /// neighboring lease completes them).
+    fn mark_written(&self, start: u64, end: u64) {
+        if end < start {
+            return;
+        }
+        let first = start.div_ceil(AUDIT_BLOCK);
+        let last = (end + 1) / AUDIT_BLOCK;
+        if last == 0 || first >= last {
+            return;
+        }
+        let mut w = self.written.lock().unwrap();
+        for i in first..last {
+            w.insert(i);
+        }
+    }
+
+    fn mark_audited(&self, block: u64) {
+        self.audited.lock().unwrap().insert(block);
+    }
+
+    /// Lowest written-but-unaudited block (deterministic anchor pick,
+    /// spec §B1; late-written low blocks are still picked, and an
+    /// inconclusive audit leaves its anchor as the lowest again).
+    fn pick_auditable(&self) -> Option<u64> {
+        let w = self.written.lock().unwrap();
+        if w.is_empty() {
+            return None;
+        }
+        let a = self.audited.lock().unwrap();
+        w.iter().find(|b| !a.contains(b)).copied()
+    }
+
+    fn reset(&self) {
+        self.written.lock().unwrap().clear();
+        self.audited.lock().unwrap().clear();
+    }
+}
+
+/// S11-i B2: signals for one optional-connection decision tick.
+struct OptSignals {
+    live: usize,
+    speed: u64,
+    one_conn_capacity: u64,
+    remaining: u64,
+}
+
+enum OptConnAction {
+    Spawn,
+    Retire,
+    None,
+}
+
+/// S11-i B2: stateful spawn/retire controller. The 3-consecutive-tick
+/// persistence lives here so the decision rules are unit-testable.
+struct OptConnController {
+    disabled: bool,
+    cap: usize,
+    extra: usize,
+    spawn_ticks: u32,
+    retire_ticks: u32,
+}
+
+impl OptConnController {
+    fn new(
+        _base_connections: usize,
+        explicit_connections: usize,
+        size: u64,
+        rate_limited: bool,
+        after_recovery: bool,
+    ) -> Self {
+        // absolute live cap: existing size-based amortization rule
+        let cap = scale_connections(32, size);
+        let disabled = size < OPT_MIN_SIZE
+            || rate_limited
+            || explicit_connections == 1 // user asked for single
+            || after_recovery; // single-connection posture post-B1
+        OptConnController {
+            disabled,
+            cap,
+            extra: 0,
+            spawn_ticks: 0,
+            retire_ticks: 0,
+        }
+    }
+
+    fn tick(&mut self, s: &OptSignals) -> OptConnAction {
+        if self.disabled || s.live == 0 {
+            return OptConnAction::None;
+        }
+        let live_f = s.live as f64;
+        let capacity = s.one_conn_capacity as f64;
+        let speed = s.speed as f64;
+        let below = s.one_conn_capacity > 0
+            && speed < OPT_SPAWN_HEADROOM * live_f * capacity
+            && s.remaining >= OPT_MIN_REMAINING
+            && s.live < self.cap
+            && self.extra < OPT_EXTRA_MAX;
+        if below {
+            self.spawn_ticks += 1;
+            self.retire_ticks = 0;
+            if self.spawn_ticks >= OPT_TICKS_TO_ACT {
+                self.spawn_ticks = 0;
+                self.extra += 1;
+                return OptConnAction::Spawn;
+            }
+            return OptConnAction::None;
+        }
+        self.spawn_ticks = 0;
+        let saturated = s.live >= 2
+            && s.one_conn_capacity > 0
+            && speed >= OPT_RETIRE_HEADROOM * (live_f - 1.0) * capacity;
+        let thin = s.remaining / (s.live as u64).max(1) < OPT_RETIRE_MIN_PER;
+        if self.extra > 0 && (saturated || thin) {
+            self.retire_ticks += 1;
+            if self.retire_ticks >= OPT_TICKS_TO_ACT {
+                self.retire_ticks = 0;
+                self.extra -= 1;
+                return OptConnAction::Retire;
+            }
+        } else {
+            self.retire_ticks = 0;
+        }
+        OptConnAction::None
+    }
+}
+
+/// Worker exit message: (worker id, exit kind) — S11-i monitor reaping.
+type WorkerMsg = (usize, WorkerExit);
+
+/// S11-i B1: audit one anchor block on its own thread (spec §B1
+/// procedure). Every exit path clears the in-flight gate (RAII guard);
+/// inconclusive audits change no ledger state.
+#[allow(clippy::too_many_arguments)]
+fn run_audit(
+    block: u64,
+    size: u64,
+    file: &Arc<Mutex<std::fs::File>>,
+    mirrors: &[String],
+    cfg: &ClientCfg,
+    ledger: &Arc<AuditLedger>,
+    conflict: &Arc<AtomicBool>,
+    mirror_rot: &Arc<AtomicU64>,
+    in_flight: &Arc<AtomicBool>,
+) {
+    struct Gate<'a> {
+        flag: &'a AtomicBool,
+    }
+    impl Drop for Gate<'_> {
+        fn drop(&mut self) {
+            self.flag.store(false, Ordering::Relaxed);
+        }
+    }
+    let _gate = Gate { flag: in_flight };
+
+    let start = block * AUDIT_BLOCK;
+    let end = (start + AUDIT_BLOCK).min(size) - 1;
+    let len = (end - start + 1) as usize;
+
+    // 1. read the on-disk bytes under the file mutex (no torn reads)
+    let mut disk = vec![0u8; len];
+    {
+        let f = file.lock().unwrap();
+        if read_positioned(&f, start, &mut disk).is_err() {
+            return; // inconclusive
+        }
+    }
+
+    // 2. fresh connection; rotate mirrors deterministically
+    let mi = (mirror_rot.fetch_add(1, Ordering::Relaxed) as usize) % mirrors.len().max(1);
+    let url = match Url::parse(&mirrors[mi]) {
+        Ok(u) => u,
+        Err(_) => return,
+    };
+    let mut resp = match ranged_get(&url, cfg, start, end) {
+        Ok(r) => r,
+        Err(_) => return, // inconclusive
+    };
+    let full_file = start == 0 && end + 1 == size;
+    if !(resp.status == 206 || (resp.status == 200 && full_file)) {
+        let _ = resp.read_body(4096);
+        return; // inconclusive
+    }
+
+    // 3. stream-compare (audit traffic bypasses the token buckets)
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut checked = 0usize;
+    let mut mismatch = false;
+    loop {
+        let mut br = resp.body_reader();
+        let n = match Read::read(&mut br, &mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => return, // inconclusive; block stays unaudited
+        };
+        let take = n.min(len - checked);
+        if disk[checked..checked + take] != buf[..take] {
+            mismatch = true;
+            break;
+        }
+        checked += take;
+        if checked >= len || take < n {
+            break;
+        }
+    }
+    if checked < len && !mismatch {
+        return; // short body — inconclusive
+    }
+    if mismatch {
+        // wake the monitor for single-connection recovery
+        conflict.store(true, Ordering::Release);
+        return;
+    }
+    ledger.mark_audited(block);
+}
+
+/// Positioned read (pread semantics), mirroring `write_positioned`.
+fn read_positioned(f: &std::fs::File, pos: u64, buf: &mut [u8]) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileExt;
+        f.read_exact_at(buf, pos)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileExt;
+        let mut off = pos;
+        let mut filled = 0usize;
+        while filled < buf.len() {
+            let n = f.seek_read(&mut buf[filled..], off)?;
+            if n == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "read_positioned hit EOF",
+                ));
+            }
+            filled += n;
+            off += n as u64;
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// S11-i B9: file-lock classification (spec §B9).
+// ---------------------------------------------------------------------------
+
+/// OS error codes meaning "another process holds the file" (per-OS
+/// table). Shapes messaging and finalize retry only; never suppresses.
+fn is_lock_conflict(e: &std::io::Error) -> bool {
+    let code = e.raw_os_error();
+    #[cfg(windows)]
+    {
+        matches!(code, Some(5) | Some(32) | Some(33))
+    }
+    #[cfg(unix)]
+    {
+        matches!(code, Some(1) | Some(13) | Some(16))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = code;
+        false
+    }
+}
+
+/// Finalize rename with bounded retry on lock-class conflicts (B9):
+/// up to 3 attempts total at `delay` spacing; non-lock errors return
+/// immediately.
+fn finalize_with_retry<F: FnMut() -> std::io::Result<()>>(
+    mut attempt: F,
+    delay: Duration,
+) -> std::io::Result<()> {
+    let mut remaining = 2u32; // retries after a first failed attempt
+    loop {
+        match attempt() {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                if remaining == 0 || !is_lock_conflict(&e) {
+                    return Err(e);
+                }
+                remaining -= 1;
+                std::thread::sleep(delay);
+            }
+        }
+    }
 }
 
 /// Positioned write (pwrite semantics): one syscall, no cursor, safe under
@@ -514,16 +867,27 @@ fn run_segmented(
         .write(true)
         .read(true)
         .create(true)
+        .truncate(false) // resume: never clobber existing .part data
         .open(&part_path)
     {
         Ok(f) => f,
         Err(e) => {
-            fail(&shared, id, &format!("open part file: {}", e));
+            let msg = if is_lock_conflict(&e) {
+                LOCK_WRITE_MSG.to_string()
+            } else {
+                format!("open part file: {}", e)
+            };
+            fail(&shared, id, &msg);
             return;
         }
     };
     if let Err(e) = file.set_len(probe.size) {
-        fail(&shared, id, &format!("preallocate: {}", e));
+        let msg = if is_lock_conflict(&e) {
+            LOCK_WRITE_MSG.to_string()
+        } else {
+            format!("preallocate: {}", e)
+        };
+        fail(&shared, id, &msg);
         return;
     }
     let file = Arc::new(Mutex::new(file));
@@ -564,24 +928,51 @@ fn run_segmented(
     });
     shared.set_state(id, TaskState::Downloading);
 
-    let (tx, rx): (std::sync::mpsc::Sender<WorkerExit>, Receiver<WorkerExit>) =
+    let (tx, rx): (std::sync::mpsc::Sender<WorkerMsg>, Receiver<WorkerMsg>) =
         std::sync::mpsc::channel();
-    let mut handles = Vec::new();
-    for w in 0..connections {
+
+    // One client config shared by all workers and audits of this task.
+    let worker_cfg = ClientCfg {
+        user_agent: opts
+            .user_agent
+            .clone()
+            .unwrap_or_else(|| env.user_agent.clone()),
+        extra_headers: opts.headers.clone(),
+        proxy: opts.proxy.clone().or_else(|| env.proxy.clone()),
+        connect_timeout: Some(Duration::from_secs(15)),
+        io_timeout: Some(Duration::from_secs(30)),
+    };
+
+    // S11-i shared machinery (specs: docs/SPECS/S11-ADOPTIONS.md).
+    let ledger = Arc::new(AuditLedger::new());
+    let reset_flag = Arc::new(AtomicBool::new(false));
+    let conflict = Arc::new(AtomicBool::new(false));
+    let recoveries = Arc::new(AtomicU32::new(0));
+    let audit_in_flight = Arc::new(AtomicBool::new(false));
+    let audit_mirror_rot = Arc::new(AtomicU64::new(0));
+    let retire_flags: Arc<Mutex<BTreeMap<usize, Arc<AtomicBool>>>> =
+        Arc::new(Mutex::new(BTreeMap::new()));
+    let live: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
+    let next_wid = AtomicUsize::new(connections);
+    let rate_limited = opts.rate_limit_bps > 0 || env.global_bucket.rate() > 0;
+    let mut opt = OptConnController::new(
+        connections,
+        opts.connections,
+        probe.size,
+        rate_limited,
+        false,
+    );
+    let audits_on = !opts.no_audit && probe.size >= AUDIT_STRIDE;
+    let file_c = file.clone();
+
+    // Uniform worker spawner: base workers (wid < connections), optional
+    // workers (B2, retire-flagged) and recovery workers (single, base-like).
+    let spawn_worker = |wid: usize, optional: bool| -> std::thread::JoinHandle<()> {
         let tx = tx.clone();
         let pool = pool.clone();
         let file = file.clone();
         let state_sync = state_sync.clone();
-        let cfg = ClientCfg {
-            user_agent: opts
-                .user_agent
-                .clone()
-                .unwrap_or_else(|| env.user_agent.clone()),
-            extra_headers: opts.headers.clone(),
-            proxy: opts.proxy.clone().or_else(|| env.proxy.clone()),
-            connect_timeout: Some(Duration::from_secs(15)),
-            io_timeout: Some(Duration::from_secs(30)),
-        };
+        let cfg = worker_cfg.clone();
         let mirrors = mirrors.clone();
         let mirror_stats = mirror_stats.clone();
         let done = done.clone();
@@ -590,10 +981,20 @@ fn run_segmented(
         let global = env.global_bucket.clone();
         let size = probe.size;
         let out_path_c = out_path.clone();
+        let ledger = ledger.clone();
+        let reset_flag = reset_flag.clone();
         let workers = connections;
-        handles.push(std::thread::spawn(move || {
+        let retire = if optional {
+            let flag = Arc::new(AtomicBool::new(false));
+            retire_flags.lock().unwrap().insert(wid, flag.clone());
+            Some(flag)
+        } else {
+            None
+        };
+        live.fetch_add(1, Ordering::SeqCst);
+        std::thread::spawn(move || {
             let exit = worker(
-                w,
+                wid,
                 pool,
                 file,
                 state_sync,
@@ -607,33 +1008,41 @@ fn run_segmented(
                 global,
                 size,
                 &out_path_c,
+                ledger,
+                reset_flag,
+                retire,
             );
-            let _ = tx.send(exit);
-        }));
-    }
-    drop(tx);
+            let _ = tx.send((wid, exit));
+        })
+    };
 
-    // monitor loop: snapshot updates at ~10 Hz, periodic state saves
+    let mut handles = Vec::new();
+    for w in 0..connections {
+        handles.push(spawn_worker(w, false));
+    }
+
+    // monitor loop: snapshot updates at ~10 Hz, periodic state saves,
+    // S11-i B1 audit cadence + conflict recovery, B2 optional-connection
+    // decisions at 1 Hz.
     let mut last_sample = (Instant::now(), done.load(Ordering::Relaxed));
     let mut speed_ema = 0u64;
-    let mut exits: Vec<WorkerExit> = Vec::new();
+    let mut failures: Vec<String> = Vec::new();
     let mut state_save_at = Instant::now();
+    let mut decision_at = Instant::now();
+    let mut last_audit_start_done = 0u64;
+    let mut recovering = false;
     loop {
         match rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(e) => {
-                exits.push(e);
-                if exits.len() >= connections {
-                    break;
+            Ok((wid, e)) => {
+                let l = live.fetch_sub(1, Ordering::SeqCst) - 1;
+                retire_flags.lock().unwrap().remove(&wid);
+                shared.update(id, |s| s.connections = l as u32);
+                if let WorkerExit::Failed(msg) = e {
+                    failures.push(msg);
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                if exits.len() >= connections {
-                    break;
-                }
-                // workers gone without reporting; stop waiting
-                break;
-            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {}
         }
         let d = done.load(Ordering::Relaxed);
         let now = Instant::now();
@@ -660,6 +1069,112 @@ fn run_segmented(
             st.remaining = pool.intervals();
             let _ = st.save(&out_path);
         }
+
+        // --- B1: audit cadence (one anchor per AUDIT_STRIDE of progress) ---
+        if audits_on
+            && !recovering
+            && !audit_in_flight.load(Ordering::Relaxed)
+            && live.load(Ordering::SeqCst) > 0
+            && d >= AUDIT_STRIDE
+            && d - last_audit_start_done >= AUDIT_STRIDE
+        {
+            if let Some(block) = ledger.pick_auditable() {
+                last_audit_start_done = d;
+                audit_in_flight.store(true, Ordering::Relaxed);
+                let file = file_c.clone();
+                let mirrors_a = mirrors.clone();
+                let cfg_a = worker_cfg.clone();
+                let ledger = ledger.clone();
+                let conflict = conflict.clone();
+                let rot = audit_mirror_rot.clone();
+                let gate = audit_in_flight.clone();
+                let size = probe.size;
+                std::thread::spawn(move || {
+                    run_audit(
+                        block, size, &file, &mirrors_a, &cfg_a, &ledger, &conflict, &rot, &gate,
+                    );
+                });
+            }
+        }
+
+        // --- B1: conflict -> bounded single-connection recovery ---
+        if conflict.load(Ordering::Acquire) && !recovering {
+            let prev = recoveries.fetch_add(1, Ordering::SeqCst);
+            if prev >= AUDIT_RECOVERIES_MAX {
+                failures.push(
+                    "repeated cross-connection data mismatches after recovery retries".into(),
+                );
+                reset_flag.store(true, Ordering::Relaxed); // tear the rest down
+            } else {
+                recovering = true;
+                reset_flag.store(true, Ordering::Relaxed);
+                shared.update(id, |s| {
+                    s.notice = Some(NOTICE_RECOVERY.to_string());
+                });
+                failures.clear();
+                speed_ema = 0;
+                last_sample = (Instant::now(), 0);
+                last_audit_start_done = 0;
+                opt.disabled = true; // single-connection posture for the task
+            }
+        }
+        if recovering {
+            if live.load(Ordering::SeqCst) == 0 {
+                // all workers torn down: rebuild for the single-connection retry
+                pool.reset(probe.size);
+                done.store(0, Ordering::SeqCst);
+                ledger.reset();
+                reset_flag.store(false, Ordering::Relaxed);
+                conflict.store(false, Ordering::Relaxed);
+                recovering = false;
+                handles.push(spawn_worker(next_wid.fetch_add(1, Ordering::SeqCst), false));
+                shared.update(id, |s| s.connections = 1);
+                let mut st = state_sync.lock().unwrap();
+                st.remaining = pool.intervals();
+                let _ = st.save(&out_path);
+            }
+        } else if live.load(Ordering::SeqCst) == 0 && !audit_in_flight.load(Ordering::Relaxed) {
+            // all workers exited and no audit is mid-flight: the last
+            // audit's verdict must land before finalizing (its mismatch
+            // would otherwise arrive after the break — completion race).
+            break;
+        }
+
+        // --- B2: optional-connection decisions at 1 Hz ---
+        if decision_at.elapsed() >= Duration::from_secs(1) {
+            decision_at = Instant::now();
+            let l = live.load(Ordering::SeqCst);
+            if !recovering && l > 0 {
+                let one_conn = mirror_stats
+                    .iter()
+                    .map(|m| m.speed_ema.load(Ordering::Relaxed))
+                    .max()
+                    .unwrap_or(0);
+                let signals = OptSignals {
+                    live: l,
+                    speed: speed_ema,
+                    one_conn_capacity: one_conn,
+                    remaining: pool.remaining(),
+                };
+                match opt.tick(&signals) {
+                    OptConnAction::Spawn => {
+                        let wid = next_wid.fetch_add(1, Ordering::SeqCst);
+                        handles.push(spawn_worker(wid, true));
+                        shared.update(id, |s| {
+                            s.connections = live.load(Ordering::SeqCst) as u32;
+                        });
+                    }
+                    OptConnAction::Retire => {
+                        // retire the highest-wid optional worker
+                        let map = retire_flags.lock().unwrap();
+                        if let Some((_, flag)) = map.iter().next_back() {
+                            flag.store(true, Ordering::Relaxed);
+                        }
+                    }
+                    OptConnAction::None => {}
+                }
+            }
+        }
     }
     for h in handles {
         let _ = h.join();
@@ -677,11 +1192,8 @@ fn run_segmented(
         shared.set_state(id, TaskState::Paused);
         return;
     }
-    if let Some(err) = exits.iter().find_map(|e| match e {
-        WorkerExit::Failed(msg) => Some(msg.clone()),
-        _ => None,
-    }) {
-        fail(&shared, id, &err);
+    if let Some(err) = failures.first() {
+        fail(&shared, id, err);
         return;
     }
     if !pool.is_empty() {
@@ -714,14 +1226,23 @@ fn run_segmented(
         }
     }
 
-    if let Err(e) = std::fs::rename(&part_path, &out_path) {
-        fail(&shared, id, &format!("finalize: {}", e));
+    if let Err(e) = finalize_with_retry(
+        || std::fs::rename(&part_path, &out_path),
+        Duration::from_secs(2),
+    ) {
+        let msg = if is_lock_conflict(&e) {
+            LOCK_FINALIZE_MSG.to_string()
+        } else {
+            format!("finalize: {}", e)
+        };
+        fail(&shared, id, &msg);
         return;
     }
     let _ = std::fs::remove_file(ResumeState::ctl_path(&out_path));
     shared.update(id, |s| {
         s.done = s.size;
         s.speed = 0;
+        s.notice = None;
     });
     shared.set_state(id, TaskState::Completed);
     shared
@@ -823,7 +1344,12 @@ fn run_single(
     let mut file = match std::fs::File::create(&part) {
         Ok(f) => f,
         Err(e) => {
-            fail(&shared, id, &e.to_string());
+            let msg = if is_lock_conflict(&e) {
+                LOCK_WRITE_MSG.to_string()
+            } else {
+                e.to_string()
+            };
+            fail(&shared, id, &msg);
             return;
         }
     };
@@ -870,13 +1396,20 @@ fn run_single(
             });
         }
     }
-    if let Err(e) = std::fs::rename(&part, out_path) {
-        fail(&shared, id, &format!("finalize: {}", e));
+    if let Err(e) = finalize_with_retry(|| std::fs::rename(&part, out_path), Duration::from_secs(2))
+    {
+        let msg = if is_lock_conflict(&e) {
+            LOCK_FINALIZE_MSG.to_string()
+        } else {
+            format!("finalize: {}", e)
+        };
+        fail(&shared, id, &msg);
         return;
     }
     shared.update(id, |s| {
         s.done = s.size.max(s.done);
         s.speed = 0;
+        s.notice = None;
     });
     shared.set_state(id, TaskState::Completed);
     shared
@@ -1017,6 +1550,10 @@ fn run_hls(
 ///   workers instead of being ground through by one.
 /// - **AIMD bursts** (Padhye-shaped): per-worker burst window grows
 ///   additively on clean progress and halves on read errors.
+///
+/// S11-i additions (docs/SPECS/S11-ADOPTIONS.md): fully-completed leases
+/// feed the B1 written-block ledger; the B1 recovery reset and the B2
+/// retire flag are honored at the existing control-check points.
 #[allow(clippy::too_many_arguments)]
 fn worker(
     wid: usize,
@@ -1033,6 +1570,9 @@ fn worker(
     global: Arc<TokenBucket>,
     size: u64,
     out_path: &Path,
+    ledger: Arc<AuditLedger>,
+    reset_flag: Arc<AtomicBool>,
+    retire: Option<Arc<AtomicBool>>,
 ) -> WorkerExit {
     let mirrors_n = mirrors.len();
     let mut mirror_idx = wid % mirrors_n.max(1); // round-robin spread (Rodriguez et al.)
@@ -1056,6 +1596,14 @@ fn worker(
         if control.is_stopped() || control.is_paused() {
             return WorkerExit::Paused;
         }
+        if reset_flag.load(Ordering::Relaxed) {
+            return WorkerExit::Reset;
+        }
+        if let Some(r) = retire.as_ref() {
+            if r.load(Ordering::Relaxed) {
+                return WorkerExit::Retired;
+            }
+        }
         let lease_len = guided_lease(pool.remaining(), workers as u64);
         let lease = match pool.acquire(lease_len) {
             Some(l) => l,
@@ -1068,6 +1616,9 @@ fn worker(
             if control.is_stopped() || control.is_paused() {
                 pool.release(pos, end);
                 return WorkerExit::Paused;
+            }
+            if reset_flag.load(Ordering::Relaxed) {
+                return WorkerExit::Reset;
             }
             if conn.is_none() {
                 // choose the best mirror for a fresh connection
@@ -1198,6 +1749,9 @@ fn worker(
                         aborted = true;
                         break;
                     }
+                    if reset_flag.load(Ordering::Relaxed) {
+                        return WorkerExit::Reset;
+                    }
                     let chunk = (take - paced).min(64 * 1024);
                     task_bucket.wait_for(chunk as u64);
                     global.wait_for(chunk as u64);
@@ -1206,7 +1760,12 @@ fn worker(
                         if let Err(e) =
                             write_positioned(&f, &buf[paced..paced + chunk], pos + paced as u64)
                         {
-                            return WorkerExit::Failed(format!("write: {}", e));
+                            let msg = if is_lock_conflict(&e) {
+                                LOCK_WRITE_MSG.to_string()
+                            } else {
+                                format!("write: {}", e)
+                            };
+                            return WorkerExit::Failed(msg);
                         }
                     }
                     paced += chunk;
@@ -1238,7 +1797,10 @@ fn worker(
                 std::thread::sleep(Duration::from_millis(backoff_ms(retries)));
                 continue 'attempt;
             }
-            // lease complete: recycle the cleanly drained connection
+            // lease complete: feed the B1 audit ledger before anything
+            // else (the fully-written blocks become audit-eligible)
+            ledger.mark_written(start, end);
+            // recycle the cleanly drained connection
             conn = resp.into_conn();
             conn_recycled = conn.is_some();
             // measured per-lease throughput feeds the mirror selection
@@ -1353,6 +1915,222 @@ mod tests {
         let steady = MirrorStat::new();
         steady.record_success(1_000_000);
         assert_eq!(pick_mirror(&[flaky, steady], 0, now), 1);
+    }
+
+    // ---------------------------------------------------------------------
+    // S11-i wave 1 units (specs: docs/SPECS/S11-ADOPTIONS.md)
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn audit_ledger_straddling_and_lowest_pick() {
+        let l = AuditLedger::new();
+        assert_eq!(l.pick_auditable(), None);
+        // lease [100K, 600K): only block 1 [256K, 512K) fully inside
+        l.mark_written(100 * 1024, 600 * 1024);
+        assert_eq!(l.pick_auditable(), Some(1));
+        // completing block 2 via [512K, 768K) makes 2 eligible; 1 stays lowest
+        l.mark_written(512 * 1024, 768 * 1024);
+        assert_eq!(l.pick_auditable(), Some(1));
+        l.mark_audited(1);
+        assert_eq!(l.pick_auditable(), Some(2));
+        l.mark_audited(2);
+        assert_eq!(l.pick_auditable(), None);
+        // blocks 0 and 3 arrive later; 0 is below the cursor yet unaudited
+        // -> still picked (deterministic lowest)
+        l.mark_written(0, 256 * 1024);
+        assert_eq!(l.pick_auditable(), Some(0));
+    }
+
+    #[test]
+    fn audit_ledger_reset_clears() {
+        let l = AuditLedger::new();
+        l.mark_written(0, 2 * 1024 * 1024);
+        l.mark_audited(3);
+        assert!(l.pick_auditable().is_some());
+        l.reset();
+        assert_eq!(l.pick_auditable(), None);
+        // written-set is empty too: new writes repopulate from scratch
+        l.mark_written(0, 256 * 1024);
+        assert_eq!(l.pick_auditable(), Some(0));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn lock_classifier_unix_table() {
+        let mk = |code: i32| std::io::Error::from_raw_os_error(code);
+        assert!(is_lock_conflict(&mk(13))); // EACCES
+        assert!(is_lock_conflict(&mk(16))); // EBUSY
+        assert!(is_lock_conflict(&mk(1))); // EPERM
+        assert!(!is_lock_conflict(&mk(32))); // EPIPE on unix — not a lock
+        assert!(!is_lock_conflict(&mk(2))); // ENOENT
+        assert!(!is_lock_conflict(&std::io::Error::new(
+            std::io::ErrorKind::WriteZero,
+            "not os"
+        )));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn lock_classifier_windows_table() {
+        let mk = |code: i32| std::io::Error::from_raw_os_error(code);
+        assert!(is_lock_conflict(&mk(5))); // ERROR_ACCESS_DENIED
+        assert!(is_lock_conflict(&mk(32))); // ERROR_SHARING_VIOLATION
+        assert!(is_lock_conflict(&mk(33))); // ERROR_LOCK_VIOLATION
+        assert!(!is_lock_conflict(&mk(2))); // file not found
+        assert!(!is_lock_conflict(&mk(3))); // path not found
+    }
+
+    fn lock_err() -> std::io::Error {
+        // a code that is lock-class on the target OS
+        #[cfg(unix)]
+        {
+            std::io::Error::from_raw_os_error(13) // EACCES
+        }
+        #[cfg(windows)]
+        {
+            std::io::Error::from_raw_os_error(32) // ERROR_SHARING_VIOLATION
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            std::io::Error::new(std::io::ErrorKind::Other, "no os codes")
+        }
+    }
+
+    #[test]
+    fn finalize_retry_bounded_on_locks() {
+        // persistent lock: exactly 3 attempts total
+        let mut calls = 0u32;
+        let r = finalize_with_retry(
+            || {
+                calls += 1;
+                Err::<(), _>(lock_err())
+            },
+            Duration::ZERO,
+        );
+        assert!(r.is_err());
+        assert_eq!(calls, 3);
+        // lock clears on attempt 2
+        let mut calls2 = 0u32;
+        let r2 = finalize_with_retry(
+            || {
+                calls2 += 1;
+                if calls2 == 1 {
+                    Err::<(), _>(lock_err())
+                } else {
+                    Ok(())
+                }
+            },
+            Duration::ZERO,
+        );
+        assert!(r2.is_ok());
+        assert_eq!(calls2, 2);
+        // non-lock errors: single attempt, no retry
+        let mut calls3 = 0u32;
+        let r3 = finalize_with_retry(
+            || {
+                calls3 += 1;
+                Err::<(), _>(std::io::Error::from_raw_os_error(2))
+            },
+            Duration::ZERO,
+        );
+        assert!(r3.is_err());
+        assert_eq!(calls3, 1);
+    }
+
+    fn opt_signals(live: usize, speed: u64, cap1: u64, remaining: u64) -> OptSignals {
+        OptSignals {
+            live,
+            speed,
+            one_conn_capacity: cap1,
+            remaining,
+        }
+    }
+
+    #[test]
+    fn opt_conn_eligibility_guards() {
+        // too small -> disabled
+        let mut c = OptConnController::new(4, 0, 15 * 1024 * 1024, false, false);
+        assert!(matches!(
+            c.tick(&opt_signals(4, 1, 1_000_000, 100 * 1024 * 1024)),
+            OptConnAction::None
+        ));
+        // rate-limited -> disabled
+        let mut c = OptConnController::new(4, 0, 100 * 1024 * 1024, true, false);
+        assert!(matches!(
+            c.tick(&opt_signals(4, 1, 1_000_000, 100 * 1024 * 1024)),
+            OptConnAction::None
+        ));
+        // explicit single connection -> disabled (respect user intent)
+        let mut c = OptConnController::new(1, 1, 100 * 1024 * 1024, false, false);
+        assert!(matches!(
+            c.tick(&opt_signals(1, 0, 1_000_000, 100 * 1024 * 1024)),
+            OptConnAction::None
+        ));
+        // after a B1 recovery -> disabled
+        let mut c = OptConnController::new(4, 0, 100 * 1024 * 1024, false, true);
+        assert!(matches!(
+            c.tick(&opt_signals(4, 1, 1_000_000, 100 * 1024 * 1024)),
+            OptConnAction::None
+        ));
+    }
+
+    #[test]
+    fn opt_conn_spawn_needs_three_consecutive_ticks() {
+        let mut c = OptConnController::new(2, 2, 100 * 1024 * 1024, false, false);
+        let below = opt_signals(2, 1_000_000, 10_000_000, 100 * 1024 * 1024);
+        assert!(matches!(c.tick(&below), OptConnAction::None));
+        assert!(matches!(c.tick(&below), OptConnAction::None));
+        // an above-threshold tick resets persistence
+        let above = opt_signals(2, 20_000_000, 10_000_000, 100 * 1024 * 1024);
+        assert!(matches!(c.tick(&above), OptConnAction::None));
+        assert!(matches!(c.tick(&below), OptConnAction::None));
+        assert!(matches!(c.tick(&below), OptConnAction::None));
+        // third consecutive below-tick spawns
+        assert!(matches!(c.tick(&below), OptConnAction::Spawn));
+        // ...and resets the counter (next spawn needs 3 more)
+        assert!(matches!(c.tick(&below), OptConnAction::None));
+    }
+
+    #[test]
+    fn opt_conn_spawn_guards() {
+        // remaining below 8 MiB: never spawn
+        let mut c = OptConnController::new(2, 2, 100 * 1024 * 1024, false, false);
+        let s = opt_signals(2, 1_000_000, 10_000_000, 4 * 1024 * 1024);
+        for _ in 0..5 {
+            assert!(matches!(c.tick(&s), OptConnAction::None));
+        }
+        // extra cap of 8: exhausted -> no spawn
+        let mut c = OptConnController::new(2, 2, 100 * 1024 * 1024, false, false);
+        c.extra = OPT_EXTRA_MAX;
+        let s = opt_signals(2, 1_000_000, 10_000_000, 100 * 1024 * 1024);
+        for _ in 0..5 {
+            assert!(matches!(c.tick(&s), OptConnAction::None));
+        }
+    }
+
+    #[test]
+    fn opt_conn_retire_rules() {
+        // saturation: aggregate >= 0.85 * (live-1) * capacity for 3 ticks
+        let mut c = OptConnController::new(2, 2, 100 * 1024 * 1024, false, false);
+        c.extra = 1;
+        let sat = opt_signals(3, 18_000_000, 10_000_000, 100 * 1024 * 1024);
+        assert!(matches!(c.tick(&sat), OptConnAction::None));
+        assert!(matches!(c.tick(&sat), OptConnAction::None));
+        assert!(matches!(c.tick(&sat), OptConnAction::Retire));
+        // thin remaining (below the spawn floor so retire is reachable):
+        // retire after the tick persistence
+        let mut c = OptConnController::new(2, 2, 100 * 1024 * 1024, false, false);
+        c.extra = 1;
+        let thin = opt_signals(3, 1_000_000, 10_000_000, 7 * 1024 * 1024);
+        assert!(matches!(c.tick(&thin), OptConnAction::None));
+        assert!(matches!(c.tick(&thin), OptConnAction::None));
+        assert!(matches!(c.tick(&thin), OptConnAction::Retire));
+        // no extras: never retire
+        let mut c = OptConnController::new(2, 2, 100 * 1024 * 1024, false, false);
+        let sat2 = opt_signals(3, 18_000_000, 10_000_000, 100 * 1024 * 1024);
+        for _ in 0..5 {
+            assert!(matches!(c.tick(&sat2), OptConnAction::None));
+        }
     }
 
     impl Clone for MirrorStat {

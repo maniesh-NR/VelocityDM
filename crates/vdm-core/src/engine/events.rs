@@ -61,6 +61,10 @@ pub struct TaskSnapshot {
     /// Epoch seconds when a queued task should start (scheduler).
     pub start_at: Option<u64>,
     pub error: Option<String>,
+    /// Engine-side notices (S11-i B1: the single-connection recovery
+    /// reason). Additive field; frontends tolerate unknown JSON keys.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
     pub checksum_ok: Option<bool>,
     /// Paused by the user (not by the scheduler stop-window).
     #[serde(default)]
@@ -269,6 +273,7 @@ mod tests {
             priority: 0,
             start_at: None,
             error: None,
+            notice: None,
             checksum_ok: None,
             user_paused: false,
             created_at: 0,

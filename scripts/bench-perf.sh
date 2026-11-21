@@ -6,6 +6,8 @@
 # RTT (VDM_RTT_MS, applied once per fresh TCP connection on /rtt/ paths).
 # This models the WAN cost of TCP/TLS setup that persistent connections
 # avoid. Usage: bench-perf.sh <label> <outfile>
+# VDM_CONN overrides the base connection count (default 8; use e.g. 2 for
+# the S11-i B2 spawn-scenario runs).
 set -u
 cd "$(dirname "$0")/.."
 BIN=./target/release/velocitydm
@@ -14,6 +16,7 @@ OUT=${2:-/tmp/bench.txt}
 ADDR=127.0.0.1:36996
 PORT=8768
 RTT=${VDM_RTT_MS:-40}
+CONN=${VDM_CONN:-8}
 WORK=$(mktemp -d /tmp/vdm-bench-XXXX)
 
 cleanup() {
@@ -39,7 +42,7 @@ for _ in $(seq 1 40); do
 done
 
 T0=$(python3 -c 'import time; print(time.time())')
-ID=$($BIN --addr $ADDR add "http://127.0.0.1:$PORT/rtt/big.bin" --dir "$WORK/dl" --conn 8 | grep -o '#[0-9]*' | tr -d '#')
+ID=$($BIN --addr $ADDR add "http://127.0.0.1:$PORT/rtt/big.bin" --dir "$WORK/dl" --conn $CONN | grep -o '#[0-9]*' | tr -d '#')
 for _ in $(seq 1 600); do
   S=$($BIN --addr $ADDR status "$ID" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null)
   [ "$S" = "completed" ] && break
@@ -56,7 +59,7 @@ SHA_OK=$( [ "$(sha256sum "$WORK/dl/big.bin" | cut -d' ' -f1)" = "$(sha256sum "$W
 
 {
   echo "label:            $LABEL"
-  echo "file:             128 MiB, 8 connections, ${RTT}ms simulated handshake RTT"
+  echo "file:             128 MiB, $CONN connections, ${RTT}ms simulated handshake RTT"
   echo "elapsed_s:        $ELAPSED"
   echo "throughput_MBps:  $MBPS"
   echo "tcp_connections:  $CONNS"

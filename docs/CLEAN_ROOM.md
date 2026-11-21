@@ -57,6 +57,20 @@ authorized in-chat. Rules honored, restated:
 - Adoption backlog items derived from T2 observation are flagged for
   stricter spec review at those gates.
 
+**S11-i adoption record (wave 1, 2026-11-21):** the first three backlog
+items (B1 cross-connection content audit with single-connection
+recovery, B2 optional connections, B9 file-lock classification/retry)
+were adopted under gate 0006
+(`harness/ASSESSMENTS/0006-s11i-adoption-wave1.md`, zero BLOCK, all
+conditions folded). The barrier was honored in practice: behavior specs
+in our own words were committed in `docs/SPECS/S11-ADOPTIONS.md` BEFORE
+the implementing commit; the implementation was written from that spec
+(constants, thresholds and mechanisms chosen independently — 256 KiB
+audit blocks, 8 MiB stride, spawn/retire headroom factors and
+persistence counts, per-OS lock-code tables — none of them derived from
+the reference product's internals); the T2 provenance flag rides the
+spec header and each item. Future waves follow the same barrier.
+
 ## License
 
 GPL-3.0-or-later for all first-party code in this repository.

@@ -117,6 +117,20 @@ impl RangePool {
         pool
     }
 
+    /// Reset to a full file of `total` bytes (S11-i B1: single-connection
+    /// recovery re-downloads everything).
+    pub fn reset(&self, total: u64) {
+        let mut inner = self.inner.lock().unwrap();
+        if total > 0 {
+            inner.intervals = vec![Interval {
+                start: 0,
+                end: total - 1,
+            }];
+        } else {
+            inner.intervals = Vec::new();
+        }
+    }
+
     /// How much of the file is done, given the total size.
     pub fn done(&self, total: u64) -> u64 {
         total.saturating_sub(self.remaining())

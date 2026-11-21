@@ -246,6 +246,7 @@ impl Engine {
             priority,
             start_at: opts_start_at,
             error: None,
+            notice: None,
             checksum_ok: None,
             user_paused: false,
             created_at: crate::util::now_ms(),

@@ -257,19 +257,21 @@ the standing five-role gate + spec-first commit + `bench-perf.sh` A/B
 win with no battery regressions. Priority is a recommendation for
 roadmap ordering, not a decision.
 
-**Recommended (clear wins, low risk):**
+**Recommended (clear wins, low risk):** — adoption status tracked here
+as S11-i waves close (wave 1: B1/B2/B9 adopted 2026-11-21 under gate
+0006, specs in `docs/SPECS/S11-ADOPTIONS.md`; wave 2 = the rest).
 
 | ID | Adopt (as behavior spec) | Target area | Expected gain | Notes |
 | --- | --- | --- | --- | --- |
-| B1 | Cross-segment data verification: hash-compare overlapping range data across connections; on mismatch auto-fallback to single connection for the file (with a UI reason string) | `vdm-core/src/engine/task.rs` + `http.rs` | stability on inconsistent proxies/CDN edges | the single most interesting stability method observed |
-| B2 | Optional connections: spawn/retire extra segment connections mid-download based on throughput; segment-count presets per link class (high/medium/low) | `task.rs` + `scheduler.rs` | throughput on fat pipes, resource use on thin ones | pairs with existing per-download max-connections |
-| B3 | EXT-X-BYTERANGE parsing + fragment list assembly for HLS | `vdm-core/src/engine/hls.rs` | correctness/range coverage (S7 adjacent) | spec-first; extend HLS manifest model |
+| B1 | Cross-segment data verification: hash-compare overlapping range data across connections; on mismatch auto-fallback to single connection for the file (with a UI reason string) | `vdm-core/src/engine/task.rs` + `http.rs` | stability on inconsistent proxies/CDN edges | **ADOPTED (wave 1, gate 0006)**: content audit of written 256 KiB blocks over fresh connections + bounded single-connection recovery |
+| B2 | Optional connections: spawn/retire extra segment connections mid-download based on throughput; segment-count presets per link class (high/medium/low) | `task.rs` + `scheduler.rs` | throughput on fat pipes, resource use on thin ones | **ADOPTED (wave 1, gate 0006)**: dynamic spawn/retire core; link-class presets deferred to wave 2 |
+| B3 | EXT-X-BYTERANGE parsing + fragment list assembly for HLS | `vdm-core/src/engine/hls.rs` | correctness/range coverage (S7 adjacent) | wave 2 (S7-adjacent gate) |
 | B4 | NM host resilience: persistent port + backoff reconnect (reference uses 1500 ms), host-absence error matching for graceful degradation | `extensions/shared/messaging.js` + `crates/velocitydm-nmh` | stability of browser↔core link | compare our current connect/retry behavior in the spec |
 | B5 | Cookie-jar forwarding: `cookies.getAll({url})` serialization incl. Firefox `firstPartyDomain` on takeover, so authenticated downloads don't fail on cookie split | `extensions/shared/*` | correctness on auth'd sites | we already forward captured headers; spec the delta |
 | B6 | Takeover UX: shelf/UI suppression + cancel-then-resume handoff (never leave a dead browser download when the engine declines); a `captured.html#url`-style in-tab confirmation with auto-back | `extensions/chromium/*`, `extensions/shared/*` | UX clarity + fewer double-downloads | MV3-compatible pattern |
 | B7 | Video detection hardening in content scripts: geometry gating (min width/height, `videoWidth`/`networkState` while `readyState<1`), transparent-overlay visibility filter, MutationObserver+ResizeObserver on players, inline-script URL scraping, site-specific selector packs | `extensions/shared/detector.js` | fewer false positives (resource + UX) | keep site packs optional and data-driven |
 | B8 | MIME→extension normalization table for filename choices | `extensions/shared/*` + core naming | correctness | ~100-entry data table, ours from scratch |
-| B9 | Assembly-conflict UX: explicit "another app (AV) holds the file; reboot+resume to assemble" messaging and retry path | `vdm-core/src/engine/task.rs` + frontend surfaces | recoverability | cheap; user-visible stability |
+| B9 | Assembly-conflict UX: explicit "another app (AV) holds the file; reboot+resume to assemble" messaging and retry path | `vdm-core/src/engine/task.rs` + frontend surfaces | recoverability | **ADOPTED (wave 1, gate 0006)**: lock-classification + bounded finalize retry + resumable failure |
 
 **Candidate (worth a spec + bench, decide at the gate):**
 
