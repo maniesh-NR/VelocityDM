@@ -213,11 +213,14 @@ helping).
 
 - Unit: spawn/retire decision function (pure fn over the measured
   signals) — below-headroom persistence, caps, rate-limit guard.
-- e2e (spawn-scenario witness): an aging test server (responses beyond
-  the first requests for the path are degraded, globally — connection
-  recycling is platform-dependent) with base `--conn 2` shows
+- e2e (spawn-scenario witness): an aging test server (a byte frontier —
+  ranges entirely below it are degraded) with base `--conn 2` shows
   `connections` in the snapshot rising above 2 during the transfer and
-  the file completing byte-identical.
+  the file completing byte-identical. Witnessed on Linux and Windows
+  CI and in the dev sandbox; not run on macOS CI runners — the 4
+  KiB-paced degraded serve interacts with macOS-runner TCP so bodies
+  truncate mid-transfer (a test-infrastructure edge, documented in the
+  test's doc comment; the engine itself is platform-independent).
 - Bench witness: `bench-perf.sh` at base `--conn 2` records a
   throughput delta vs the pre-change binary (the A/B evidence), and the
   standard `--conn 8` run shows no regression. On the localhost bench
