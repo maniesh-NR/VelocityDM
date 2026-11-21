@@ -11,7 +11,7 @@ session reads this file first, then `ROADMAP.md`.
 | `/home/z/my-project/scripts/` | sandbox tooling (`publish-velocitydm.sh`, `backup-sandbox.sh`) |
 | `/home/z/my-project/release-assets/` | floor assets for the 6 releases |
 | `/home/z/my-project/.gh_token` | fine-grained PAT. **Never commit, print, or back up.** |
-| Rust | rustup at `~/.cargo/bin` (stable + 1.75.0 installed; add `export PATH="$HOME/.cargo/bin:$PATH"`; use `CARGO_INCREMENTAL=0` — disk is tight) |
+| Rust | **this instance:** rustup/cargo live under `tools/rustup` + `tools/cargo` (survived recycles there) — run with `export RUSTUP_HOME=/home/z/my-project/tools/rustup CARGO_HOME=/home/z/my-project/tools/cargo PATH=/home/z/my-project/tools/cargo/bin:$PATH`; toolchains: stable 1.100.0 (default) + 1.75.0 (win7 witness); use `CARGO_INCREMENTAL=0` — disk is tight |
 | Node | v24.x on PATH |
 | Android | local build works: SDK at `/tmp/android-sdk`, Gradle 8.9 at `/tmp/gradle-8.9`, full JDK at `/tmp/jdk-root` (use `GRADLE_USER_HOME=/tmp/gradle-home`, `JAVA_HOME=<jdk-root>`, `ANDROID_HOME=/tmp/android-sdk`; the default JDK lacks `jlink`) |
 | Zig/dlltool | zig 0.13.0 at `/tmp/zig-linux-x86_64-0.13.0`, mingw binutils at `/tmp/mingw-root/usr/bin` for local win7 zigbuild |
@@ -594,3 +594,69 @@ session reads this file first, then `ROADMAP.md`.
 - Next: on the owner's answers — dispatch gate 0007 for the chosen
   wave-2 scope → refine+commit specs (spec-first) → implement →
   batteries + A/B → CI witness → issue #15 comment → backup close.
+
+## 2026-11-21 (session 9) — owner decision round 1 + gates 0007/0008 + toolchain re-provision
+
+- Context refresh (the session-8 line continued after another loss).
+  **Fetch-first lesson, six-times-proven:** origin/main was 15 commits
+  ahead of the stale local tree (session 8's commits: the D1–D7 menu at
+  2f9cfa1 + the S11-T2 execution + S11-i wave 1 close + S12-e gate
+  0005); fast-forwarded cleanly. The stray local BACKUPS.md edit was
+  reconciled (the a274d96 row kept, chronologically placed — remote
+  rows were already newer).
+- **Environment truth this session:** `tools/` can LOOK missing at
+  session cold-start (the first two `ls` probes said "No such file or
+  directory" while cargo/rustup were actually present and healthy) —
+  a cold-mount transient; retry before concluding another recycle ate
+  it. What HAD gone: ghidra + jdk (re-provisioned below). What had
+  survived: `tools/rustup` + `tools/cargo` (stable 1.100.0 default +
+  1.75.0 — use `RUSTUP_HOME`/`CARGO_HOME` per the Environment table).
+- **Owner decision round 1 answered in-chat:** `d1:C, d2:B, d3:d,
+  d4:b, d5:a, d7:B` (D6 unanswered → default A). Recorded durably in
+  the NEW `harness/DECISIONS.md` ledger (bindings itemized there;
+  the in-chat menu stays the interface per the standing directive).
+- **Activations executed (both spec-first — specs committed BEFORE any
+  implementing commit, which runs NEXT):**
+  - **Gate 0007** (five-role, 5× PROCEED-WITH-CONDITIONS, zero BLOCK,
+    18 conditions folded): S11-i **wave 2** with owner D1:C scope —
+    B2-presets, B3 HLS BYTERANGE, B4 NMH resilience, B5 cookie
+    forwarding, B6 takeover UX, B7 detector hardening, B8 MIME table,
+    plus the pulled-in parked **B13** (persisted scheduler rules,
+    `.vdmq`) and **B16** (browser-proxy propagation, adds the `proxy`
+    manifest permission). Specs: `docs/SPECS/S11-ADOPTIONS-WAVE2.md`,
+    each grounded in the current code (messaging.js one-shot send,
+    background.js cookie/takeover paths, hls.rs Segment shape,
+    scheduler.rs rules, HttpOptions/ResumeState surfaces, the manifest
+    permission inventory).
+  - **Gate 0008** (five-role, 5× PROCEED-WITH-CONDITIONS, zero BLOCK):
+    **S4 DHT (BEP-5) activated in parallel** (owner D2:B). Specs:
+    `docs/SPECS/S4-DHT-BEP5.md` (KRPC/token/routing-table/lookup/
+    integration; local mini-DHT-only CI; idle no-op promise; deferred
+    sub-stages recorded — seeder-side announcing, background refresh,
+    persisted table).
+  - ROADMAP rows + briefs updated: S4 ACTIVE, wave-2 scope +
+    sequencing, S12 queue order per D3:D + D5:A (promotion-gate prep
+    first, SSE wiring next, owner verification after wave-2 + SSE),
+    T1/T3 protocol-prepared note per D4:B, D7 commission.
+- Session-8's volatile staging dir (`staging/s11i-wave2/`) was lost
+  with the recycle, as designed; its substance was re-derived directly
+  from the committed study into the committed specs — the
+  memory-entry-summarizes-substance contingency worked.
+- **Toolchain re-provisioned and end-to-end verified (D7 precondition):**
+  Ghidra 12.2 zip (asset `ghidra_12.2_PUBLIC_20261016.zip`, URL found
+  via the release page's `expanded_assets` fragment after an API
+  rate-limit) — SHA-256 byte-exact against the RUNBOOK pin
+  `2c2cd776…7be67`; Temurin JDK 25.0.5.1; `JAVA_HOME_OVERRIDE` set;
+  end-to-end probe: `analyzeHeadless` on a locally built 16 KB ELF with
+  `scripts/ghidra/S11Analyze.java` (the T2 helper) — import,
+  auto-analysis, runtime script compile, decompilation of all 15
+  functions, exit 0, output confined to the throwaway dir.
+- Next (implementation order, per gates 0007/0008): wave 2 engine-side
+  first (B3 → B13 → B2p → B8-core → B16-core), then extension-side
+  (B4 → B5 → B6 → B7 → B16 wiring) — one revertable commit per item
+  with batteries/A/B and win7 ports; S4 DHT module in parallel;
+  per-item closes with CI witness + issue comment + backup. The D7
+  deep-dive (IDMan.exe scheduler/segment-allocator function-level
+  decompile) runs as its own multi-session effort under the T2
+  barriers (re-verify the artifact fingerprint per the fail-closed
+  policy at each session's start).

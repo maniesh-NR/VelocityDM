@@ -11,7 +11,7 @@ Each stage transition is gated by the adversarial consensus protocol
 | S2 | Publish v1.0.0: push main + 6 tags, releases with assets, repo config, roadmap issues | DONE (2026-11-13) | `harness/BACKUPS.md` + MEMORY.md entry |
 | S3 | Hardening: branch protection (8 required checks), verify all releases carry assets, CI green | DONE (2026-11-13) | MEMORY.md entry |
 | S1R | Post-loss reconciliation + security hardening + doc truth + republish | DONE (2026-11-13; published at b27549a) | `ASSESSMENTS/0002b-round2-consensus.md` |
-| S4 | DHT (BEP-5) so trackerless magnets resolve | PENDING | — |
+| S4 | DHT (BEP-5) so trackerless magnets resolve | ACTIVE (owner D2:B — parallel with S11-i wave 2; gate 0008 + spec `docs/SPECS/S4-DHT-BEP5.md`) | `ASSESSMENTS/0008-s4-dht-activation.md` |
 | S5 | UDP trackers (BEP-15) | PENDING | — |
 | S6 | DASH downloader (.mpd manifests) | PENDING | — |
 | S7 | HLS: SAMPLE-AES + fMP4 EXT-X-MAP | PENDING | — |
@@ -19,7 +19,7 @@ Each stage transition is gated by the adversarial consensus protocol
 | S9 | Safari native app extension (Xcode conversion) | PENDING | — |
 | S10 | Flathub submission | PENDING | — |
 | S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | ACTIVE (T2 executed 2026-11-21: findings + backlog in `docs/RESEARCH-IDM-STUDY.md`; T1/T3 remain gated on an owner-provisioned Windows VM; adoption runs as S11-i) | — |
-| S11-i | S11 incorporation waves: adopt study-backlog techniques spec-first (wave 1 = B1 cross-connection content audit + single-connection recovery, B2 optional connections, B9 file-lock classification/retry → engine; wave 2 = B3 HLS BYTERANGE + B4 NMH resilience + B5 cookie forwarding + B6 takeover UX + B7 detector hardening + B8 MIME table → extensions/HLS; B10–B16 parked with observe-first; N1–N6 rejected) | ACTIVE (wave 1 DONE 2026-11-21: gate 0006 + specs + implementation + A/B + CI 11/11 at 73b98bd; wave 2 pending its own gate) | `ASSESSMENTS/0006-s11i-adoption-wave1.md` |
+| S11-i | S11 incorporation waves: adopt study-backlog techniques spec-first (wave 1 = B1 cross-connection content audit + single-connection recovery, B2 optional connections, B9 file-lock classification/retry → engine; wave 2 = B2-presets + B3 HLS BYTERANGE + B4 NMH resilience + B5 cookie forwarding + B6 takeover UX + B7 detector hardening + B8 MIME table + B13 persisted scheduler rules + B16 browser-proxy propagation → engine/extensions; B10/B11/B12/B14/B15 parked with observe-first; N1–N6 rejected) | ACTIVE (wave 1 DONE 2026-11-21: gate 0006 + specs + implementation + A/B + CI 11/11 at 73b98bd; wave 2 ACTIVATED 2026-11-21 under gate 0007 with owner D1:C scope — implementation runs next) | `ASSESSMENTS/0006-s11i-adoption-wave1.md`, `ASSESSMENTS/0007-s11i-adoption-wave2.md` |
 | S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept (Android leg runs on the Kotlin-port engine today; Rust-core unification is S8's) | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; S12-e Android Views+KMP built (preview) under gate 0005; gtk3 + Qt + SwiftUI variants are gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` |
 
 ## Stage briefs
@@ -155,6 +155,28 @@ Each stage transition is gated by the adversarial consensus protocol
   link intake, dial-up scheduling) — reasons recorded in the study.
   Adoption status per backlog item lands in
   `docs/RESEARCH-IDM-STUDY.md` §5 as waves close.
+  - **Wave 2 (gate 0007, owner D1:C):** scope adds the two parked
+    candidates the owner pulled in — **B13** persisted scheduler
+    rules (`.vdmq` file, rules-survive-restart; task auto-recovery
+    stays a stated non-goal) and **B16** browser-proxy propagation
+    (report + suggest + warn; adds the `proxy` manifest permission
+    with its review cost) — plus the B2 link-class presets deferred
+    from wave 1. Behavior specs: `docs/SPECS/S11-ADOPTIONS-WAVE2.md`.
+    Implementation sequencing (per gate 0007): engine-side first
+    (B3 → B13 → B2p → B8-core → B16-core), then extension-side
+    (B4 → B5 → B6 → B7 → B16 wiring), one revertable commit per item,
+    batteries + A/B per item, CI witness at each close.
+  - **Owner decision round 1 (2026-11-21, `harness/DECISIONS.md`)**
+    shapes the queue: D2:B runs S4 (DHT) in parallel with wave 2;
+    D4:B keeps T1/T3 honest — the owner provisions a Windows VM
+    LATER, and the T1/T3 observation protocol is prepared meanwhile
+    (measurement plans + trace hygiene per the S11 brief, ready to
+    execute when the VM arrives; neither tier is silently dropped);
+    D7:B commissions the IDMan.exe bounded multi-session deep-dive
+    (scheduler + segment-allocator function-level decompile,
+    multi-session Ghidra effort under the same T2 provenance and
+    clean-room barriers; toolchain re-provisioned this session per
+    the RUNBOOK recipe).
 - **S12**: Owner-directed platform matrix — specific UI stacks per
   operating system around the **shared Rust core** (`vdm-core` +
   `vdm-rpc`), **Material You across all operating systems for
@@ -188,14 +210,15 @@ Each stage transition is gated by the adversarial consensus protocol
     **DONE (preview)**, gate 0005, tag-rule-protected until the
     promotion gate (the frozen v1.0.0-family release ASSETS keep the
     Compose APK);
-    S12-lin2 **gtk-rs/gtk3-rs** frontend for older Linux (needs GTK3
-    dev libs on CI); S12-lin3 **Qt (cxx-qt)** alternative; S12-mac2
-    **SwiftUI** variant for newer macOS; SSE event-stream wiring for
-    the Swift client; promotion gates that move each frontend from
-    preview to shipped (owner runtime verification + parity +
-    release.yml packaging — the six v1.0.0 releases stay frozen
-    until then). Tracked as GitHub issue #16 on the
-    `v1.1.0 - roadmap` milestone.
+    **queue order per owner D3:D + D5:A (`harness/DECISIONS.md`):**
+    promotion-gate preparation first (parity matrices, packaging
+    plan, the owner-verification protocol document), then SSE
+    wiring for the Swift client, then S12-lin2 **gtk-rs/gtk3-rs**
+    (needs GTK3 dev libs on CI), S12-lin3 **Qt (cxx-qt)**, S12-mac2
+    **SwiftUI** — the owner's runtime verification moment stays
+    AFTER wave-2 close + SSE wiring per D5:A (verify a full surface
+    then). Tracked as GitHub issue #16 on the `v1.1.0 - roadmap`
+    milestone.
   - **S12-e execution plan (gate 0005 consensus — 5× PROCEED-WITH-
     CONDITIONS, zero BLOCK; conditions folded below):** replace the
     Compose UI with an **Android View-based Material 3** UI (MDC 1.12.0
