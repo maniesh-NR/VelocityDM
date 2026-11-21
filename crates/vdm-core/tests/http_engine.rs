@@ -550,10 +550,14 @@ fn optional_connections_spawn_when_live_underperform() {
         .unwrap();
     // connections must exceed the base count during the transfer
     let mut max_connections = 0u32;
+    let mut max_speed = 0u64;
+    let mut last_speed = 0u64;
     assert!(
         wait_until_ms(120_000, || {
             if let Some(s) = engine.get(id) {
                 max_connections = max_connections.max(s.connections);
+                max_speed = max_speed.max(s.speed);
+                last_speed = s.speed;
             }
             state_of(&engine, id) == TaskState::Completed
         }),
@@ -563,8 +567,10 @@ fn optional_connections_spawn_when_live_underperform() {
     );
     assert!(
         max_connections > 2,
-        "optional connections never spawned; max seen: {}",
-        max_connections
+        "optional connections never spawned; max seen: {} (max speed {} B/s, last {} B/s)",
+        max_connections,
+        max_speed,
+        last_speed
     );
     let got = std::fs::read(dir.path().join("degrade.bin")).unwrap();
     assert_eq!(got, data);

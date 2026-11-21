@@ -173,8 +173,12 @@ helping).
 ### Spawn rule
 
 - Signals: aggregate `speed_ema` (existing EMA) vs `one_conn_capacity` =
-  the highest per-mirror speed EMA (what the best single connection
-  achieved).
+  the highest per-mirror speed EMA **ever observed in this task** (a
+  high-water mark — the best capacity any single connection
+  demonstrated). A high-water mark rather than the current EMA: on slow
+  links a long degraded crawl drags the current EMA down until the
+  spawn signal goes blind, while the capacity the pipe actually showed
+  remains the meaningful reference.
 - Spawn one optional worker when ALL hold: (a) ≥ 3 consecutive 1 s
   decision ticks with `speed_ema < 0.55 × live × one_conn_capacity`;
   (b) remaining bytes ≥ 8 MiB; (c) `live < cap`.

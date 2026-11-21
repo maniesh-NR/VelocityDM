@@ -21,15 +21,15 @@ pub struct TestServer {
     pub flaky_remaining: Arc<AtomicU32>,
     /// ms to sleep per 4 KiB written for paths under "/slow"
     pub slow_ms: Arc<AtomicU32>,
-    /// S11-i B1 e2e: when set (budget of flips armed), covered-repetition
-    /// requests whose range is exactly a 256 KiB-aligned block — the
-    /// engine-audit request shape; worker leases are guided and never
-    /// block-shaped — are served with flipped bytes. Budget of 2: an
-    /// interrupted (inconclusive) audit may waste one flip and a later
-    /// audit still detects the inconsistency.
+    /// S11-i B1 e2e: when armed, covered-repetition requests whose range
+    /// is exactly a 256 KiB-aligned block — the engine-audit request shape;
+    /// worker leases are guided and never block-shaped — are served with
+    /// flipped bytes. A signed budget of 2 decrements without wrap-around
+    /// (an unsigned fetch_sub from 0 wraps to MAX and would re-arm!);
+    /// one wasted flip is tolerated, a second detects the inconsistency.
     pub flip_first_covered_repetition: Arc<AtomicBool>,
-    /// remaining flip budget (see above)
-    flip_budget: Arc<AtomicU32>,
+    /// remaining flip budget (signed; see above)
+    flip_budget: Arc<std::sync::atomic::AtomicI32>,
     /// S11-i B2 e2e: when > 0, responses beyond the first N range requests
     /// FOR THE PATH (globally, any connection) get `slow_ms` applied — the
     /// "aging server" degradation that makes parallel optional
@@ -57,7 +57,7 @@ impl TestServer {
         let flaky = Arc::new(AtomicU32::new(0));
         let slow_ms = Arc::new(AtomicU32::new(0));
         let flip = Arc::new(AtomicBool::new(false));
-        let flip_budget = Arc::new(AtomicU32::new(0));
+        let flip_budget = Arc::new(std::sync::atomic::AtomicI32::new(0));
         let flip_budget_c = flip_budget.clone();
         let degrade = Arc::new(AtomicU32::new(0));
         let covered: Arc<Mutex<Coverage>> = Arc::new(Mutex::new(HashMap::new()));
@@ -141,9 +141,9 @@ impl TestServer {
         self.slow_ms.store(ms_per_4k, Ordering::SeqCst);
     }
 
-    /// Arm the inconsistent edge (S11-i B1 e2e): a budget of 2 flips,
-    /// each applying only to covered-repetition requests shaped like the
-    /// engine's 256 KiB audit blocks (worker leases never match the
+    /// Arm the inconsistent edge (S11-i B1 e2e): a signed budget of 2
+    /// flips, each applying only to covered-repetition requests shaped like
+    /// the engine's 256 KiB audit blocks (worker leases never match the
     /// shape, so only audits can consume the budget).
     pub fn set_inconsistent_edge(&self) {
         self.flip_first_covered_repetition
@@ -172,7 +172,7 @@ fn serve(
     flaky: Arc<AtomicU32>,
     slow_ms: Arc<AtomicU32>,
     flip: Arc<AtomicBool>,
-    flip_budget: Arc<AtomicU32>,
+    flip_budget: Arc<std::sync::atomic::AtomicI32>,
     degrade_after: Arc<AtomicU32>,
     covered: Arc<Mutex<Coverage>>,
     requests_per_path: Arc<Mutex<HashMap<String, u32>>>,
@@ -264,18 +264,24 @@ fn serve(
                         // block shape (256 KiB-aligned), and budget left.
                         // Worker leases are guided (>= 512 KiB) and never
                         // match the shape, so only audits consume flips.
-                        const AUDIT_BLOCK: u64 = 256 * 1024;
+                        // The signed budget decrements without wrapping
+                        // below zero (an unsigned fetch_sub from 0 wraps
+                        // to MAX and would re-arm the flips forever).
+                        #[allow(clippy::manual_is_multiple_of)]
+                        fn block_shaped(start: usize, end: usize) -> bool {
+                            const AUDIT_BLOCK: usize = 256 * 1024;
+                            start % AUDIT_BLOCK == 0 && end - start == AUDIT_BLOCK
+                        }
                         let prior_covered = {
                             let cov = covered.lock().unwrap();
                             cov.get(path)
                                 .map(|v| range_covered(v, start as u64, end as u64))
                                 .unwrap_or(false)
                         };
-                        let block_shaped = (start as u64) % AUDIT_BLOCK == 0
-                            && (end - start) as u64 == AUDIT_BLOCK;
+                        let shaped = block_shaped(start, end);
                         let flip_this = path.starts_with("/inconsistent")
                             && prior_covered
-                            && block_shaped
+                            && shaped
                             && flip.load(Ordering::SeqCst)
                             && flip_budget.fetch_sub(1, Ordering::SeqCst) > 0;
                         {

@@ -1031,6 +1031,11 @@ fn run_segmented(
     let mut decision_at = Instant::now();
     let mut last_audit_start_done = 0u64;
     let mut recovering = false;
+    // B2: high-water mark of the best single-connection capacity any
+    // mirror demonstrated. Using the CURRENT EMA would let a long crawl
+    // drag it down until the spawn signal goes blind (observed on slow
+    // CI runners); capacity the pipe has shown stays the reference.
+    let mut one_conn_hwm: u64 = 0;
     loop {
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok((wid, e)) => {
@@ -1156,10 +1161,13 @@ fn run_segmented(
                     .map(|m| m.speed_ema.load(Ordering::Relaxed))
                     .max()
                     .unwrap_or(0);
+                if one_conn > one_conn_hwm {
+                    one_conn_hwm = one_conn;
+                }
                 let signals = OptSignals {
                     live: l,
                     speed: speed_ema,
-                    one_conn_capacity: one_conn,
+                    one_conn_capacity: one_conn_hwm,
                     remaining: pool.remaining(),
                 };
                 match opt.tick(&signals) {
