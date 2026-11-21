@@ -459,3 +459,30 @@ session reads this file first, then `ROADMAP.md`.
   - Ghidra 12.2 release asset lives at tag `Ghidra_12.2_build`,
     `ghidra_12.2_PUBLIC_20261016.zip` (570 MB) — exact URL recorded in
     this entry because the API rate-limit can block discovery next time.
+
+## 2026-11-21 (session 7) — S11-i opened: adoption wave 1 (B1/B2/B9)
+
+- Context at open: S11-T2 closed (study + backlog delivered, backup
+  3e7e31c); S12/S12-e closed (native frontends, CI 11/11). The
+  continuation of the owner's T2 directive is the adoption half:
+  "incorporated in to this project to improve performance, stability,
+  and resource use". Sandbox recycled again (6th loss): tools/ gone
+  (Ghidra/JDK not needed this wave), Rust re-provisioned (cargo
+  1.100 + fmt + clippy at tools/cargo|rustup per RUNBOOK); local tree
+  was 5 commits behind origin (parallel S12-e + T2 close) — fetched,
+  fast-forwarded to 89f46b8 (four-times-proven fetch-first lesson).
+- Gate 0006 recorded (five-role, 5x PROCEED-WITH-CONDITIONS, zero
+  BLOCK): S11-i adoption wave 1 = B1 cross-connection content audit +
+  single-connection recovery, B2 optional connections (spawn/retire),
+  B9 file-lock classification + finalize retry. All 17 conditions
+  folded into docs/SPECS/S11-ADOPTIONS.md BEFORE the implementation
+  commit (spec-first barrier honored; commit split enforced).
+- Hard constraints carried from the gate: audit reads under the file
+  mutex (no torn reads); recovery capped at 2 then hard fail; notice
+  text static/ours; no optional connections under ANY rate limit;
+  absolute cap 32 / extra ≤ 8 with stagger; NO ResumeState field (the
+  Android .vdmctl reader is strict — Vdmctl.kt
+  ignoreUnknownKeys=false, verified); win7 tree ported with 1.75-safe
+  syntax + local cargo +1.75 check witness; bench A/B evidence owed
+  (conn 8 no-regression + conn 2 spawn-scenario) with inconsistent-
+  edge e2e for B1 falsifiability.
