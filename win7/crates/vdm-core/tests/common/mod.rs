@@ -25,10 +25,13 @@ pub struct TestServer {
     /// already fully served before (by prior range responses) is served
     /// with every byte flipped — the deterministic "inconsistent edge".
     pub flip_first_covered_repetition: Arc<AtomicBool>,
-    /// S11-i B2 e2e: when > 0, responses after the first N requests ON THE
-    /// SAME TCP CONNECTION get `slow_ms` applied regardless of path — the
-    /// "aging connection" degradation that makes fresh optional
-    /// connections worthwhile.
+    /// S11-i B2 e2e: when > 0, responses beyond the first N range requests
+    /// FOR THE PATH (globally, any connection) get `slow_ms` applied — the
+    /// "aging server" degradation that makes parallel optional
+    /// connections worthwhile (global rather than per-connection: worker
+    /// connection recycling is platform-dependent, and the spawn signal
+    /// only needs live connections to underperform their demonstrated
+    /// capacity).
     pub degrade_after: Arc<AtomicU32>,
     /// byte ranges (exclusive end) already served per path (for the
     /// inconsistent-edge flip)
@@ -125,8 +128,8 @@ impl TestServer {
             .store(true, Ordering::SeqCst);
     }
 
-    /// Degrade connections (apply slow_ms) after N requests per TCP
-    /// connection (S11-i B2 e2e).
+    /// Degrade responses (apply slow_ms) beyond the first N range requests
+    /// for the path, globally (S11-i B2 e2e).
     pub fn set_degrade_after(&self, reqs: u32) {
         self.degrade_after.store(reqs, Ordering::SeqCst);
     }
@@ -152,15 +155,12 @@ fn serve(
 ) -> std::io::Result<()> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
-    // per-connection request counter (S11-i B2 degradation)
-    let mut reqs_on_conn: u32 = 0;
     // support several pipelined requests per connection (keep-alive)
     for _ in 0..1024 {
         let head = match read_head(&mut stream) {
             Some(h) => h,
             None => return Ok(()),
         };
-        reqs_on_conn += 1;
         let mut lines = head.split("\r\n");
         let first = lines.next().unwrap_or("");
         let mut parts = first.split_whitespace();
@@ -259,10 +259,16 @@ fn serve(
                             None
                         };
                         let slice: &[u8] = owned.as_deref().unwrap_or(&body[start..end]);
-                        // S11-i B2: aging-connection degradation (strictly
-                        // after the first N requests on this connection)
+                        // S11-i B2: aging-server degradation — beyond the
+                        // first N requests for this path (incl. the probe
+                        // HEAD; counted at parse time above), responses are
+                        // slowed globally, regardless of connection
                         let degrade_n = degrade_after.load(Ordering::SeqCst);
-                        let degraded = degrade_n > 0 && reqs_on_conn > degrade_n;
+                        let path_reqs = {
+                            let reqs_map = requests_per_path.lock().unwrap();
+                            *reqs_map.get(path).unwrap_or(&0)
+                        };
+                        let degraded = degrade_n > 0 && path_reqs > degrade_n;
                         let slow = if path.starts_with("/slow") || degraded {
                             slow_ms.load(Ordering::Relaxed)
                         } else {

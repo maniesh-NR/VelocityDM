@@ -209,13 +209,17 @@ helping).
 
 - Unit: spawn/retire decision function (pure fn over the measured
   signals) — below-headroom persistence, caps, rate-limit guard.
-- e2e (spawn-scenario witness): the local `/slow`-style path or a
-  per-connection-throttled server with base `--conn 2` shows
+- e2e (spawn-scenario witness): an aging test server (responses beyond
+  the first requests for the path are degraded, globally — connection
+  recycling is platform-dependent) with base `--conn 2` shows
   `connections` in the snapshot rising above 2 during the transfer and
   the file completing byte-identical.
 - Bench witness: `bench-perf.sh` at base `--conn 2` records a
   throughput delta vs the pre-change binary (the A/B evidence), and the
-  standard `--conn 8` run shows no regression.
+  standard `--conn 8` run shows no regression. On the localhost bench
+  the base connections saturate the pipe (no spawn triggers); the spawn
+  demonstration is the e2e above, and the conn-2 bench documents
+  no-regression plus the audit overhead.
 
 ---
 

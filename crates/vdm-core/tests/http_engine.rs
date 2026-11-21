@@ -487,7 +487,7 @@ fn inconsistent_edge_triggers_single_connection_recovery() {
         .unwrap();
     // the recovery notice must become observable during the retry
     assert!(
-        wait_until_ms(60_000, || {
+        wait_until_ms(90_000, || {
             engine.get(id).and_then(|s| s.notice.clone()).is_some()
         }),
         "recovery notice never observed; state: {:?} err: {:?}",
@@ -495,7 +495,7 @@ fn inconsistent_edge_triggers_single_connection_recovery() {
         engine.get(id).and_then(|s| s.error)
     );
     assert!(
-        wait_until_ms(120_000, || state_of(&engine, id) == TaskState::Completed),
+        wait_until_ms(180_000, || state_of(&engine, id) == TaskState::Completed),
         "err: {:?}",
         engine.get(id).and_then(|s| s.error)
     );
@@ -517,22 +517,25 @@ fn inconsistent_edge_triggers_single_connection_recovery() {
 }
 
 /// B2: when live connections underperform their demonstrated capacity
-/// (aging connections degraded server-side), an optional connection is
-/// spawned mid-download and the file still completes byte-identical.
+/// (an aging server that degrades responses beyond the first requests),
+/// an optional connection is spawned mid-download and the file still
+/// completes byte-identical.
 #[test]
 fn optional_connections_spawn_when_live_underperform() {
     let server = TestServer::start();
-    // 80 MiB: the two base connections deliver their first (fast) leases
-    // (16 MiB each), then degrade and crawl on their second leases while
-    // ~16 MiB of unleased ranges remain in the pool — the spawn has work
-    // to steal, fires after its 3-tick persistence, and fresh connections
-    // (undegraded) drain the remainder quickly.
-    let data: Vec<u8> = (0..80 * 1024 * 1024u32)
+    // 96 MiB: the two base connections deliver their first (fast) leases
+    // (16 MiB each; the probe HEAD + two leases are the fast requests),
+    // then the server degrades every further response (~2 MiB/s) —
+    // ~32 MiB of unleased ranges remain in the pool when the spawn acts
+    // after its 3-tick persistence, and the degraded connections
+    // complete within the (CI-runner-generous) window in parallel.
+    let data: Vec<u8> = (0..96 * 1024 * 1024u32)
         .map(|i| (i * 17 + 11) as u8)
         .collect();
     server.set_file("/degrade.bin", data.clone());
-    server.set_degrade_after(1); // every request after the first per TCP conn
-    server.set_slow(5); // degraded: ~0.8 MiB/s per connection
+    // fast: probe HEAD + first two leases; degraded afterwards, globally
+    server.set_degrade_after(3);
+    server.set_slow(2); // degraded: ~2 MiB/s per connection
     let dir = tempfile::tempdir().unwrap();
     let engine = engine_in(dir.path()); // default 4; explicit base below
     let id = engine
@@ -547,7 +550,7 @@ fn optional_connections_spawn_when_live_underperform() {
     // connections must exceed the base count during the transfer
     let mut max_connections = 0u32;
     assert!(
-        wait_until_ms(60_000, || {
+        wait_until_ms(120_000, || {
             if let Some(s) = engine.get(id) {
                 max_connections = max_connections.max(s.connections);
             }

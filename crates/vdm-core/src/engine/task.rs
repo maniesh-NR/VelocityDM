@@ -1047,7 +1047,9 @@ fn run_segmented(
         let d = done.load(Ordering::Relaxed);
         let now = Instant::now();
         if now.duration_since(last_sample.0).as_millis() >= 100 {
-            let inst = ((d - last_sample.1) as f64
+            // saturating: the B1 recovery reset can move `done` backwards
+            // between samples; a backwards sample reads as 0 progress
+            let inst = ((d.saturating_sub(last_sample.1)) as f64
                 / now.duration_since(last_sample.0).as_secs_f64()) as u64;
             speed_ema = if speed_ema == 0 {
                 inst
@@ -1076,7 +1078,7 @@ fn run_segmented(
             && !audit_in_flight.load(Ordering::Relaxed)
             && live.load(Ordering::SeqCst) > 0
             && d >= AUDIT_STRIDE
-            && d - last_audit_start_done >= AUDIT_STRIDE
+            && d.saturating_sub(last_audit_start_done) >= AUDIT_STRIDE
         {
             if let Some(block) = ledger.pick_auditable() {
                 last_audit_start_done = d;
@@ -1127,6 +1129,10 @@ fn run_segmented(
                 reset_flag.store(false, Ordering::Relaxed);
                 conflict.store(false, Ordering::Relaxed);
                 recovering = false;
+                // the done counter just moved backwards: reset the speed
+                // sampler too (a stale last_sample would underflow below)
+                speed_ema = 0;
+                last_sample = (Instant::now(), 0);
                 handles.push(spawn_worker(next_wid.fetch_add(1, Ordering::SeqCst), false));
                 shared.update(id, |s| s.connections = 1);
                 let mut st = state_sync.lock().unwrap();
