@@ -415,6 +415,7 @@ struct OptSignals {
     remaining: u64,
 }
 
+#[derive(Debug)]
 enum OptConnAction {
     Spawn,
     Retire,
@@ -1170,7 +1171,17 @@ fn run_segmented(
                     one_conn_capacity: one_conn_hwm,
                     remaining: pool.remaining(),
                 };
-                match opt.tick(&signals) {
+                if std::env::var_os("VDM_B2_DEBUG").is_some() {
+                    eprintln!(
+                        "DBG-B2 live={} speed={} hwm={} remaining={} disabled={}",
+                        l, speed_ema, one_conn_hwm, signals.remaining, opt.disabled
+                    );
+                }
+                let action = opt.tick(&signals);
+                if std::env::var_os("VDM_B2_DEBUG").is_some() {
+                    eprintln!("DBG-B2 action={:?}", action);
+                }
+                match action {
                     OptConnAction::Spawn => {
                         let wid = next_wid.fetch_add(1, Ordering::SeqCst);
                         handles.push(spawn_worker(wid, true));

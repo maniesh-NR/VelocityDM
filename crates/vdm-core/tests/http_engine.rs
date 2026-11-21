@@ -522,6 +522,8 @@ fn inconsistent_edge_triggers_single_connection_recovery() {
 /// completes byte-identical.
 #[test]
 fn optional_connections_spawn_when_live_underperform() {
+    // TEMP (CI diagnostics round): dump the B2 decision signals
+    std::env::set_var("VDM_B2_DEBUG", "1");
     let server = TestServer::start();
     // 80 MiB: the two base connections deliver their first (fast) leases
     // (16 MiB each; the probe HEAD + two leases are the fast requests),
