@@ -71,6 +71,22 @@ persistence counts, per-OS lock-code tables — none of them derived from
 the reference product's internals); the T2 provenance flag rides the
 spec header and each item. Future waves follow the same barrier.
 
+**S11 deep-dive record (D7:B commissioned, D8:now started, session 1 on
+2026-11-21):** the owner commissioned the bounded function-level
+decompile of the reference engine's scheduler and segment allocator
+(decision ledger round 1, D7:B) and ordered it started immediately
+(round 2, D8:now). Session 1 executed under the same T2 barriers: the
+pinned artifact was re-verified byte-exact (fail-closed) at session
+start; all decompiler output lived only in the wiped throwaway
+directory; the repo receives only the functional descriptions in
+`RESEARCH-IDM-STUDY.md` §4b (connection-scaling policy, queue
+persistence model, limits quota, completion path) — no code, field
+layouts, or constants chosen for implementation use. The bounded
+tooling scripts (no-analysis import, anchor/string evidence walk,
+RTTI chain walk, targeted decompile) are sandbox tooling, backed up
+with the toolbox; sessions 2+ (range arithmetic, queue-state writer)
+repeat this record per session.
+
 ## License
 
 GPL-3.0-or-later for all first-party code in this repository.

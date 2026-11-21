@@ -16,7 +16,8 @@ performance, stability, and resource use?
 | Owner T2 clearance | Owner directive received in-chat on 2026-11-21, verbatim: "Use Ghidra CLI analyzeHeadless to decompile and reverse engineer the IDM install file (https://download.internetdownloadmanager.com/idman643build18.exe) to study if there are any methods of download management or browser integration that can be incorporated in to this project to improve performance, stability, and resource use". Recorded as the T2 clearance the S11 brief requires (separate from and after the 0003 amendment gate). Disclaimer per protocol: the panel is not legal counsel; posture is owner-authorized static analysis of a lawfully obtained copy for interoperability study. |
 | Tools | Ghidra 12.2.2 `analyzeHeadless` (+ Temurin JDK 25; zip hash-verified per RUNBOOK), binutils `objdump`/`strings`, Python `zlib`/`zipfile` for container unpacking |
 | Fully decompiled components | installer stub (272 functions, all decompiled), `IDMMsgHost.exe` (83 functions, all decompiled), `MediumILStart.exe` (172 functions, all decompiled) |
-| Bounded-to-strings components | `IDMan.exe` (2.97 MB of code — full Ghidra decompile exceeds this sandbox's CPU/RAM/time budget; analyzed via imports, strings, RTTI class names, version resources), 16 integration helper binaries (imports + strings), all three Firefox XPI generations and the Chrome CRX (JavaScript read in full) |
+| Bounded-to-strings components | `IDMan.exe` (2.97 MB of code — full Ghidra decompile exceeds this sandbox's CPU/RAM/time budget; analyzed via imports, strings, RTTI class names, version resources, **then the D7/D8 function-level deep-dive of its scheduler/connection-scaling machinery — see §4b**), 16 integration helper binaries (imports + strings), all three Firefox XPI generations and the Chrome CRX (JavaScript read in full) |
+| Deep-dive provenance (D7:B, D8:now) | Function-level decompile of the reference engine's scheduler + connection scaling, session 1 of a bounded multi-session effort, 2026-11-21: same pinned artifact (fail-closed re-verified byte-exact at session start), same throwaway-dir discipline (all decompiler output wiped after distillation), Ghidra 12.2 no-analysis import + anchor-string/backward-start + RTTI-chain scripts + bounded targeted decompilation (184 functions selected by evidence; helper scripts backed up with the sandbox toolbox); findings below are functional descriptions in our own words — no code, structures, or constants copied for implementation use |
 | T2 artifacts | All raw material (installer binary, extracted payloads, decompiler output) lived only in a throwaway directory outside the repo and was wiped after distillation; the binary was never committed, stored in the repo, or backed up |
 
 Clean-room barrier (unchanged, restated): nothing below is copied code,
@@ -249,6 +250,85 @@ From imports/strings/RTTI (full decompile was out of sandbox budget):
   own data); a self-update flow via the registration menu; an
   antivirus-exclusion advisory in its own dialogs.
 
+## 4b. Function-level deep-dive: scheduler + connection scaling (D7/D8, session 1)
+
+The follow-up commissioned by the owner (D7:B, started immediately per
+D8) decompiled the scheduler and connection-scaling machinery of
+`IDMan.exe` at the function level. Because the sandbox cannot
+auto-analyze a 2.97 MB code image within its foreground budget, the
+work used a bounded no-analysis import plus targeted scripts: anchor
+strings located from the §4 inventory, backward function-start
+discovery validated by disassembly, MSVC RTTI pointer-chain walks
+(type descriptor → complete-object locator → vtable → virtual-method
+entry points), and bounded decompilation of the anchor functions, the
+`CDownloadQueue`/`CDownload`/`CQueuesArray`/`CSchedulerInfo`/
+`CLimitMonitor`/`CDownloadLimits` vtable slots, and one level of
+callees — 184 functions in total, selected by evidence, never wholesale.
+
+**Connection scaling (the segment-count policy).** A single decider
+routine computes the target connection/segment count for a live
+download from a **data-volume signal**: the amount received since the
+last reference point, divided by a ~10 KiB unit, clamped between a
+per-download minimum and maximum, further clamped by a hard ceiling of
+32, and — when the download is marked as a low-class link — by a
+ceiling of 4 (narrow class) or 8. The same routine stores the computed
+target where the spawn/retire orchestrator reads it. The orchestrator
+then walks the per-connection worker array: it retires workers in a
+terminal state or carrying one of a specific set of error classes,
+computes the desired count as the larger of the current count and the
+target, activates idle worker slots up to a floor-respecting bound,
+and returns the number spawned. When the decider's target is minimal,
+the orchestrator takes the "optional connections not needed" path and
+retires only dead workers. This is a **throughput-proportional**
+controller — more received data per window ⇒ more connections — which
+is a richer signal than our adopted B2 wave-1 controller (3-tick
+spawn/retire over an EMA): it uses cumulative volume, not instantaneous
+rate, as the spawn signal. The per-download min/max fields double as
+the link-class preset mechanism (the wave-2 B2-presets spec can adopt
+this shape: per-task floor/ceiling pair plus a link-class ceiling of
+4/8 and the global 32 cap).
+
+**Queue persistence and scheduler state.** Each named queue persists
+as two small files under a Scheduler directory: a queue-state file
+holding the queue's task identifiers as a plain space-separated list
+of integers (loaded with a simple scan/parse loop, each parsed value
+appended to the in-memory queue), and a per-queue scheduler-settings
+file. The main queue (identifier 1) auto-creates default settings when
+its file is absent; queue identifier 2 carries a distinct enabled-flag
+default. Queue membership itself is a singly linked list of small
+nodes (three machine words of payload each) with tail insertion.
+
+**Download limits (the rolling-window quota).** The limit monitor's
+configuration lives in the registry under a Scheduler key with four
+values: an enable flag, a megabyte count (default 200), a hours window
+(default 5), and a show-warning flag (default on); the byte budget is
+megabytes × 1 MiB. Functionally: a **megabytes-per-hours rolling
+window** that gates further queue processing and warns when exceeded —
+plus honest input validation (hours must be 1–23).
+
+**Queue completion actions.** After queue processing finishes, the
+scheduler can perform system actions: hang up a modem (dial-up era),
+put the machine to sleep or hibernate, or exit the application — with
+an explicit wake-timer advisory for scheduled restarts (a Windows
+power-settings hint) and a cancel-grace dialog when other downloads are
+still in progress.
+
+**Download completion path.** The per-download completion handler
+branches on content type: if the content description contains
+"video"/"audio", or the target filename's extension is in a
+media-extension list (about two dozen entries), completion hands off
+to a dedicated media post-processing thread; otherwise it posts a
+completion event carrying a small record (time range, byte range,
+flags) to the application window. Each download runs as its own worker
+thread started below normal priority.
+
+**Session-2 targets (the multi-session effort continues):** the
+worker-thread setup that actually splits a file into byte ranges per
+connection (the range arithmetic), the queue-state writer (the
+save-side of the queue files), and the site-login/refresh-link
+routines. The bounded toolchain and scripts for this deep-dive are
+backed up with the sandbox toolbox (see RUNBOOK's Ghidra section).
+
 ## 5. Improvement backlog (mapped to VelocityDM areas)
 
 Legend — target: our code area; tier: provenance (all T2, 2026-11-21,
@@ -264,7 +344,7 @@ as S11-i waves close (wave 1: B1/B2/B9 adopted 2026-11-21 under gate
 | ID | Adopt (as behavior spec) | Target area | Expected gain | Notes |
 | --- | --- | --- | --- | --- |
 | B1 | Cross-segment data verification: hash-compare overlapping range data across connections; on mismatch auto-fallback to single connection for the file (with a UI reason string) | `vdm-core/src/engine/task.rs` + `http.rs` | stability on inconsistent proxies/CDN edges | **ADOPTED (wave 1, gate 0006)**: content audit of written 256 KiB blocks over fresh connections + bounded single-connection recovery |
-| B2 | Optional connections: spawn/retire extra segment connections mid-download based on throughput; segment-count presets per link class (high/medium/low) | `task.rs` + `scheduler.rs` | throughput on fat pipes, resource use on thin ones | **ADOPTED (wave 1, gate 0006)**: dynamic spawn/retire core; link-class presets deferred to wave 2 |
+| B2 | Optional connections: spawn/retire extra segment connections mid-download based on throughput; segment-count presets per link class (high/medium/low) | `task.rs` + `scheduler.rs` | throughput on fat pipes, resource use on thin ones | **ADOPTED (wave 1, gate 0006)**: dynamic spawn/retire core; link-class presets deferred to wave 2 — **deep-dive §4b maps the reference's preset shape: per-download floor/ceiling pair + link-class ceiling (4/8) + global 32 cap, with a volume-proportional target signal** |
 | B3 | EXT-X-BYTERANGE parsing + fragment list assembly for HLS | `vdm-core/src/engine/hls.rs` | correctness/range coverage (S7 adjacent) | wave 2 (S7-adjacent gate) |
 | B4 | NM host resilience: persistent port + backoff reconnect (reference uses 1500 ms), host-absence error matching for graceful degradation | `extensions/shared/messaging.js` + `crates/velocitydm-nmh` | stability of browser↔core link | compare our current connect/retry behavior in the spec |
 | B5 | Cookie-jar forwarding: `cookies.getAll({url})` serialization incl. Firefox `firstPartyDomain` on takeover, so authenticated downloads don't fail on cookie split | `extensions/shared/*` | correctness on auth'd sites | we already forward captured headers; spec the delta |
@@ -280,7 +360,7 @@ as S11-i waves close (wave 1: B1/B2/B9 adopted 2026-11-21 under gate
 | B10 | DNR session rules (regex + main_frame) as the conflict-free handoff mechanism alongside existing webRequest flow; `redirectUrl:"javascript:void(0)"` suppression trick | `extensions/chromium/background.js` | only if MV3 tightening forces it; we already avoid `webRequestBlocking` |
 | B11 | MAIN-world body re-association: tag page fetch/XHR with marker params and re-read bodies at the webRequest layer for video-on-XHR sites | `extensions/shared/*` + detector | high complexity; scope strictly to sites where content-script observation is insufficient |
 | B12 | Session-scoped IPC naming (pipe/event names suffixed with the OS session id) + peer-identity verification on the Windows daemon path | `crates/velocitydm/src/daemon.rs` (Windows IPC) | our loopback TCP + trust rules already enforce the boundary; session naming is defense-in-depth for any future named-pipe transport. Peer verification applies if we add pipe transports; `cmd.exe`-rejection pattern is the reference's, ours would be a from-scratch spec |
-| B13 | Per-queue persisted scheduler state (small per-queue files rather than one monolith) | `scheduler.rs` + state.rs | cheap, aids crash recovery; weigh against our existing state serialization |
+| B13 | Per-queue persisted scheduler state (small per-queue files rather than one monolith) | `scheduler.rs` + state.rs | cheap, aids crash recovery; weigh against our existing state serialization | **deep-dive §4b maps the reference model: per-queue id-list file + per-queue scheduler-settings file, main queue defaults auto-created** |
 | B14 | TS→MP4 remux for HLS TS downloads (codec-aware) | `engine/hls.rs` (S7 family) | real feature work; gate separately — likely S7+ |
 | B15 | Anvato-style `#EXT-…-SEGMENT-INFO:`/site-specific segment-info parsing framework | `hls.rs`/dash (S6/S7) | data-driven site packs; observe first |
 | B16 | Browser-proxy propagation: extension reports the browser's effective proxy to the host; warn on VPN-extension mismatches | `extensions/shared/*` + `vdm-core/src/proxy.rs` | parity win for auth'd/proxied sites |
@@ -306,10 +386,12 @@ future local index/search need (our state model does not need it today).
   owner-provisioned Windows VM per the S11 brief. T1 black-box
   measurement is likewise pending that VM.
 - `IDMan.exe`'s 2.97 MB of code was analyzed at the strings/imports/
-  RTTI level only; a function-level decompile of the scheduler and
-  segment allocator specifically remains a follow-up if ever needed
-  (it exceeds this sandbox's 2-CPU/4 GB/10-minute-foreground budget;
-  the three small components above were fully decompiled instead).
+  RTTI level in the original study; the commissioned function-level
+  deep-dive (D7:B / D8:now) has now covered the scheduler,
+  queue-persistence, limits, and connection-scaling machinery (184
+  functions, §4b) with the worker-thread range arithmetic and the
+  queue-state writer queued as session-2 targets — still bounded,
+  never wholesale.
 - Findings are for build 6.43.18 only; the vendor rotates builds and
   the fail-closed re-pin policy stands.
 - This document contains no proprietary code, structures copied for

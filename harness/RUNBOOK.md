@@ -146,6 +146,34 @@ measured heap tuning on this 4 GB machine; budget accordingly (Ghidra
 12 computes the default heap from system RAM; the probe ran with
 defaults without OOM).
 
+### Bounded deep-dive pattern for IDMan.exe (D7/D8, verified session 1)
+
+IDMan.exe's 2.97 MB code image cannot be auto-analyzed inside the
+10-minute foreground tool budget (the ~47 KB installer stub alone took
+~2.5 min). The deep-dive uses a no-analysis import plus two evidence
+scripts (all in `scripts/ghidra/`, backed up with the toolbox):
+
+1. `unpack_idm.py <installer> <throwawayOut>` — extracts the container
+   (marker `!--END FILE--!` in the last 0x5000 bytes; u32 table offset
+   4 bytes before it; 32-byte entry headers `[usize][clen][3×
+   FILETIME]` + zlib stream; `<P#="name">` manifest patterns).
+2. `analyzeHeadless <proj> P -import IDMan.exe -noanalysis
+   -postScript S11DeepDive.java <out>` — raw C-string scan for study
+   needles + RTTI names, u32 back-reference scans for code use-sites.
+3. `analyzeHeadless <proj> P -process IDMan.exe -postScript
+   S11Decompile.java <out> <budgetSecs>` — backward function-start
+   discovery (sites are imm32 operands: validate via
+   getInstructionContaining, NOT getInstructionAt), corrected MSVC RTTI
+   chain (the class name is INLINE at TD+8, so TD = nameAddr-8; refs
+   point at the TD, not the name — walking refs to the name finds
+   nothing), vtable slot enumeration, bounded decompilation with an
+   internal time budget, and a callee crawl iterated over a SNAPSHOT
+   (mutating a live set throws ConcurrentModificationException).
+
+Session-1 result: 184 functions decompiled in ~36 s of script time
+after a ~40 s project reopen. Keep the Ghidra project inside the
+throwaway dir (wiped at close); helper scripts stay in the toolbox.
+
 Reclaim disk when the toolchain is idle: `rm -rf
 /home/z/my-project/tools/{ghidra,jdk}` (≈1.23 GB; the runbook above
 restores it).

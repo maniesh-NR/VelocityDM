@@ -660,3 +660,69 @@ session reads this file first, then `ROADMAP.md`.
   decompile) runs as its own multi-session effort under the T2
   barriers (re-verify the artifact fingerprint per the fail-closed
   policy at each session's start).
+
+## 2026-11-21 (session 10) — D8:now executed: IDMan.exe deep-dive session 1
+
+- **Owner answered round 2 in-chat: "D8:now"** — the D7:B deep-dive
+  start-timing question. Recorded in `harness/DECISIONS.md` round 2
+  (the round-2 menu text itself was lost to context compression and
+  never committed — the entry honestly reconstructs the binding from
+  the durable queue: the deep-dive was the only commissioned-but-
+  unscheduled item; the wave-2/S4 queue was already fully bound by
+  round 1). The deep-dive starts NOW, in parallel with the unchanged
+  wave-2/S4 implementation queue.
+- **Fetch-first, seven-times-proven:** origin/main was 3 commits ahead
+  (session 9's decision-round close); local stale BACKUPS.md line was
+  byte-identical on origin — discarded, fast-forwarded to 5e0e8d4.
+  The 8th recycle gutted tools/ghidra+jdk (484 K stub / JDK missing
+  libjli.so); re-provisioned per RUNBOOK (zip SHA-256 byte-exact vs
+  the pin, Temurin 25.0.5.1, JAVA_HOME_OVERRIDE), end-to-end ELF
+  probe green.
+- **Fail-closed fingerprint honored at deep-dive session start:**
+  fresh official-URL download, 12,164,608 bytes + SHA-256 byte-exact
+  vs the pinned value — no re-pin needed.
+- **Deep-dive session 1 executed (bounded, clean-room):** no-analysis
+  Ghidra import of IDMan.exe + `scripts/ghidra/unpack_idm.py` +
+  `S11DeepDive.java` (raw string/RTTI evidence walk) +
+  `S11Decompile.java` (backward function-start discovery + corrected
+  RTTI chain + vtable slots + bounded decompile + callee crawl).
+  184 functions decompiled (~36 s script time), all output confined to
+  the wiped throwaway dir.
+- **Findings distilled into `docs/RESEARCH-IDM-STUDY.md` §4b**
+  (functional descriptions only): a volume-proportional connection-
+  count calculator (received-bytes/10 KiB clamped by per-download
+  min/max, link-class ceilings 4/8, hard cap 32) feeding a spawn/
+  retire orchestrator; per-queue persistence as two small files (an
+  id-list file + a scheduler-settings file, main-queue defaults
+  auto-created); registry limits model (200 MB / 5 h rolling window
+  defaults); completion-path media gating; per-download worker
+  threads below normal priority. B2/B13 backlog rows cross-linked for
+  the wave-2 specs. CLEAN_ROOM.md gained the per-session deep-dive
+  record; RUNBOOK gained the bounded deep-dive pattern.
+- **Hard-won session learnings:**
+  - Ghidra string-use SITES are the imm32 operand address (opcode at
+    site-1): validate starts via getInstructionContaining, never
+    getInstructionAt — the operand position is never an instruction
+    boundary (cost: one zero-anchor pass).
+  - MSVC RTTI walk direction: the class name is INLINE at TD+8, so
+    TD = nameAddr-8 directly and references point AT the TD — walking
+    references to the NAME finds nothing (cost: the first 0-vtable
+    pass).
+  - A Ghidra project saved by `-import -noanalysis` is reopened by
+    `-process` WITHOUT re-importing; the reopen itself may trigger a
+    short partial analysis (EH analyzers ran ~14 s) — harmless.
+  - Iterating a set while the callee crawl adds to it throws
+    ConcurrentModificationException and silently kills the phase —
+    iterate over a snapshot.
+  - `for i, (a,b,c) in entries` in a Python generator binds i from
+    the TUPLE (not enumerate) — "too many values to unpack"; use
+    enumerate.
+  - The unpacker's `[usize][clen]` header: trust the clean zlib
+    stream end + exact clen consumption (entry 0's usize field is
+    anomalous — the manifest inflates to 8,697 bytes, not the field's
+    18,115; all 187 payload entries match).
+- Next: session 2 of the deep-dive (worker-thread range arithmetic,
+  queue-state writer, site-login/refresh-link routines — same
+  fail-closed re-verify at start), while wave-2 implementation
+  (B3 → B13 → B2p → B8-core → B16-core, then extension-side) and S4
+  DHT continue as the parallel standing queue per gates 0007/0008.
