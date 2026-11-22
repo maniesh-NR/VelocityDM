@@ -1,10 +1,14 @@
 //! Download scheduler (XDM-style): start-at activation, daily start/stop
-//! windows, queue concurrency with priorities, shutdown-when-done.
+//! windows, queue concurrency with priorities, shutdown-when-done, and
+//! persisted scheduler rules (S11-i B13).
 //!
 //! The pure decision logic is [`tick`] so it is fully unit-testable with an
 //! injected clock; the engine owns a thread that calls it every second.
+//! The rules persist to `<download-dir>/.vdm/scheduler.vdmq` (schema ours,
+//! atomic temp+rename writes, tolerant loads — never fail startup).
 
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// One task as seen by the scheduler.
 #[derive(Debug, Clone)]
@@ -58,6 +62,100 @@ impl Default for SchedulerRules {
             max_active: default_max_active(),
         }
     }
+}
+
+// ---- S11-i B13: persisted scheduler rules (`.vdmq`) ----
+
+/// On-disk shape of `.vdm/scheduler.vdmq` (schema v1, ours — a distinct
+/// suffix the strict Android `.vdmctl` reader never sees). `windows` is a
+/// list so the schema is forward-compatible with multi-window scheduling;
+/// today's single-queue engine consumes the first entry only.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+struct SchedulerStateFile {
+    version: u32,
+    #[serde(default = "default_max_active")]
+    max_active: usize,
+    windows: Vec<[String; 2]>,
+    on_queue_drained: Option<String>,
+    exit_when_drained: bool,
+}
+
+impl Default for SchedulerStateFile {
+    fn default() -> Self {
+        SchedulerStateFile {
+            version: 0,
+            max_active: default_max_active(),
+            windows: Vec::new(),
+            on_queue_drained: None,
+            exit_when_drained: false,
+        }
+    }
+}
+
+impl SchedulerStateFile {
+    fn from_rules(rules: &SchedulerRules) -> Self {
+        SchedulerStateFile {
+            version: 1,
+            max_active: rules.max_active,
+            windows: rules
+                .stop_window
+                .as_ref()
+                .map(|(a, b)| vec![[a.clone(), b.clone()]])
+                .unwrap_or_default(),
+            on_queue_drained: rules.on_queue_drained.clone(),
+            exit_when_drained: rules.shutdown_when_done,
+        }
+    }
+
+    fn into_rules(self) -> SchedulerRules {
+        SchedulerRules {
+            stop_window: self.windows.first().map(|w| (w[0].clone(), w[1].clone())),
+            on_queue_drained: self.on_queue_drained,
+            shutdown_when_done: self.exit_when_drained,
+            max_active: self.max_active,
+        }
+    }
+}
+
+/// Path of the persisted scheduler rules under a download directory.
+pub fn rules_path(dir: &Path) -> PathBuf {
+    dir.join(".vdm").join("scheduler.vdmq")
+}
+
+/// Persist rules atomically (temp file + rename, same directory).
+pub fn save_rules(rules: &SchedulerRules, dir: &Path) -> std::io::Result<()> {
+    let path = rules_path(dir);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let text = serde_json::to_string_pretty(&SchedulerStateFile::from_rules(rules))
+        .map_err(std::io::Error::other)?;
+    let tmp = path.with_extension("vdmq.tmp");
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, &path)
+}
+
+/// Load persisted rules. Tolerant by contract (S11-i B13): unknown keys are
+/// ignored, a version mismatch or unreadable file logs one stderr line and
+/// yields `None` (defaults) — a rule-store problem NEVER fails startup.
+pub fn load_rules(dir: &Path) -> Option<SchedulerRules> {
+    let text = std::fs::read_to_string(rules_path(dir)).ok()?;
+    let file: SchedulerStateFile = match serde_json::from_str(&text) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("scheduler.vdmq: unreadable rules ({}) — using defaults", e);
+            return None;
+        }
+    };
+    if file.version != 1 {
+        eprintln!(
+            "scheduler.vdmq: unknown schema version {} — using defaults",
+            file.version
+        );
+        return None;
+    }
+    Some(file.into_rules())
 }
 
 #[derive(Debug, PartialEq)]
@@ -285,5 +383,80 @@ mod tests {
         ];
         assert!(!tick(&tasks2, &rules, 0, 0).contains(&Action::QueueDrained));
         assert!(tick(&[], &rules, 0, 0).is_empty());
+    }
+
+    // ---- S11-i B13: persisted rules (`.vdmq`) ----
+
+    fn sample_rules() -> SchedulerRules {
+        SchedulerRules {
+            stop_window: Some(("09:00".to_string(), "17:00".to_string())),
+            on_queue_drained: Some("echo done".to_string()),
+            shutdown_when_done: true,
+            max_active: 5,
+        }
+    }
+
+    #[test]
+    fn rules_roundtrip_and_atomic_write() {
+        let dir = tempfile::tempdir().unwrap();
+        save_rules(&sample_rules(), dir.path()).unwrap();
+        let path = rules_path(dir.path());
+        assert!(path.is_file(), "missing {:?}", path);
+        // atomic rename semantics: no partial/temp file observable
+        assert!(
+            !dir.path().join(".vdm").exists()
+                || std::fs::read_dir(dir.path().join(".vdm"))
+                    .unwrap()
+                    .filter_map(|e| e.ok())
+                    .all(|e| e.file_name() != "scheduler.vdmq.tmp")
+        );
+        let back = load_rules(dir.path()).unwrap();
+        assert_eq!(back, sample_rules());
+    }
+
+    #[test]
+    fn rules_empty_window_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        save_rules(&SchedulerRules::default(), dir.path()).unwrap();
+        let back = load_rules(dir.path()).unwrap();
+        assert_eq!(back, SchedulerRules::default());
+        // the on-disk schema carries the owned field names
+        let text = std::fs::read_to_string(rules_path(dir.path())).unwrap();
+        assert!(text.contains("\"version\""));
+        assert!(text.contains("\"exit_when_drained\": false"));
+        assert!(text.contains("\"windows\": []"));
+    }
+
+    #[test]
+    fn rules_unknown_keys_tolerated() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = rules_path(dir.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "{\"version\":1,\"max_active\":7,\"windows\":[[\"22:00\",\"06:00\"]],\
+             \"on_queue_drained\":null,\"exit_when_drained\":true,\"future_field\":{\"x\":1}}",
+        )
+        .unwrap();
+        let back = load_rules(dir.path()).unwrap();
+        assert_eq!(back.max_active, 7);
+        assert_eq!(back.stop_window, Some(("22:00".into(), "06:00".into())));
+        assert!(back.shutdown_when_done);
+    }
+
+    #[test]
+    fn rules_version_mismatch_and_garbage_yield_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = rules_path(dir.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // version 2 from a future schema: defaults, never an error
+        std::fs::write(&path, "{\"version\":2,\"max_active\":99}").unwrap();
+        assert!(load_rules(dir.path()).is_none());
+        // truncated/garbage file: defaults, never an error
+        std::fs::write(&path, "{\"version\":1,\"max_active\":").unwrap();
+        assert!(load_rules(dir.path()).is_none());
+        // missing file: silent None
+        let other = tempfile::tempdir().unwrap();
+        assert!(load_rules(other.path()).is_none());
     }
 }

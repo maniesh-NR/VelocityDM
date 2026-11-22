@@ -235,6 +235,38 @@ fn scheduler_start_at_activates_later() {
     server.stop();
 }
 
+/// S11-i B13 witness: a rule change (the RPC `queue.set` path lands on
+/// `set_config`) + a clean shutdown, then a fresh Engine over the same
+/// download dir — the rules come back intact.
+#[test]
+fn scheduler_rules_survive_engine_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path());
+    let mut cfg = engine.config();
+    cfg.scheduler.max_active = 5;
+    cfg.scheduler.stop_window = Some(("09:00".into(), "17:00".into()));
+    cfg.scheduler.on_queue_drained = Some("echo done".into());
+    cfg.scheduler.shutdown_when_done = true;
+    engine.set_config(cfg);
+    engine.shutdown(); // clean shutdown persists too
+                       // "restart": a new Engine over the same dir loads the persisted rules
+    let engine2 = engine_in(dir.path());
+    let cfg2 = engine2.config();
+    assert_eq!(cfg2.scheduler.max_active, 5);
+    assert_eq!(
+        cfg2.scheduler.stop_window,
+        Some(("09:00".to_string(), "17:00".to_string()))
+    );
+    assert_eq!(
+        cfg2.scheduler.on_queue_drained,
+        Some("echo done".to_string())
+    );
+    assert!(cfg2.scheduler.shutdown_when_done);
+    // the store lives at the specified path with the owned suffix
+    assert!(dir.path().join(".vdm").join("scheduler.vdmq").is_file());
+    engine2.shutdown();
+}
+
 #[test]
 fn global_limiter_slows_transfer() {
     let server = TestServer::start();
