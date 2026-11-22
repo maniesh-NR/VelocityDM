@@ -118,6 +118,22 @@ impl SchedulerStateFile {
     }
 }
 
+/// The engine's default download directory (the OS temp scratch area).
+pub(crate) fn default_engine_dir() -> PathBuf {
+    std::env::temp_dir().join("velocitydm")
+}
+
+/// Whether the rule store applies for this download directory. The DEFAULT
+/// dir is OS-temp scratch: volatile, shared by unrelated engine instances
+/// (and wiped by the OS), so the store is skipped there BOTH ways — a fresh
+/// install must not resurrect stale temp rules (found live by the
+/// e2e-cross CI suite: a stop-window saved by one daemon leaked into a
+/// second daemon's startup and auto-paused its tasks inside the window).
+/// Configured directories persist + load normally.
+pub(crate) fn store_active(dir: &Path) -> bool {
+    *dir != default_engine_dir()
+}
+
 /// Path of the persisted scheduler rules under a download directory.
 pub fn rules_path(dir: &Path) -> PathBuf {
     dir.join(".vdm").join("scheduler.vdmq")
@@ -442,6 +458,16 @@ mod tests {
         assert_eq!(back.max_active, 7);
         assert_eq!(back.stop_window, Some(("22:00".into(), "06:00".into())));
         assert!(back.shutdown_when_done);
+    }
+
+    #[test]
+    fn store_skips_the_volatile_default_dir() {
+        // the OS-temp default is skipped both ways (no save, no load):
+        // it is shared scratch across unrelated engine instances
+        assert!(!store_active(&default_engine_dir()));
+        assert!(store_active(Path::new("/some/configured/dir")));
+        let custom = std::env::temp_dir().join("velocitydm-other");
+        assert!(store_active(&custom));
     }
 
     #[test]

@@ -43,7 +43,7 @@ pub struct EngineConfig {
 }
 
 fn default_dir() -> PathBuf {
-    std::env::temp_dir().join("velocitydm")
+    crate::engine::scheduler::default_engine_dir()
 }
 
 fn default_connections() -> usize {
@@ -98,8 +98,13 @@ impl Engine {
         // at every rule change and at clean shutdown, i.e. AFTER any
         // config.json write); a fresh install falls back to the passed config.
         let mut cfg = cfg;
-        if let Some(rules) = crate::engine::scheduler::load_rules(&cfg.download_dir) {
-            cfg.scheduler = rules;
+        // the default (OS-temp) dir skips the rule store both ways —
+        // see scheduler::store_active for why stale temp rules must not
+        // leak into a fresh engine
+        if crate::engine::scheduler::store_active(&cfg.download_dir) {
+            if let Some(rules) = crate::engine::scheduler::load_rules(&cfg.download_dir) {
+                cfg.scheduler = rules;
+            }
         }
         let global_bucket = Arc::new(TokenBucket::new(cfg.global_limit_bps, 128 * 1024));
         let shared = Arc::new(EngineShared {
@@ -201,9 +206,14 @@ impl Engine {
             self.shared.global_bucket.set_rate(rate);
         }
         // S11-i B13: persist the rules on every change (the RPC `queue.set`
-        // path lands here); an atomic temp+rename write, never fatal
-        if let Err(e) = crate::engine::scheduler::save_rules(&cfg.scheduler, &cfg.download_dir) {
-            eprintln!("scheduler.vdmq: cannot persist rules: {}", e);
+        // path lands here); an atomic temp+rename write, never fatal; the
+        // volatile default dir is skipped
+        if crate::engine::scheduler::store_active(&cfg.download_dir) {
+            if let Err(e) =
+                crate::engine::scheduler::save_rules(&cfg.scheduler, &cfg.download_dir)
+            {
+                eprintln!("scheduler.vdmq: cannot persist rules: {}", e);
+            }
         }
         self.gate.set_max(cfg.scheduler.max_active);
         self.shared.bus.publish(Event::ConfigChanged);
@@ -693,8 +703,12 @@ impl Engine {
             let c = self.cfg.lock().unwrap();
             (c.scheduler.clone(), c.download_dir.clone())
         };
-        if let Err(e) = crate::engine::scheduler::save_rules(&rules_snapshot.0, &rules_snapshot.1) {
-            eprintln!("scheduler.vdmq: cannot persist rules: {}", e);
+        if crate::engine::scheduler::store_active(&rules_snapshot.1) {
+            if let Err(e) =
+                crate::engine::scheduler::save_rules(&rules_snapshot.0, &rules_snapshot.1)
+            {
+                eprintln!("scheduler.vdmq: cannot persist rules: {}", e);
+            }
         }
         self.scheduler_stop.store(true, Ordering::Relaxed);
         let controls = self.shared.controls.lock().unwrap();

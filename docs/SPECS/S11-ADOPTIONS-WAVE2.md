@@ -331,6 +331,11 @@ drained-actions are daemon-memory only).
 
 ### Behavior
 
+- (Amendment 2026-11-22, post-CI: the OS-temp DEFAULT download dir is
+  volatile scratch shared by unrelated engine instances — the store is
+  skipped there both ways; a configured dir persists + loads normally.
+  Found live by the e2e-cross suite: a stop-window saved by one daemon
+  leaked into a second daemon's startup.)
 - New file `<out_dir>/.vdm/scheduler.vdmq` — JSON, schema we own:
   `{version: 1, max_active, windows: [[start,end]…],
   on_queue_drained, exit_when_drained}`. Atomic write (temp file +

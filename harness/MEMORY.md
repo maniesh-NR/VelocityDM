@@ -776,6 +776,18 @@ session reads this file first, then `ROADMAP.md`.
   5.8 GB and full-disk killed a slint build mid-session — the wave-2
   close worked with sequential single builds (pre-worktree → post →
   win7) and target/ removed between them.
+- **CI fix-forward (the e2e-cross suite went RED on the first push):** B13
+  wrote the scheduler rules into the DEFAULT download dir (OS temp scratch)
+  when `queue.set` ran before `settings --dir`, and a fresh daemon on the
+  same runner LOADS them — e2e.sh's 22:00-06:00 stop-window leaked into
+  e2e-cross's daemon, and the job ran at 05:39 UTC (inside the window), so
+  the scheduler auto-paused combo 1 and it never completed. Fix: the rule
+  store now skips the volatile default dir BOTH ways
+  (`scheduler::store_active`; configured dirs persist + load normally;
+  spec amended with a dated note). Honest lesson: a persistence feature
+  keyed to a SHARED default directory is a cross-instance leak — the CI
+  clock (05:39 UTC) was the reason it surfaced today and not at 07:00
+  yesterday.
 - Next: extension-side wave 2 (B4 → B5 → B6 → B7 → B8-js → B16 wiring +
   the node battery growth per spec), S4 DHT implementation (gate 0008
   spec committed), deep-dive session 2 (worker-thread range arithmetic,
