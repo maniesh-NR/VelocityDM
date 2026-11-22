@@ -1,6 +1,7 @@
 //! HLS (.m3u8) download support: master/media playlist parsing, variant
-//! selection, AES-128-CBC segment decryption, concurrent ordered assembly
-//! (XDM-style "save streaming video").
+//! selection, AES-128-CBC segment decryption, `EXT-X-BYTERANGE` segments
+//! (S11-i B3), concurrent ordered assembly (XDM-style "save streaming
+//! video").
 
 use crate::error::{Error, Result};
 use crate::http::{ClientCfg, Conn, Request, Url};
@@ -37,6 +38,9 @@ pub struct Segment {
     pub key: Option<SegmentKey>,
     /// Media sequence number (drives the default AES IV).
     pub seq: u64,
+    /// `#EXT-X-BYTERANGE` sub-range of the URI's resource, as
+    /// `(length, offset)`; `None` = the whole resource (S11-i B3).
+    pub byterange: Option<(u64, u64)>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +76,33 @@ pub fn parse_master(text: &str) -> Result<Vec<Variant>> {
     Ok(variants)
 }
 
+fn parse_hhmm_num(s: &str) -> Option<u64> {
+    let t = s.trim();
+    if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        t.parse::<u64>().ok()
+    }
+}
+
+/// Parse `#EXT-X-BYTERANGE:<n>[@<o>]` per RFC 8216 §4.3.2.2. `n` and `o`
+/// may be decimal or `0x` hexadecimal; a missing `o` is resolved against
+/// the end of the previous sub-range applied to the same URI by
+/// [`parse_media`].
+fn parse_byterange_attr(rest: &str) -> Option<(u64, Option<u64>)> {
+    let rest = rest.trim();
+    let (len_s, off_s) = match rest.split_once('@') {
+        Some((l, o)) => (l, Some(o)),
+        None => (rest, None),
+    };
+    let len = parse_hhmm_num(len_s)?;
+    let off = match off_s {
+        Some(o) => Some(parse_hhmm_num(o)?),
+        None => None,
+    };
+    Some((len, off))
+}
+
 /// Parse a media playlist; resolves relative URIs against `base`.
 pub fn parse_media(text: &str, base: &Url) -> Result<MediaPlaylist> {
     let base_url = base.clone();
@@ -80,6 +111,11 @@ pub fn parse_media(text: &str, base: &Url) -> Result<MediaPlaylist> {
     let mut endlist = false;
     let mut current_key: Option<SegmentKey> = None;
     let mut pending_duration = 0.0f64;
+    // S11-i B3: a pending `#EXT-X-BYTERANGE` applies to the next media
+    // URI line; `last_byterange_end` tracks the per-URI implicit-offset
+    // cursor (end of the previous sub-range of the same resource).
+    let mut pending_byterange: Option<(u64, Option<u64>)> = None;
+    let mut last_byterange_end: HashMap<String, u64> = HashMap::new();
     let mut segments = Vec::new();
     for raw_line in text.lines() {
         let line = raw_line.trim();
@@ -108,6 +144,17 @@ pub fn parse_media(text: &str, base: &Url) -> Result<MediaPlaylist> {
                 let iv = attrs.get("IV").and_then(|v| parse_hex_iv(v));
                 current_key = Some(SegmentKey { method, uri, iv });
             }
+        } else if line.starts_with("#EXT-X-BYTERANGE:") {
+            pending_byterange = parse_byterange_attr(line.trim_start_matches("#EXT-X-BYTERANGE:"));
+            if pending_byterange.is_none() {
+                return Err(Error::Hls(format!("bad #EXT-X-BYTERANGE '{}'", line)));
+            }
+        } else if line.starts_with("#EXT-X-MAP:") {
+            // fMP4 init segments are S7 scope; fail loudly, never
+            // mis-assemble an fMP4 stream as TS (spec non-goal).
+            return Err(Error::Hls(
+                "playlists using #EXT-X-MAP are not supported yet".into(),
+            ));
         } else if line.starts_with("#EXT-X-TARGETDURATION:") {
             target_duration = line
                 .trim_start_matches("#EXT-X-TARGETDURATION:")
@@ -124,12 +171,38 @@ pub fn parse_media(text: &str, base: &Url) -> Result<MediaPlaylist> {
             endlist = true;
         } else if !line.starts_with('#') {
             let uri = base_url.join(line)?.to_string_full();
+            // RFC 8216 §4.3.2.2: an absent offset continues the previous
+            // sub-range of the SAME URI; a URI line without a BYTERANGE tag
+            // addresses the whole resource and resets that URI's cursor.
+            let byterange = match pending_byterange.take() {
+                Some((len, off)) => {
+                    let offset = match off {
+                        Some(o) => o,
+                        None => match last_byterange_end.get(&uri) {
+                            Some(&end) => end,
+                            None => {
+                                return Err(Error::Hls(
+                                    "#EXT-X-BYTERANGE without offset has no previous range for this URI"
+                                        .into(),
+                                ));
+                            }
+                        },
+                    };
+                    last_byterange_end.insert(uri.clone(), offset + len);
+                    Some((len, offset))
+                }
+                None => {
+                    last_byterange_end.remove(&uri);
+                    None
+                }
+            };
             let seq = media_sequence + segments.len() as u64;
             segments.push(Segment {
                 uri,
                 duration: pending_duration,
                 key: current_key.clone(),
                 seq,
+                byterange,
             });
             pending_duration = 0.0;
         }
@@ -361,6 +434,14 @@ pub fn download_hls(
 
     let segments = Arc::new(media.segments);
     let keys = Arc::new(keys);
+    // S11-i B3: when every segment carries a byte range the exact total is
+    // known up-front; otherwise the first segment's length x count estimate
+    // stands (the HLS path never asserts a known total — it estimates).
+    let exact_total: Option<u64> = if segments.iter().all(|s| s.byterange.is_some()) {
+        Some(segments.iter().map(|s| s.byterange.unwrap().0).sum())
+    } else {
+        None
+    };
     let cfg = Arc::new(cfg.clone());
     let rate = rate.cloned();
     let (tx, rx) = std::sync::mpsc::channel::<(usize, Vec<u8>)>();
@@ -407,12 +488,17 @@ pub fn download_hls(
                         Err(_) => return,
                     },
                 };
-                let data =
-                    match fetch_segment(&cfg, &seg_url, rate.as_ref(), &mut conn, &mut conn_target)
-                    {
-                        Ok(d) => d,
-                        Err(_) => return, // worker exits; collector notices missing segment
-                    };
+                let data = match fetch_segment(
+                    &cfg,
+                    &seg_url,
+                    rate.as_ref(),
+                    &mut conn,
+                    &mut conn_target,
+                    seg.byterange,
+                ) {
+                    Ok(d) => d,
+                    Err(_) => return, // worker exits; collector notices missing segment
+                };
                 let data = if let Some(k) = &seg.key {
                     if k.method.eq_ignore_ascii_case("AES-128") {
                         let key = k
@@ -448,7 +534,7 @@ pub fn download_hls(
     let mut write_idx = 0usize;
     let mut total_bytes = 0u64;
     let mut failed = false;
-    let mut written_sizes: Option<u64> = None;
+    let mut written_sizes: Option<u64> = exact_total;
     for (idx, data) in rx {
         pending.insert(idx, data);
         while let Some(d) = pending.remove(&write_idx) {
@@ -495,39 +581,49 @@ pub fn download_hls(
 /// Fetch one segment, reusing a keep-alive connection across segments
 /// when the target host matches (persistent connections avoid a TCP/TLS
 /// handshake per segment; see docs/ALGORITHMS.md "Research notes").
+/// With a byte range (S11-i B3) the request carries
+/// `Range: bytes=<offset>-<offset+len-1>`, expects `206 Partial Content`,
+/// and fails on a short body — a sub-range of the resource, never a whole
+/// resource read.
 fn fetch_segment(
     cfg: &ClientCfg,
     url: &Url,
     rate: Option<&Arc<TokenBucket>>,
     conn: &mut Option<Conn>,
     conn_target: &mut Option<String>,
+    byterange: Option<(u64, u64)>,
 ) -> Result<Vec<u8>> {
     let target = format!("{}:{}", url.host, url.port);
     if conn.is_some() && conn_target.as_deref() != Some(target.as_str()) {
         // connection is bound to a different origin; drop it
         *conn = None;
     }
+    let mut request = Request::get(url);
+    if let Some((len, offset)) = byterange {
+        request = request.header("Range", &format!("bytes={}-{}", offset, offset + len - 1));
+    }
     let mut resp = match conn.as_mut() {
-        Some(c) => match c.request(&Request::get(url), cfg) {
+        Some(c) => match c.request(&request, cfg) {
             Ok(r) => r,
             Err(_) => {
                 // stale keep-alive: retry once on a fresh connection
                 *conn = None;
                 let mut fresh = Conn::connect(url, cfg)?;
-                let r = fresh.request(&Request::get(url), cfg)?;
+                let r = fresh.request(&request, cfg)?;
                 *conn = Some(fresh);
                 r
             }
         },
         None => {
             let mut fresh = Conn::connect(url, cfg)?;
-            let r = fresh.request(&Request::get(url), cfg)?;
+            let r = fresh.request(&request, cfg)?;
             *conn = Some(fresh);
             r
         }
     };
     *conn_target = Some(target);
-    if resp.status != 200 {
+    let want_status = if byterange.is_some() { 206 } else { 200 };
+    if resp.status != want_status {
         let code = resp.status;
         let _ = resp.read_body(4096);
         *conn = resp.into_conn();
@@ -549,6 +645,17 @@ fn fetch_segment(
         out.extend_from_slice(&buf[..n]);
         if out.len() > 512 * 1024 * 1024 {
             return Err(Error::Hls("segment exceeds 512 MiB".into()));
+        }
+    }
+    // a byte-range segment must be exactly the requested sub-range
+    if let Some((len, _)) = byterange {
+        if out.len() as u64 != len {
+            *conn = None; // the body framing is untrusted; drop the conn
+            return Err(Error::Hls(format!(
+                "byte-range segment short body: wanted {} bytes, got {}",
+                len,
+                out.len()
+            )));
         }
     }
     // cleanly drained body -> recycle for the next segment
@@ -656,5 +763,90 @@ mod tests {
     fn seq_iv_default() {
         assert_eq!(seq_iv(1)[15], 1);
         assert_eq!(seq_iv(0x0102030405060708)[8], 1);
+    }
+
+    // ---- S11-i B3: EXT-X-BYTERANGE ----
+
+    fn byterange_media(playlist: &str) -> Result<MediaPlaylist> {
+        let base = Url::parse("https://cdn.test/live/media.m3u8").unwrap();
+        parse_media(playlist, &base)
+    }
+
+    #[test]
+    fn byterange_explicit_and_implicit_offsets() {
+        let m = byterange_media(
+            "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:1000@0\nmedia.ts\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:500\nmedia.ts\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:250@2000\nmedia.ts\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:100@5\nother.ts\n#EXT-X-ENDLIST\n",
+        )
+        .unwrap();
+        assert_eq!(m.segments.len(), 4);
+        assert_eq!(m.segments[0].byterange, Some((1000, 0)));
+        // implicit offset = end of the previous range of the SAME URI
+        assert_eq!(m.segments[1].byterange, Some((500, 1000)));
+        assert_eq!(m.segments[2].byterange, Some((250, 2000)));
+        // a different URI has no cursor of its own: explicit offset required
+        assert_eq!(m.segments[3].byterange, Some((100, 5)));
+    }
+
+    #[test]
+    fn byterange_implicit_without_history_fails() {
+        let err = byterange_media(
+            "#EXTM3U\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:500\nmedia.ts\n#EXT-X-ENDLIST\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("no previous range"));
+    }
+
+    #[test]
+    fn byterange_reset_after_whole_resource_segment() {
+        // a URI line without a BYTERANGE tag = the whole resource and the
+        // per-URI cursor resets
+        let m = byterange_media(
+            "#EXTM3U\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:1000@0\nmedia.ts\n#EXTINF:5.0,\nmedia.ts\n#EXT-X-ENDLIST\n",
+        )
+        .unwrap();
+        assert_eq!(m.segments[0].byterange, Some((1000, 0)));
+        assert_eq!(m.segments[1].byterange, None);
+        // and an implicit byterange after the reset has no cursor again
+        let err = byterange_media(
+            "#EXTM3U\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:1000@0\nmedia.ts\n#EXTINF:5.0,\nmedia.ts\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:10\nmedia.ts\n#EXT-X-ENDLIST\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("no previous range"));
+    }
+
+    #[test]
+    fn byterange_hex_and_bad_attrs() {
+        let m = byterange_media(
+            "#EXTM3U\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:0x10@0x20\nmedia.ts\n#EXT-X-ENDLIST\n",
+        )
+        .unwrap();
+        assert_eq!(m.segments[0].byterange, Some((16, 32)));
+        assert!(byterange_media(
+            "#EXTM3U\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:abc\nmedia.ts\n#EXT-X-ENDLIST\n"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn byterange_composes_with_aes_key() {
+        let m = byterange_media(
+            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"/key.bin\",IV=0xdead\n#EXTINF:5.0,\n#EXT-X-BYTERANGE:512@0\nmedia.ts\n#EXT-X-ENDLIST\n",
+        )
+        .unwrap();
+        let seg = &m.segments[0];
+        assert_eq!(seg.byterange, Some((512, 0)));
+        assert_eq!(seg.key.as_ref().unwrap().method, "AES-128");
+        // short IVs are right-aligned in the 16-byte array
+        assert_eq!(seg.key.as_ref().unwrap().iv.unwrap()[14], 0xde);
+        assert_eq!(seg.key.as_ref().unwrap().iv.unwrap()[15], 0xad);
+    }
+
+    #[test]
+    fn map_playlist_fails_loudly() {
+        let err = byterange_media(
+            "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:5.0,\nmedia.m4s\n#EXT-X-ENDLIST\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("EXT-X-MAP"));
     }
 }

@@ -199,3 +199,116 @@ fn playlist_resolution_over_http() {
     assert!(media.endlist);
     server.stop();
 }
+
+// ---- S11-i B3: EXT-X-BYTERANGE e2e ----
+
+/// A BYTERANGE playlist (≥ 3 segments, mixed explicit/implicit offsets, one
+/// shared URI) assembles byte-identical to the resource bytes (spec test).
+#[test]
+fn hls_byterange_assembles_identical() {
+    let server = TestServer::start();
+    // one shared 100_000-byte resource; four sub-ranges cover 95_000 of it
+    let resource: Vec<u8> = (0..100_000u32).map(|i| (i % 251) as u8).collect();
+    let playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:40000@0\n/media.bin\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:25000\n/media.bin\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:10000@70000\n/media.bin\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:20000\n/media.bin\n\
+#EXT-X-ENDLIST\n";
+    server.set_file("/byter.m3u8", playlist.as_bytes().to_vec());
+    server.set_file("/media.bin", resource.clone());
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&resource[0..40_000]);
+    expected.extend_from_slice(&resource[40_000..65_000]);
+    expected.extend_from_slice(&resource[70_000..80_000]);
+    expected.extend_from_slice(&resource[80_000..100_000]);
+    assert_eq!(expected.len(), 95_000);
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(EngineConfig {
+        download_dir: dir.path().to_path_buf(),
+        ..Default::default()
+    });
+    let id = engine
+        .add_download(&server.url("/byter.m3u8"), HttpOptions::default())
+        .unwrap();
+    assert!(
+        wait_until_ms(30_000, || engine.get(id).map(|s| s.state)
+            == Some(TaskState::Completed)),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
+    let out = dir.path().join("byter.ts");
+    let got = std::fs::read(&out).unwrap();
+    assert_eq!(got.len(), expected.len());
+    assert_eq!(got, expected, "byte-range assembly is not byte-identical");
+    // completion semantics: done catches up to the surfaced size
+    let snap = engine.get(id).unwrap();
+    assert_eq!(snap.done, snap.size);
+    engine.shutdown();
+    server.stop();
+}
+
+/// BYTERANGE composes with AES-128: the key applies to the FETCHED ranged
+/// bytes; each byte-range Media Segment is its own CBC stream (IV per
+/// segment seq). The served resource concatenates the independently
+/// encrypted sub-ranges (PKCS7-padded to full AES blocks), so the playlist
+/// offsets refer to the SERVED (encrypted) layout while the assembled output
+/// is the decrypted, unpadded concatenation.
+#[test]
+fn hls_byterange_with_aes128() {
+    let server = TestServer::start();
+    let key: [u8; 16] = *b"VelocityDM-HLS!!";
+    server.set_file("/key.bin", key.to_vec());
+    // plain sub-range lengths, all multiples of 16 -> each encrypted block
+    // is plain + one full padding block (deterministic layout)
+    let plains: [usize; 4] = [40_960, 24_992, 9_984, 19_984];
+    let mut expected = Vec::new();
+    let mut served = Vec::new();
+    let mut ranges: Vec<(usize, usize)> = Vec::new(); // (len, offset) in served bytes
+    for (i, p) in plains.iter().enumerate() {
+        let plain: Vec<u8> = (0..*p).map(|j| ((j + i * 7) % 251) as u8).collect();
+        let iv = {
+            let mut v = [0u8; 16];
+            v[8..].copy_from_slice(&(i as u64).to_be_bytes());
+            v
+        };
+        let enc = aes128_cbc_encrypt(&key, &iv, &plain);
+        ranges.push((enc.len(), served.len()));
+        served.extend_from_slice(&enc);
+        expected.extend_from_slice(&plain);
+    }
+    let playlist = format!(
+        "#EXTM3U\n#EXT-X-TARGETDURATION:6\n\
+#EXT-X-KEY:METHOD=AES-128,URI=\"/key.bin\"\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:{}@{}\n/media.bin\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:{}\n/media.bin\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:{}@{}\n/media.bin\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:{}\n/media.bin\n\
+#EXT-X-ENDLIST\n",
+        ranges[0].0, ranges[0].1, ranges[1].0, ranges[2].0, ranges[2].1, ranges[3].0
+    );
+    server.set_file("/crypt.m3u8", playlist.into_bytes());
+    server.set_file("/media.bin", served);
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(EngineConfig {
+        download_dir: dir.path().to_path_buf(),
+        ..Default::default()
+    });
+    let id = engine
+        .add_download(&server.url("/crypt.m3u8"), HttpOptions::default())
+        .unwrap();
+    assert!(
+        wait_until_ms(30_000, || engine.get(id).map(|s| s.state)
+            == Some(TaskState::Completed)),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
+    let out = dir.path().join("crypt.ts");
+    let got = std::fs::read(&out).unwrap();
+    assert_eq!(got.len(), expected.len());
+    assert_eq!(got, expected, "byterange+AES assembly mismatch");
+    engine.shutdown();
+    server.stop();
+}
