@@ -209,8 +209,7 @@ impl Engine {
         // path lands here); an atomic temp+rename write, never fatal; the
         // volatile default dir is skipped
         if crate::engine::scheduler::store_active(&cfg.download_dir) {
-            if let Err(e) =
-                crate::engine::scheduler::save_rules(&cfg.scheduler, &cfg.download_dir)
+            if let Err(e) = crate::engine::scheduler::save_rules(&cfg.scheduler, &cfg.download_dir)
             {
                 eprintln!("scheduler.vdmq: cannot persist rules: {}", e);
             }
