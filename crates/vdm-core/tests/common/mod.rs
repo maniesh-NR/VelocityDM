@@ -17,6 +17,9 @@ type Coverage = HashMap<String, Vec<(u64, u64)>>;
 pub struct TestServer {
     pub addr: SocketAddr,
     pub files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    /// S11-i B8: per-path Content-Type overrides (the by-extension default
+    /// stands when a path is absent here).
+    pub types: Arc<Mutex<HashMap<String, String>>>,
     /// paths starting with "/flaky" fail the first N requests globally
     pub flaky_remaining: Arc<AtomicU32>,
     /// ms to sleep per 4 KiB written for paths under "/slow"
@@ -53,6 +56,7 @@ impl TestServer {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let files: Arc<Mutex<HashMap<String, Vec<u8>>>> = Arc::new(Mutex::new(HashMap::new()));
+        let types: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
         let flaky = Arc::new(AtomicU32::new(0));
         let slow_ms = Arc::new(AtomicU32::new(0));
         let flip = Arc::new(AtomicBool::new(false));
@@ -72,6 +76,7 @@ impl TestServer {
         let conns_c = conns.clone();
         let reqs_c = reqs.clone();
         let stop_c = stop.clone();
+        let types_c = types.clone();
         listener.set_nonblocking(true).unwrap();
         let handle = std::thread::spawn(move || loop {
             if stop_c.load(Ordering::Relaxed) {
@@ -81,6 +86,7 @@ impl TestServer {
                 Ok((stream, _)) => {
                     conns_c.fetch_add(1, Ordering::SeqCst);
                     let files = files_c.clone();
+                    let types = types_c.clone();
                     let flaky = flaky_c.clone();
                     let slow = slow_c.clone();
                     let flip = flip_c.clone();
@@ -92,6 +98,7 @@ impl TestServer {
                         let _ = serve(
                             stream,
                             files,
+                            types,
                             flaky,
                             slow,
                             flip,
@@ -111,6 +118,7 @@ impl TestServer {
         TestServer {
             addr,
             files,
+            types,
             flaky_remaining: flaky,
             slow_ms,
             flip_first_covered_repetition: flip,
@@ -130,6 +138,16 @@ impl TestServer {
 
     pub fn set_file(&self, path: &str, data: Vec<u8>) {
         self.files.lock().unwrap().insert(path.to_string(), data);
+    }
+
+    /// S11-i B8: serve a path with an explicit Content-Type (overrides the
+    /// by-extension default).
+    pub fn set_file_with_type(&self, path: &str, data: Vec<u8>, content_type: &str) {
+        self.set_file(path, data);
+        self.types
+            .lock()
+            .unwrap()
+            .insert(path.to_string(), content_type.to_string());
     }
 
     pub fn set_flaky(&self, n: u32) {
@@ -168,6 +186,7 @@ impl TestServer {
 fn serve(
     mut stream: TcpStream,
     files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    types: Arc<Mutex<HashMap<String, String>>>,
     flaky: Arc<AtomicU32>,
     slow_ms: Arc<AtomicU32>,
     flip: Arc<AtomicBool>,
@@ -227,14 +246,16 @@ fn serve(
         let data = files.lock().unwrap().get(path).cloned();
         match data {
             Some(body) => {
-                let content_type = if path.ends_with(".m3u8") {
-                    "application/vnd.apple.mpegurl"
+                let content_type = if let Some(t) = types.lock().unwrap().get(path) {
+                    t.clone()
+                } else if path.ends_with(".m3u8") {
+                    "application/vnd.apple.mpegurl".to_string()
                 } else if path.ends_with(".ts") {
-                    "video/mp2t"
+                    "video/mp2t".to_string()
                 } else if path.ends_with(".html") {
-                    "text/html"
+                    "text/html".to_string()
                 } else {
-                    "application/octet-stream"
+                    "application/octet-stream".to_string()
                 };
                 let etag = format!("\"{}\"", hex_of(path));
                 if method == "HEAD" {

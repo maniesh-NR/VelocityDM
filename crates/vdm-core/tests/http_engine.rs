@@ -297,6 +297,60 @@ fn bad_conn_preset_rejected_at_add() {
     engine.shutdown();
 }
 
+/// S11-i B8: a known Content-Type suggests the extension when the URL has
+/// none; an explicit user filename or an existing extension is NEVER
+/// overridden; an unknown MIME type earns no suggestion.
+#[test]
+fn mime_suggests_extension_when_url_has_none() {
+    let server = TestServer::start();
+    server.set_file_with_type("/doc", vec![0x25u8; 64 * 1024], "application/pdf");
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path());
+
+    // URL path has no extension + known type -> name gains .pdf
+    let id = engine
+        .add_download(&server.url("/doc"), HttpOptions::default())
+        .unwrap();
+    assert!(wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed));
+    let snap = engine.get(id).unwrap();
+    assert_eq!(snap.name, "doc.pdf");
+    assert!(dir.path().join("doc.pdf").exists());
+    assert!(!dir.path().join("doc").exists());
+
+    // an existing extension is never overridden
+    server.set_file_with_type("/image.png", vec![1u8; 64 * 1024], "application/pdf");
+    let id2 = engine
+        .add_download(&server.url("/image.png"), HttpOptions::default())
+        .unwrap();
+    assert!(wait_until_ms(30_000, || state_of(&engine, id2) == TaskState::Completed));
+    assert_eq!(engine.get(id2).unwrap().name, "image.png");
+
+    // an explicit user filename is never touched (even extension-less)
+    let id3 = engine
+        .add_download(
+            &server.url("/doc"),
+            HttpOptions {
+                filename: Some("report".into()),
+                fresh: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(wait_until_ms(30_000, || state_of(&engine, id3) == TaskState::Completed));
+    assert_eq!(engine.get(id3).unwrap().name, "report");
+
+    // unknown MIME -> no suggestion (never a guess)
+    server.set_file_with_type("/blob", vec![2u8; 64 * 1024], "application/x-unknown-nope");
+    let id4 = engine
+        .add_download(&server.url("/blob"), HttpOptions::default())
+        .unwrap();
+    assert!(wait_until_ms(30_000, || state_of(&engine, id4) == TaskState::Completed));
+    assert_eq!(engine.get(id4).unwrap().name, "blob");
+
+    engine.shutdown();
+    server.stop();
+}
+
 #[test]
 fn global_limiter_slows_transfer() {
     let server = TestServer::start();

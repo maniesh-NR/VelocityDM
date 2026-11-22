@@ -14,6 +14,7 @@ pub mod checksum;
 pub mod engine;
 pub mod error;
 pub mod http;
+pub mod mime;
 pub mod proxy;
 pub mod range_pool;
 pub mod token_bucket;

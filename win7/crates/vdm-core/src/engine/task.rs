@@ -833,6 +833,21 @@ pub fn run_http_task(
         .clone()
         .or_else(|| crate::util::filename_from_url(&url))
         .unwrap_or_else(|| probe.filename.clone());
+    // S11-i B8: when the URL yields no usable extension and the probe knows
+    // the content type, suggest one from our IANA-compiled MIME table. The
+    // suggestion NEVER overrides an explicit user filename or an existing
+    // extension; an unknown MIME type earns no suggestion (never a guess).
+    let filename = match (
+        opts.filename.is_none(),
+        std::path::Path::new(&filename).extension().is_none(),
+        probe.content_type.as_deref(),
+    ) {
+        (true, true, Some(ct)) => match crate::mime::extension_for_mime(ct) {
+            Some(ext) => format!("{}.{}", filename.trim_end_matches('.'), ext),
+            None => filename,
+        },
+        _ => filename,
+    };
     let mut out_path = dir.join(crate::util::sanitize_filename(&filename));
     if is_hls {
         // assembled segment streams are MPEG-TS
