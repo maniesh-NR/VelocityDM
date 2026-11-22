@@ -30,6 +30,12 @@ node extensions/tests/run-tests.mjs      # 64 extension assertions
 
 The integration tests bind ephemeral localhost ports only.
 
+**Connection presets note (S11-i B2p):** the `connPreset` option
+(`auto|high|medium|low`, default `auto`) caps the BASE connection count per
+link class — a ceiling, never a raise (`high`=8, `medium`=4, `low`=2).
+Honest warning: high connection counts can antagonize servers (the
+reference product itself warns about this) — presets default to `auto`.
+
 ## Cross-compiling
 
 ### Linux musl (static, old-distro baseline)

@@ -267,6 +267,36 @@ fn scheduler_rules_survive_engine_restart() {
     engine2.shutdown();
 }
 
+/// S11-i B2p: unknown connection presets are rejected at the engine's add
+/// boundary with our message (the NMH boundary is covered in its own crate).
+#[test]
+fn bad_conn_preset_rejected_at_add() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path());
+    let err = engine
+        .add_download(
+            "http://127.0.0.1:1/f.zip",
+            HttpOptions {
+                conn_preset: "turbo".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("unknown connection preset"));
+    // known classes pass validation and queue normally (then fail probing)
+    let id = engine
+        .add_download(
+            "http://127.0.0.1:1/f.zip",
+            HttpOptions {
+                conn_preset: "high".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(engine.get(id).is_some());
+    engine.shutdown();
+}
+
 #[test]
 fn global_limiter_slows_transfer() {
     let server = TestServer::start();

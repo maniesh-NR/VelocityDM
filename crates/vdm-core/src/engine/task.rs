@@ -48,6 +48,13 @@ pub struct HttpOptions {
     /// HLS variant: "best" (default), "worst", or a bandwidth number.
     #[serde(default)]
     pub quality: String,
+    /// Link-class connection preset (S11-i B2p): `auto` (default — today's
+    /// behavior), `high` (base ceiling 8), `medium` (4), `low` (2). A preset
+    /// is a ceiling on the base connection count, never a raise; the B2
+    /// spawn/retire machinery is untouched. Not persisted in `ResumeState`
+    /// (an options-time knob).
+    #[serde(default = "default_conn_preset")]
+    pub conn_preset: String,
     /// Do not resume: discard any `.part` state.
     #[serde(default)]
     pub fresh: bool,
@@ -66,6 +73,50 @@ pub struct ProbeResult {
     pub last_modified: Option<String>,
     pub filename: String,
     pub content_type: Option<String>,
+}
+
+// ---- S11-i B2p: link-class connection presets ----
+
+/// Base-connection ceiling per preset class (ours).
+const PRESET_HIGH: usize = 8;
+const PRESET_MEDIUM: usize = 4;
+const PRESET_LOW: usize = 2;
+
+fn default_conn_preset() -> String {
+    "auto".into()
+}
+
+/// Validate a connection preset at an add boundary (engine `add_download`
+/// and the NMH host both call this). Accepted: `""` (the serde-default
+/// shape), `auto`, `high`, `medium`, `low` — case-insensitive, trimmed.
+/// Anything else is rejected with our message.
+pub fn validate_conn_preset(raw: &str) -> crate::Result<String> {
+    let n = raw.trim().to_ascii_lowercase();
+    match n.as_str() {
+        "" | "auto" | "high" | "medium" | "low" => Ok(n),
+        other => Err(crate::Error::Http(format!(
+            "unknown connection preset '{}'",
+            other
+        ))),
+    }
+}
+
+fn preset_ceiling(valid: &str) -> Option<usize> {
+    match valid.trim() {
+        "high" => Some(PRESET_HIGH),
+        "medium" => Some(PRESET_MEDIUM),
+        "low" => Some(PRESET_LOW),
+        _ => None, // auto / ""
+    }
+}
+
+/// Effective base connection count after the preset ceiling (S11-i B2p):
+/// `min(preset ceiling, size-scaled base)` — a ceiling, never a raise.
+fn apply_preset_ceiling(base: usize, preset: &str) -> usize {
+    match preset_ceiling(preset) {
+        Some(c) => base.min(c),
+        None => base,
+    }
 }
 
 /// HEAD (fallback ranged GET) probe with redirect resolution.
@@ -845,6 +896,11 @@ fn run_segmented(
     // Koo et al.: parallel setup cost is only amortized when each
     // connection carries enough data; cap by file size (>= ~1 MiB per conn).
     let connections = scale_connections(connections, probe.size);
+    // S11-i B2p: the preset is a CEILING, never a raise — effective base =
+    // min(preset ceiling, size-based scale cap, absolute cap 32); `auto`
+    // leaves the scaled base unchanged. The B2 spawn/retire machinery and
+    // its own cap are untouched (presets bound the BASE only).
+    let connections = apply_preset_ceiling(connections, &opts.conn_preset);
     // Mirror list: final probe URL first, then user mirrors, deduplicated.
     let mut mirrors: Vec<String> = vec![probe.final_url.to_string_full()];
     for m in opts.mirrors.iter() {
@@ -1905,6 +1961,38 @@ mod tests {
         // always at least one connection
         assert_eq!(scale_connections(8, 0), 1);
         assert_eq!(scale_connections(0, 1024 * 1024 * 1024), 1);
+    }
+
+    // ---- S11-i B2p: link-class connection presets ----
+
+    #[test]
+    fn preset_validation_accepts_known_classes_only() {
+        for ok in ["", "auto", "high", "medium", "low", "HIGH", " Low "] {
+            assert!(validate_conn_preset(ok).is_ok(), "{:?} rejected", ok);
+        }
+        // normalization
+        assert_eq!(validate_conn_preset("HIGH").unwrap(), "high");
+        // unknown class rejected with our message
+        let err = validate_conn_preset("turbo").unwrap_err();
+        assert!(err.to_string().contains("unknown connection preset"));
+        assert!(validate_conn_preset("auto+").is_err());
+    }
+
+    #[test]
+    fn preset_ceiling_interaction_with_scale_cap() {
+        // the preset lowers a large size-scaled base (preset wins below the cap)
+        assert_eq!(apply_preset_ceiling(32, "high"), 8);
+        assert_eq!(apply_preset_ceiling(32, "medium"), 4);
+        assert_eq!(apply_preset_ceiling(32, "low"), 2);
+        // auto = today's behavior unchanged
+        assert_eq!(apply_preset_ceiling(32, "auto"), 32);
+        assert_eq!(apply_preset_ceiling(32, ""), 32);
+        // a preset NEVER raises: a small file already below the ceiling stays
+        let small_base = scale_connections(8, 2 * 1024 * 1024); // 2
+        assert_eq!(apply_preset_ceiling(small_base, "high"), small_base);
+        // end-to-end shape: min(preset, scale cap, 32)
+        let scaled = scale_connections(32, 512 * 1024 * 1024); // 32
+        assert_eq!(apply_preset_ceiling(scaled, "medium"), 4);
     }
 
     #[test]

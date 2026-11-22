@@ -72,6 +72,12 @@ fn handle(msg: Value) -> Value {
             if let Some(q) = msg.get("quality").and_then(|q| q.as_str()) {
                 options["quality"] = json!(q);
             }
+            // S11-i B2p: validate the connection preset at the NMH boundary
+            // too (the engine re-validates; the extension gets our message
+            // immediately)
+            if let Err(e) = apply_conn_preset(&msg, &mut options) {
+                return json!({ "ok": false, "error": e });
+            }
             match call_daemon("downloads.add", json!({ "url": url, "options": options })) {
                 Ok(r) => json!({ "ok": true, "id": r["id"].as_u64().unwrap_or(0) }),
                 Err(e) => json!({ "ok": false, "error": e }),
@@ -233,4 +239,47 @@ fn write_frame(v: &Value) {
 #[allow(dead_code)]
 fn unused_tcp() {
     let _ = TcpStream::connect("127.0.0.1:1");
+}
+
+/// S11-i B2p: validate the frame's `connPreset` (if present) and forward
+/// the normalized value into the add options; an unknown preset is
+/// rejected with our message.
+fn apply_conn_preset(msg: &Value, options: &mut Value) -> Result<(), String> {
+    if let Some(p) = msg.get("connPreset").and_then(|p| p.as_str()) {
+        let valid = vdm_core::engine::task::validate_conn_preset(p).map_err(|e| e.to_string())?;
+        options["connPreset"] = json!(valid);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// S11-i B2p: the NMH boundary validates the connection preset and
+    /// forwards the normalized value into the add options.
+    #[test]
+    fn conn_preset_validated_at_nmh_boundary() {
+        let mut options = json!({});
+        apply_conn_preset(&json!({ "connPreset": "HIGH" }), &mut options).unwrap();
+        assert_eq!(options["connPreset"], "high");
+        // a preset-free frame leaves the options untouched
+        let mut bare = json!({ "filename": "f.zip" });
+        apply_conn_preset(&json!({}), &mut bare).unwrap();
+        assert!(bare.get("connPreset").is_none());
+        // an unknown preset is rejected with our message
+        let err = apply_conn_preset(&json!({ "connPreset": "turbo" }), &mut json!({})).unwrap_err();
+        assert!(err.contains("unknown connection preset"));
+    }
+
+    #[test]
+    fn conn_preset_accepts_all_classes() {
+        for ok in ["auto", "high", "medium", "low"] {
+            let mut options = json!({});
+            apply_conn_preset(&json!({ "connPreset": ok }), &mut options).unwrap();
+            assert_eq!(options["connPreset"], ok);
+        }
+    }
+
 }

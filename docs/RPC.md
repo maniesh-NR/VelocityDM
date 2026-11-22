@@ -74,7 +74,16 @@ Response: `{"jsonrpc":"2.0","id":1,"result":{...}}` or
 `checksumAlgo` (`md5|sha1|sha256`) + `checksumHex`, `quality`
 (HLS `best|worst|<bandwidth>`), `priority` (0-255), `startAt` (UNIX ts),
 `fresh` (ignore saved progress), `headers` — an **array of
-`["Name", "Value"]` pairs** (CRLF/NUL-sanitized at emission).
+`["Name", "Value"]` pairs** (CRLF/NUL-sanitized at emission) — and
+`connPreset` (`auto|high|medium|low`, default `auto`; S11-i B2p).
+
+`connPreset` is a link-class knob for the BASE connection count — a
+**ceiling, never a raise**: `high` caps the base at 8, `medium` at 4,
+`low` at 2, `auto` keeps the existing size-scaled behavior. An unknown
+value is rejected at both the RPC engine boundary and the NMH host with
+`unknown connection preset '<value>'`. **Honest note:** high connection
+counts can antagonize servers (the reference product itself warns
+about this) — that is why the presets default to `auto`.
 
 `referer` / `cookies` / `userAgent` are *native-messaging-host* inputs:
 the NMH folds them into the `headers` array (Cookie/Referer/User-Agent)

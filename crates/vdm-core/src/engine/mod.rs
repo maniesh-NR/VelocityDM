@@ -273,6 +273,8 @@ impl Engine {
         if url_check(url).is_err() {
             return Err(crate::Error::Http(format!("invalid URL: {}", url)));
         }
+        // S11-i B2p: unknown presets are rejected at the add boundary
+        crate::engine::task::validate_conn_preset(&opts.conn_preset)?;
         let id = self.alloc_id();
         let name = opts
             .filename
