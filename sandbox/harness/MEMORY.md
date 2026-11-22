@@ -726,3 +726,70 @@ session reads this file first, then `ROADMAP.md`.
   fail-closed re-verify at start), while wave-2 implementation
   (B3 → B13 → B2p → B8-core → B16-core, then extension-side) and S4
   DHT continue as the parallel standing queue per gates 0007/0008.
+
+## 2026-11-22 (session 11) — S11-i wave 2 engine side delivered (D1:C scope)
+
+- Context refresh (the session-10 line continued after another loss).
+  **Fetch-first, eight-times-proven:** origin/main was 25 commits ahead of
+  the stale local tree — the previous sessions had already executed S12-e
+  (gate 0005), the S11-T2 static study (d0afd29), S11-i wave 1 (gate 0006),
+  owner decision round 1 + gates 0007/0008 activations, and the D8:now
+  deep-dive session 1 (cf6369e). The decision ledger `harness/DECISIONS.md`
+  (recovered from the remote) resolved the lost-context menu semantics: D8:now
+  = the D7 deep-dive starts immediately (already executed as session 10);
+  the remaining queue = wave-2 implementation (B3 → B13 → B2p → B8-core →
+  B16-core, then extension side) + S4 DHT in parallel. This session executed
+  the wave-2 ENGINE SIDE end-to-end.
+- **Wave-2 engine side implemented (spec-first, per-item revertable
+  commits c6514d5 → f236c9b):** B3 (HLS EXT-X-BYTERANGE: implicit-offset
+  chains per URI, whole-resource reset, 206+short-body-fail, AES
+  composition, exact-total accounting, EXT-X-MAP loud-fail), B13
+  (`<download-dir>/.vdm/scheduler.vdmq` schema v1 ours — atomic
+  temp+rename, tolerant loads, save on rule-change + clean shutdown, load
+  at engine start; ResumeState untouched), B2p (`connPreset` — a base
+  ceiling 8/4/2, never a raise; validated at engine add + NMH boundary),
+  B8-core (`vdm-core/src/mime.rs`, 110 IANA-compiled entries + generated
+  `extensions/shared/mime-table.js` + drift tripwire test; applied only
+  when the URL yields no extension — never overrides an explicit filename
+  or an existing extension), B16-core (`HttpOptions.browserProxy` —
+  probe-guarded adoption, suggest-never-override, differs/unreachable
+  warnings on the add reply + snapshot notice; NMH shape validation;
+  completion preserves persistent warnings, only the transient B1
+  recovery notice clears).
+- **Batteries/A/B/win7 all green:** fmt + clippy -D warnings clean; 124
+  vdm-core lib + 21 http_engine + 7 hls_e2e + 3 nmh + 3 vdm-rpc tests
+  (16 new test groups); `bench-perf.sh` A/B headless builds (labels
+  s11i2-pre/-post, 2 runs each): pre 0.80s/159.1 MBps vs post
+  0.81s/158.8 MBps, byte-identical, 12 conns/37 reqs both sides — no
+  regression (0.2%, within noise). win7 tree ported with the two
+  standing 1.75 compat fixes (percent_decode closure, nmh loop-match)
+  + hls `% 16`/`block.clone()`; `cargo +1.75.0 check --workspace` green.
+- Per gate 0007 the implementation landed as FIVE per-item commits (not
+  one blob): shared-file intermediates were reconstructed by
+  reverse-editing the finals (mod.rs/task.rs/nmh/http_engine variants in
+  /tmp — the finals are byte-identical to the verified green tree).
+- **Environment notes:** `tools/cargo` registry is CORRUPTED ("failed to
+  find aes v0.8.4 in path source" — do NOT set CARGO_HOME=tools/cargo;
+  the default ~/.cargo home resolves crates.io fine with tools/rustup +
+  tools/cargo/bin on PATH). tools/ghidra+jdk are gutted AGAIN (stub) —
+  re-provision per RUNBOOK when the deep-dive resumes. Disk: target/ was
+  5.8 GB and full-disk killed a slint build mid-session — the wave-2
+  close worked with sequential single builds (pre-worktree → post →
+  win7) and target/ removed between them.
+- **CI fix-forward (the e2e-cross suite went RED on the first push):** B13
+  wrote the scheduler rules into the DEFAULT download dir (OS temp scratch)
+  when `queue.set` ran before `settings --dir`, and a fresh daemon on the
+  same runner LOADS them — e2e.sh's 22:00-06:00 stop-window leaked into
+  e2e-cross's daemon, and the job ran at 05:39 UTC (inside the window), so
+  the scheduler auto-paused combo 1 and it never completed. Fix: the rule
+  store now skips the volatile default dir BOTH ways
+  (`scheduler::store_active`; configured dirs persist + load normally;
+  spec amended with a dated note). Honest lesson: a persistence feature
+  keyed to a SHARED default directory is a cross-instance leak — the CI
+  clock (05:39 UTC) was the reason it surfaced today and not at 07:00
+  yesterday.
+- Next: extension-side wave 2 (B4 → B5 → B6 → B7 → B8-js → B16 wiring +
+  the node battery growth per spec), S4 DHT implementation (gate 0008
+  spec committed), deep-dive session 2 (worker-thread range arithmetic,
+  queue-state writer, site-login/refresh-link) — all standing parallel
+  tracks.
