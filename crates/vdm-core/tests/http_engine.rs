@@ -351,6 +351,77 @@ fn mime_suggests_extension_when_url_has_none() {
     server.stop();
 }
 
+/// S11-i B16: an unreachable browser-reported proxy is dropped (with the
+/// warning on the snapshot) and the download proceeds directly; an explicit
+/// task proxy that differs from the browser's warns at add time.
+#[test]
+fn browser_proxy_drop_and_differs_warning() {
+    let server = TestServer::start();
+    server.set_file("/file.bin", vec![9u8; 32 * 1024]);
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path());
+
+    // an unreachable reported (loopback) proxy: dropped + warning; the
+    // download itself completes directly
+    let dead_browser = vdm_core::proxy::ProxyConfig::Http {
+        host: "127.0.0.1".into(),
+        port: 1,
+        user: None,
+        pass: None,
+    };
+    let id = engine
+        .add_download(
+            &server.url("/file.bin"),
+            HttpOptions {
+                browser_proxy: Some(dead_browser),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed));
+    let notice = engine.get(id).unwrap().notice;
+    assert_eq!(
+        notice.as_deref(),
+        Some("the browser's proxy is not reachable from the engine; a VPN-extension proxy is likely the cause")
+    );
+
+    // an explicit task proxy differing from the browser's warns at add time
+    // (the RPC add reply surfaces the same string)
+    let task_proxy = vdm_core::proxy::ProxyConfig::Socks5 {
+        host: "127.0.0.1".into(),
+        port: 1080,
+        user: None,
+        pass: None,
+    };
+    let browser = vdm_core::proxy::ProxyConfig::Http {
+        host: "127.0.0.1".into(),
+        port: 3128,
+        user: None,
+        pass: None,
+    };
+    let id2 = engine
+        .add_download(
+            &server.url("/file.bin"),
+            HttpOptions {
+                proxy: Some(task_proxy),
+                browser_proxy: Some(browser),
+                filename: Some("proxied.bin".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // the warning is on the snapshot immediately (add reply shape is
+    // covered in the RPC battery)
+    let notice2 = engine.get(id2).unwrap().notice;
+    assert_eq!(
+        notice2.as_deref(),
+        Some("task proxy differs from the browser's proxy; downloads may not follow the browser's route")
+    );
+
+    engine.shutdown();
+    server.stop();
+}
+
 #[test]
 fn global_limiter_slows_transfer() {
     let server = TestServer::start();

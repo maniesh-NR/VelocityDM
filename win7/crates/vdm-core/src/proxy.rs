@@ -38,6 +38,21 @@ impl ProxyConfig {
             ProxyConfig::Http { port, .. } | ProxyConfig::Socks5 { port, .. } => *port,
         }
     }
+    /// One-connect reachability probe (S11-i B16): a single TCP connect to
+    /// the proxy's endpoint within `timeout` (hostnames resolve via the OS;
+    /// bracketed IPv6 hosts are tolerated). Used to decide whether a
+    /// browser-reported proxy is adopted for a task.
+    pub fn probe_reachable(&self, timeout: Duration) -> bool {
+        use std::net::ToSocketAddrs;
+        let host = self.host().trim_matches(['[', ']']);
+        let addrs: Vec<std::net::SocketAddr> = match (host, self.port()).to_socket_addrs() {
+            Ok(iter) => iter.collect(),
+            Err(_) => return false,
+        };
+        addrs
+            .iter()
+            .any(|a| TcpStream::connect_timeout(a, timeout).is_ok())
+    }
     pub fn creds(&self) -> Option<(&str, &str)> {
         match self {
             ProxyConfig::Http { user, pass, .. } | ProxyConfig::Socks5 { user, pass, .. } => {
@@ -289,5 +304,34 @@ mod tests {
         assert_eq!(p.basic_auth().unwrap(), "Basic YTpi");
         let p = ProxyConfig::parse_url("socks5://a:b@p.test:1080").unwrap();
         assert_eq!(p.basic_auth(), None);
+    }
+
+    #[test]
+    fn probe_reachable_live_listener_and_closed_port() {
+        // S11-i B16: a live listener probes reachable, a closed port does not
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let live = ProxyConfig::Http {
+            host: "127.0.0.1".into(),
+            port,
+            user: None,
+            pass: None,
+        };
+        assert!(live.probe_reachable(Duration::from_millis(500)));
+        let dead = ProxyConfig::Socks5 {
+            host: "127.0.0.1".into(),
+            port: 1,
+            user: None,
+            pass: None,
+        };
+        assert!(!dead.probe_reachable(Duration::from_millis(300)));
+        // an unresolvable host is unreachable, never an error
+        let ghost = ProxyConfig::Http {
+            host: "no-such-host.invalid".into(),
+            port: 8080,
+            user: None,
+            pass: None,
+        };
+        assert!(!ghost.probe_reachable(Duration::from_millis(300)));
     }
 }

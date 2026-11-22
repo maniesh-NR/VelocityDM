@@ -68,7 +68,10 @@ impl Default for EngineConfig {
 enum StoredTask {
     Http {
         url: String,
-        opts: HttpOptions,
+        // boxed: HttpOptions has grown (B2p/B16 option knobs) and the enum
+        // must not bloat the torrent variant — boxing also makes resume-path
+        // clones cheap
+        opts: Box<HttpOptions>,
     },
     Torrent {
         spec: BtSpec,
@@ -282,11 +285,20 @@ impl Engine {
             .or_else(|| crate::util::filename_from_url(url))
             .unwrap_or_else(|| "download".to_string());
         self.insert_snapshot(id, "http", &name, url, opts.start_at, opts.priority);
+        // S11-i B16: an explicit task proxy that differs from the browser's
+        // reported proxy warns immediately (the RPC add reply + the snapshot
+        // notice surface it; static string, ours)
+        if let (Some(task), Some(browser)) = (&opts.proxy, &opts.browser_proxy) {
+            if task != browser {
+                let warn = crate::engine::task::WARN_PROXY_DIFFERS.to_string();
+                self.shared.update(id, |s| s.notice = Some(warn));
+            }
+        }
         self.stored.lock().unwrap().insert(
             id,
             StoredTask::Http {
                 url: url.to_string(),
-                opts: opts.clone(),
+                opts: Box::new(opts.clone()),
             },
         );
         let control = TaskControl::new();
@@ -580,7 +592,7 @@ impl Engine {
         });
         match stored {
             StoredTask::Http { url, opts } => {
-                self.spawn_http_task(id, url, opts, control, true);
+                self.spawn_http_task(id, url, *opts, control, true);
             }
             StoredTask::Torrent {
                 spec,

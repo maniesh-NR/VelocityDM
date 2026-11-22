@@ -85,6 +85,15 @@ value is rejected at both the RPC engine boundary and the NMH host with
 counts can antagonize servers (the reference product itself warns
 about this) — that is why the presets default to `auto`.
 
+`browserProxy` (S11-i B16): the browser-reported effective proxy
+(`{"type":"http"|"socks5","host","port"}`) — the NMH forwards the
+extension's `{scheme,host,port}` shape after validation. The engine
+suggests, never overrides: an explicit task `proxy` always wins (a
+differing browser proxy warns — the warning string rides the add reply
+and the snapshot `notice`); otherwise the reported proxy is adopted only
+when a one-connect reachability probe reaches it, and an unreachable one
+is dropped with the loopback-flavored warning.
+
 `referer` / `cookies` / `userAgent` are *native-messaging-host* inputs:
 the NMH folds them into the `headers` array (Cookie/Referer/User-Agent)
 before calling this method; integrators should do the same rather than

@@ -423,7 +423,15 @@ pub fn dispatch(engine: &Arc<Engine>, body: &[u8], stop: &AtomicBool) -> Value {
                 serde_json::from_value(params.get("options").cloned().unwrap_or(json!({})))
                     .unwrap_or_default();
             match engine.add_download(&url, opts) {
-                Ok(task_id) => ok_response(&id, json!({ "id": task_id })),
+                Ok(task_id) => {
+                    // S11-i B16: an add-time warning (e.g. the task proxy
+                    // differs from the browser's proxy) rides the reply
+                    let mut reply = json!({ "id": task_id });
+                    if let Some(notice) = engine.get(task_id).and_then(|s| s.notice) {
+                        reply["notice"] = json!(notice);
+                    }
+                    ok_response(&id, reply)
+                }
                 Err(e) => error_response(id, -32003, &e.to_string()),
             }
         }
@@ -885,6 +893,43 @@ mod tests {
         assert!(buf.contains("200 OK"));
         assert!(buf.contains("\"ok\":true"));
 
+        server.stop();
+        engine.shutdown();
+    }
+
+    /// S11-i B16: an add-time warning (task proxy differs from the browser's
+    /// reported proxy) rides the `downloads.add` reply.
+    #[test]
+    fn add_reply_carries_proxy_notice() {
+        let engine = start_test_engine();
+        let server = RpcServer::start(engine.clone(), "127.0.0.1:0").unwrap();
+        let client = RpcClient::new(&format!("127.0.0.1:{}", server.port()));
+        // no proxy reported: plain reply, no notice key
+        let plain = client
+            .call(
+                "downloads.add",
+                json!({ "url": "http://127.0.0.1:1/nope", "options": { "filename": "a.bin" } }),
+            )
+            .unwrap();
+        assert!(plain.get("notice").is_none());
+        // an explicit task proxy differing from the browser's: notice rides
+        let r = client
+            .call(
+                "downloads.add",
+                json!({
+                    "url": "http://127.0.0.1:1/nope",
+                    "options": {
+                        "filename": "b.bin",
+                        "proxy": { "type": "socks5", "host": "127.0.0.1", "port": 1080 },
+                        "browserProxy": { "type": "http", "host": "127.0.0.1", "port": 3128 }
+                    }
+                }),
+            )
+            .unwrap();
+        assert_eq!(
+            r["notice"].as_str().unwrap(),
+            "task proxy differs from the browser's proxy; downloads may not follow the browser's route"
+        );
         server.stop();
         engine.shutdown();
     }

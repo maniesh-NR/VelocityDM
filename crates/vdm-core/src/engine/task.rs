@@ -55,6 +55,13 @@ pub struct HttpOptions {
     /// (an options-time knob).
     #[serde(default = "default_conn_preset")]
     pub conn_preset: String,
+    /// The browser-reported effective proxy (S11-i B16): the engine may
+    /// adopt it when the task has no explicit proxy (adoption is guarded by
+    /// a one-connect reachability probe); an explicit task proxy always
+    /// wins (a differing browser proxy warns). Additive, camelCase
+    /// `browserProxy`; never persisted in `ResumeState` (options-time knob).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_proxy: Option<crate::proxy::ProxyConfig>,
     /// Do not resume: discard any `.part` state.
     #[serde(default)]
     pub fresh: bool,
@@ -116,6 +123,42 @@ fn apply_preset_ceiling(base: usize, preset: &str) -> usize {
     match preset_ceiling(preset) {
         Some(c) => base.min(c),
         None => base,
+    }
+}
+
+// ---- S11-i B16: browser-proxy propagation (engine side) ----
+
+/// A task proxy that differs from the browser's proxy warns (ours, static).
+pub(crate) const WARN_PROXY_DIFFERS: &str =
+    "task proxy differs from the browser's proxy; downloads may not follow the browser's route";
+/// A reported (browser) proxy that failed the reachability probe is dropped
+/// with this warning (ours, static).
+pub(crate) const WARN_PROXY_UNREACHABLE: &str =
+    "the browser's proxy is not reachable from the engine; a VPN-extension proxy is likely the cause";
+
+/// Resolve the effective task proxy (S11-i B16 — suggest, never override):
+/// an explicit task proxy always wins (a differing browser proxy yields
+/// the differs-warning); otherwise the browser-reported proxy is adopted
+/// only when a one-connect reachability probe reaches it — unreachable
+/// means dropped, with the warning. Pure decision core (unit-testable).
+pub(crate) fn resolve_task_proxy(
+    explicit: Option<&crate::proxy::ProxyConfig>,
+    browser: Option<&crate::proxy::ProxyConfig>,
+) -> (Option<crate::proxy::ProxyConfig>, Option<&'static str>) {
+    match (explicit, browser) {
+        (Some(task), Some(browser)) => (
+            Some(task.clone()),
+            (task != browser).then_some(WARN_PROXY_DIFFERS),
+        ),
+        (Some(task), None) => (Some(task.clone()), None),
+        (None, Some(browser)) => {
+            if browser.probe_reachable(Duration::from_secs(2)) {
+                (Some(browser.clone()), None)
+            } else {
+                (None, Some(WARN_PROXY_UNREACHABLE))
+            }
+        }
+        (None, None) => (None, None),
     }
 }
 
@@ -743,8 +786,20 @@ pub fn run_http_task(
     env: TaskEnv,
     control: Arc<crate::engine::events::TaskControl>,
     url: String,
-    opts: HttpOptions,
+    mut opts: HttpOptions,
 ) {
+    // S11-i B16: resolve the effective task proxy once, at task creation —
+    // suggest, never override. An explicit task proxy always wins; the
+    // browser-reported proxy is adopted only when a probe reaches it (the
+    // differs-warning was already surfaced at add time by the engine).
+    let (resolved_proxy, proxy_notice) =
+        resolve_task_proxy(opts.proxy.as_ref(), opts.browser_proxy.as_ref());
+    if let Some(w) = proxy_notice {
+        shared.update(id, |s| s.notice = Some(w.to_string()));
+    }
+    if resolved_proxy.is_some() {
+        opts.proxy = resolved_proxy;
+    }
     let cfg = ClientCfg {
         user_agent: opts
             .user_agent
@@ -1338,7 +1393,10 @@ fn run_segmented(
     shared.update(id, |s| {
         s.done = s.size;
         s.speed = 0;
-        s.notice = None;
+        // S11-i B16: transient recovery notices clear at completion, but a
+        // persistent configuration warning (e.g. the browser's proxy was
+        // unreachable and got dropped) stays visible
+        s.notice = s.notice.take().filter(|n| n != NOTICE_RECOVERY);
     });
     shared.set_state(id, TaskState::Completed);
     shared
@@ -1505,7 +1563,9 @@ fn run_single(
     shared.update(id, |s| {
         s.done = s.size.max(s.done);
         s.speed = 0;
-        s.notice = None;
+        // S11-i B16: transient recovery notices clear at completion, but a
+        // persistent configuration warning stays visible
+        s.notice = s.notice.take().filter(|n| n != NOTICE_RECOVERY);
     });
     shared.set_state(id, TaskState::Completed);
     shared
@@ -2008,6 +2068,58 @@ mod tests {
         // end-to-end shape: min(preset, scale cap, 32)
         let scaled = scale_connections(32, 512 * 1024 * 1024); // 32
         assert_eq!(apply_preset_ceiling(scaled, "medium"), 4);
+    }
+
+    // ---- S11-i B16: browser-proxy propagation (engine side) ----
+
+    fn http_proxy(host: &str, port: u16) -> crate::proxy::ProxyConfig {
+        crate::proxy::ProxyConfig::Http {
+            host: host.into(),
+            port,
+            user: None,
+            pass: None,
+        }
+    }
+
+    #[test]
+    fn task_proxy_precedence_and_warnings() {
+        // explicit task proxy always wins; a differing browser proxy warns
+        let task = http_proxy("10.0.0.1", 8080);
+        let browser = http_proxy("127.0.0.1", 1080);
+        let (p, w) = resolve_task_proxy(Some(&task), Some(&browser));
+        assert_eq!(p, Some(task.clone()));
+        assert_eq!(w, Some(WARN_PROXY_DIFFERS));
+        // the SAME proxy does not warn
+        let (_, w2) = resolve_task_proxy(Some(&browser), Some(&browser));
+        assert_eq!(w2, None);
+        // no browser proxy reported: nothing to resolve or warn
+        let (p3, w3) = resolve_task_proxy(Some(&task), None);
+        assert_eq!(p3, Some(task));
+        assert_eq!(w3, None);
+        let (p4, w4) = resolve_task_proxy(None, None);
+        assert_eq!(p4, None);
+        assert_eq!(w4, None);
+    }
+
+    #[test]
+    fn browser_proxy_adopted_only_when_reachable() {
+        // a live listener: the reported proxy is adopted (suggest, never
+        // override — no explicit task proxy)
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let live = http_proxy("127.0.0.1", port);
+        let (p, w) = resolve_task_proxy(None, Some(&live));
+        assert_eq!(p, Some(live.clone()));
+        assert_eq!(w, None);
+        // an unreachable reported proxy is DROPPED with the warning
+        let dead = http_proxy("127.0.0.1", 1);
+        let (p2, w2) = resolve_task_proxy(None, Some(&dead));
+        assert_eq!(p2, None);
+        assert_eq!(w2, Some(WARN_PROXY_UNREACHABLE));
+        // ...and an explicit task proxy still wins over a live browser proxy
+        let task = http_proxy("10.9.9.9", 3128);
+        let (p3, _) = resolve_task_proxy(Some(&task), Some(&live));
+        assert_eq!(p3, Some(task));
     }
 
     #[test]
