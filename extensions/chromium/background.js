@@ -15,6 +15,7 @@ importScripts(
   'shared/nmhost.js',
   'shared/cookies.js',
   'shared/takeover.js',
+  'shared/mime-table.js',
   'shared/state.js'
 );
 
@@ -24,6 +25,10 @@ var MSG = self.VDMMessaging;
 var NMHOSTLIB = self.VDMNMHost;
 var COOKIES = self.VDMCookies;
 var VDMTAKEOVER = self.VDMTakeover;
+// S11-i B8-js: the generated MIME->extension table (Rust is the source of
+// truth; scripts/gen-mime-table.py emits this UMD copy)
+var MIMETABLE = self.VDMMimeTable;
+var EXT_FOR_MIME = MIMETABLE ? MIMETABLE.extensionForMime : null;
 
 var NATIVE_HOST = 'com.velocitydm.nmh';
 var VIDEOS_KEY = 'vdm_recent_videos';
@@ -96,6 +101,9 @@ chrome.webRequest.onResponseHeaders.addListener(
     const len = parseInt(headers['content-length'] || '0', 10) || 0;
     if (!url || url.startsWith('blob:') || url.startsWith('data:')) return;
     if (!DETECTOR.isVideo(url, mime, len)) return;
+    // S11-i B8-js: a filename hint from the shared MIME table when the URL
+    // yields no extension — never overrides an existing one
+    const hint = filenameHint(url, mime);
     pushVideo({
       url: url,
       title: DETECTOR.titleFor(url),
@@ -103,11 +111,24 @@ chrome.webRequest.onResponseHeaders.addListener(
       kind: DETECTOR.isHls(url, mime) ? 'hls' : (DETECTOR.isDash(url, mime) ? 'dash' : 'file'),
       pageUrl: details.initiator || details.documentUrl || '',
       size: len,
+      filename: hint,
     }).catch(function () {});
   },
   { urls: ['<all_urls>'] },
   ['responseHeaders']
 );
+
+/** The sniffed-list filename hint: only when the URL path has no
+ *  extension AND the table resolves the content type. */
+function filenameHint(url, mime) {
+  if (DETECTOR.extOf(url)) return '';
+  if (!EXT_FOR_MIME || !mime) return '';
+  const base = DETECTOR.titleFor(url);
+  if (!base || base.indexOf('.') !== -1) return '';
+  let ext = null;
+  try { ext = EXT_FOR_MIME(mime); } catch (e) { ext = null; }
+  return ext ? base + '.' + ext : '';
+}
 
 // ---------------------------------------------------------------------------
 // download takeover (S11-i B6: shelf, filename participation, decline note)
@@ -144,6 +165,7 @@ async function handOffDownload(item) {
         resume: function (id) { return chrome.downloads.resume(id); },
       },
       note: storeTakeoverNote,
+      extForMime: EXT_FOR_MIME,
     });
   } catch (e) { /* never break the pipeline on a takeover error */ }
   if (item && typeof item.id === 'number') takeoverPendingIds.delete(item.id);
@@ -175,7 +197,7 @@ function applyShelf() {
 chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
   if (!item || !takeoverPendingIds.has(item.id)) return;
   takeoverPendingIds.delete(item.id);
-  var name = VDMTAKEOVER.filenameFor(item, null);
+  var name = VDMTAKEOVER.filenameFor(item, EXT_FOR_MIME);
   if (name) suggest({ filename: name, conflictAction: 'uniquify' });
 });
 

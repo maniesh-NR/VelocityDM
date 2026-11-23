@@ -95,7 +95,15 @@
       const btn = document.createElement('button');
       btn.textContent = 'Download';
       btn.addEventListener('click', function () {
-        send({ type: 'addDownload', item: { url: v.url, referer: v.pageUrl, quality: v.quality } });
+        send({
+          type: 'addDownload',
+          item: {
+            url: v.url,
+            referer: v.pageUrl,
+            quality: v.quality,
+            filename: v.filename || '', // B8-js hint when the URL has no ext
+          },
+        });
         btn.textContent = 'Added';
         btn.disabled = true;
       });

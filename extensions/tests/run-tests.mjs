@@ -17,6 +17,7 @@ const MD3 = require('../shared/md3.js');
 const NMHOST = require('../shared/nmhost.js');
 const COOKIES = require('../shared/cookies.js');
 const TK = require('../shared/takeover.js');
+const MIME = require('../shared/mime-table.js');
 
 let passed = 0;
 function ok(name, cond) {
@@ -740,6 +741,57 @@ console.log('detector B7 (DOM detection hardening)');
     console.log('  overhead: 5000-candidate gated pass measured at ' + ms.toFixed(2) + ' ms');
     ok('overhead: 5000-candidate pass under the 250 ms budget', ms < 250 && pass === 5000);
   }
+}
+
+console.log('mime-table (B8-js — generated JS copy of the Rust table)');
+{
+  // the table itself (Rust is the source of truth; the drift tripwire in
+  // vdm-core compares this checked-in copy against the Rust table)
+  ok('table carries ~110 entries', Object.keys(MIME.MIME_TABLE).length >= 100);
+  ok('known lookups',
+    MIME.extensionForMime('video/mp2t') === 'ts' &&
+    MIME.extensionForMime('application/vnd.apple.mpegurl') === 'm3u8' &&
+    MIME.extensionForMime('audio/mp4') === 'm4a' &&
+    MIME.extensionForMime('application/dash+xml') === 'mpd');
+  ok('parameters normalized away',
+    MIME.extensionForMime('application/vnd.apple.mpegurl; charset=utf-8') === 'm3u8' &&
+    MIME.extensionForMime('video/mp2t; charset=binary') === 'ts');
+  ok('case normalized', MIME.extensionForMime('VIDEO/MP2T') === 'ts');
+  ok('unknown mime -> null (never a guess)',
+    MIME.extensionForMime('application/x-unknown') === null &&
+    MIME.extensionForMime('') === null &&
+    MIME.extensionForMime(null) === null &&
+    MIME.extensionForMime(7) === null);
+  ok('octet-stream deliberately never suggests', MIME.extensionForMime('application/octet-stream') === null);
+
+  // no-override rule through the takeover filename mirror (the same rule
+  // the engine applies at task creation)
+  ok('no-override: existing extension wins',
+    TK.filenameFor({ filename: 'clip.bin', mime: 'video/mp4' }, MIME.extensionForMime) === 'clip.bin');
+  ok('no-override: extension-less explicit name gains the mime ext',
+    TK.filenameFor({ filename: 'video', mime: 'video/mp2t' }, MIME.extensionForMime) === 'video.ts');
+  ok('URL basename fallback composes with the table',
+    TK.filenameFor({ url: 'https://x/playlist', mime: 'audio/x-mpegurl' }, MIME.extensionForMime) === 'playlist.m3u8');
+  ok('unknown mime leaves the name alone',
+    TK.filenameFor({ filename: 'video', mime: 'application/x-unknown' }, MIME.extensionForMime) === 'video');
+
+  // the sniffed-list hint rule (the background's filenameHint, module-level)
+  function filenameHint(url, mime) {
+    if (DET.extOf(url)) return '';
+    if (!mime) return '';
+    const base = DET.titleFor(url);
+    if (!base || base.indexOf('.') !== -1) return '';
+    const ext = MIME.extensionForMime(mime);
+    return ext ? base + '.' + ext : '';
+  }
+  ok('hint: extension-less URL with known type gains the ext',
+    filenameHint('https://x/manifest', 'application/vnd.apple.mpegurl') === 'manifest.m3u8');
+  ok('hint: URL with an extension gets none',
+    filenameHint('https://x/clip.mp4', 'video/mp4') === '');
+  ok('hint: unknown type gets none',
+    filenameHint('https://x/manifest', 'application/x-unknown') === '');
+  ok('hint: basename with a dot gets none',
+    filenameHint('https://x/archive.tar.gz', 'application/gzip') === '');
 }
 
 console.log('\n' + passed + ' assertions passed');

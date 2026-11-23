@@ -225,10 +225,11 @@ mod tests {
         };
         let line = text
             .lines()
-            .find(|l| l.starts_with("export const MIME_TABLE = "))
-            .expect("mime-table.js has no MIME_TABLE export");
+            .find(|l| l.trim_start().starts_with("var MIME_TABLE = "))
+            .expect("mime-table.js has no MIME_TABLE definition");
         let json_part = line
-            .trim_start_matches("export const MIME_TABLE = ")
+            .trim()
+            .trim_start_matches("var MIME_TABLE = ")
             .trim_end_matches(';');
         let obj: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(json_part).expect("MIME_TABLE is not valid JSON");
