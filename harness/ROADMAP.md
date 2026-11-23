@@ -11,7 +11,7 @@ Each stage transition is gated by the adversarial consensus protocol
 | S2 | Publish v1.0.0: push main + 6 tags, releases with assets, repo config, roadmap issues | DONE (2026-11-13) | `harness/BACKUPS.md` + MEMORY.md entry |
 | S3 | Hardening: branch protection (8 required checks), verify all releases carry assets, CI green | DONE (2026-11-13) | MEMORY.md entry |
 | S1R | Post-loss reconciliation + security hardening + doc truth + republish | DONE (2026-11-13; published at b27549a) | `ASSESSMENTS/0002b-round2-consensus.md` |
-| S4 | DHT (BEP-5) so trackerless magnets resolve | ACTIVE (owner D2:B — parallel with S11-i wave 2; gate 0008 + spec `docs/SPECS/S4-DHT-BEP5.md`) | `ASSESSMENTS/0008-s4-dht-activation.md` |
+| S4 | DHT (BEP-5) so trackerless magnets resolve | DONE (2026-11-23: gate 0008 + spec → implementation eca7dfb..126de3a — `bt/dht.rs` KRPC/160-bucket table/single-use tokens/iterative lookup + engine wiring + two-node loopback e2e + idle no-op witness; Windows-entropy CI fix-forward 9fc8e42 (random_bytes fallback call counter); CI 11/11 green at 9fc8e42; bench A/B s4-pre/s4-post no-regression; issue #1 commented) | `ASSESSMENTS/0008-s4-dht-activation.md` |
 | S5 | UDP trackers (BEP-15) | PENDING | — |
 | S6 | DASH downloader (.mpd manifests) | PENDING | — |
 | S7 | HLS: SAMPLE-AES + fMP4 EXT-X-MAP | PENDING | — |
