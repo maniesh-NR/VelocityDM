@@ -867,3 +867,76 @@ session reads this file first, then `ROADMAP.md`.
   S12 promotion-gate preparation first in the S12 queue per D3:D/D5:A.
   Wave-2 adoption is now fully closed; new adoptions wait on owner
   decisions (the ledger takes round 3).
+
+## 2026-11-23 (session 13) — S4 DHT delivered + closed; Windows entropy CI fix-forward
+
+- Context refresh (the session-12 line continued after another context
+  loss). **Fetch-first, ten-times-proven:** origin/main was 44 commits
+  ahead of the stale local snapshot — sessions 9–12 had already
+  executed the S11-T2 static study, S11-i waves 1+2 (both sides), the
+  decision ledger, and the D8:now deep-dive session 1. The stale
+  summary handed to this session (d1–d8 recovery, T2 execution, D8
+  interpretation) was ALL already done and pushed. Fast-forwarded to
+  126de3a; the stray stashed BACKUPS.md row was already preserved on
+  sandbox-backup (a274d96) — dropped cleanly.
+- **The previous session had pushed the S4 DHT implementation (4 commits
+  eca7dfb → 126de3a: the bt/dht.rs module — KRPC codec, 160-bucket XOR
+  routing table, single-use announce tokens, iterative get_peers,
+  persisted node id; engine wiring beside trackers with BEP-9 metadata;
+  two-node loopback mini-DHT e2e + idle no-socket witness; docs +
+  VDM_DHT_BOOTSTRAP=off guards) but died at the context wall BEFORE the
+  close-out — with CI RED:** `Test (windows-latest)` failed
+  `bt::dht::tests::token_rotation_single_use` at 126de3a (135 passed,
+  1 failed).
+- **Root cause (diagnosed this session from the CI log + code):**
+  `util::random_bytes` has no `/dev/urandom` on Windows, so it falls
+  back to an xorshift seeded from `now_ms() ^ pid*GOLDEN ^ heap-addr`.
+  The Windows heap re-serves the SAME address for the same-size recycled
+  block, and the two token-secret draws (epoch-1 and epoch-2 rotations)
+  landed inside one millisecond ⇒ identical seeds ⇒ identical secrets ⇒
+  a spent previous-window token re-matched the "current" mix after
+  rotation. Linux/macOS never take the fallback, hence green there.
+  **Fix (9fc8e42, both trees): a per-process AtomicU64 call counter
+  mixed into the fallback seed — rapid same-ms calls always draw
+  distinct streams.** A standalone arithmetic proof script
+  (scripts/fallback_seed_proof.py) reproduces the collision under the
+  exact Windows worst case pre-fix and distinctness post-fix; a
+  regression tripwire test (`random_bytes_rapid_calls_differ`) pins the
+  contract. Side benefit: rapid `new_peer_id()` calls can no longer
+  collide on Windows either.
+- **CI witness: ALL 11/11 GREEN at 9fc8e42** (the previously-red
+  windows-latest Test now passes). Local battery: fmt both trees clean,
+  clippy `-D warnings` clean, vdm-core 137 lib tests + integration
+  suites green, win7 `cargo +1.75.0 check --workspace --locked` green.
+  The known e2e_bin local-run dependency (bins must be built first) bit
+  again as a disk-exhaustion error — CI's smoke job is the authority.
+- **Spec-owed bench A/B executed (labels s4-pre/s4-post, record in
+  scripts/s4-bench-record.txt):** warm-pair parity — pre 0.81 s /
+  159.0-158.9 MBps vs post 0.81 s / 158.9 MBps, request shape identical
+  (12 conns / 37 reqs both sides), byte-identical output both sides —
+  NO REGRESSION. Honest environment note: standalone COLD runs on
+  this shared sandbox are disk-bound (~91 MBps — the freshly written
+  128 MiB source gets evicted from the page cache while the build's
+  dirty pages flush; mechanistically symmetric, request shape
+  unchanged, so the warm pair is the honest comparator).
+- S4 close-out: ROADMAP S4 → DONE; issue #1 (the DHT tracker) commented
+  with the close evidence; backup executed per the event rule.
+- Hard-won session learnings:
+  - A test that is green on Linux+macOS but red on windows-latest with
+    an RNG-flavored assertion: suspect the entropy fallback FIRST —
+    `/dev/urandom` simply does not exist on Windows, and the fallback's
+    heap-address term is worth nothing there (same-size blocks get the
+    same address recycled).
+  - bench-perf.sh on THIS sandbox: back-to-back runs measure
+    page-cache-warm throughput (~159 MBps); runs after a build or an
+    idle gap are disk-bound (~91 MBps). Compare warm-pair to warm-pair,
+    never warm against cold.
+  - Disk discipline again: root target/ grew to 5.9 GB and killed a
+    test compile mid-battery — clean between build phases (the
+    session-11 recipe).
+- Next standing queue (per DECISIONS + gates 0007/0008, unchanged):
+  deep-dive session 2 (worker-thread range arithmetic, queue-state
+  writer, site-login/refresh-link — fail-closed fingerprint re-verify
+  at start, Ghidra re-provision per RUNBOOK), S12 promotion-gate
+  preparation first in the S12 queue per D3:D/D5:A, S5+ remain PENDING
+  until the owner activates them.
