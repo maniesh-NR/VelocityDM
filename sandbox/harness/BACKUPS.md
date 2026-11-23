@@ -17,3 +17,5 @@ execution plan / every output that changed something), never fixed-interval
 | 2026-11-21T09:53:16Z | agent execution plan | sandbox-backup | ebebd20 | scripts+harness+manifest |
 | 2026-11-21T14:08:21Z | agent execution plan | sandbox-backup | a80e20a | scripts+harness+manifest |
 | 2026-11-22T06:07:50Z | agent execution plan | sandbox-backup | a80e20a | scripts+harness+manifest |
+| 2026-11-22T06:07:50Z | S11-i wave-2 engine-side close: B3/B13/B2p/B8-core/B16-core adopted (gate 0007, per-item commits, A/B no-regression, CI 11/11 green at e637db4 after the B13 fix-forward; issue #15 commented) | sandbox-backup | 84c98a1 | scripts+harness+manifest |
+| 2026-11-23T12:45:25Z | S11-i wave-2 extension-side close: B4/B5/B6/B7/B8-js/B16 wiring adopted (gate 0007, per-item commits, battery 76-240, CI 11/11 green at 280a3aa; issue #15 commented) | sandbox-backup | 84c98a1 | scripts+harness+manifest |

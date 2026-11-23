@@ -19,7 +19,7 @@ Each stage transition is gated by the adversarial consensus protocol
 | S9 | Safari native app extension (Xcode conversion) | PENDING | — |
 | S10 | Flathub submission | PENDING | — |
 | S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | ACTIVE (T2 executed 2026-11-21: findings + backlog in `docs/RESEARCH-IDM-STUDY.md`; T1/T3 remain gated on an owner-provisioned Windows VM; adoption runs as S11-i) | — |
-| S11-i | S11 incorporation waves: adopt study-backlog techniques spec-first (wave 1 = B1 cross-connection content audit + single-connection recovery, B2 optional connections, B9 file-lock classification/retry → engine; wave 2 = B2-presets + B3 HLS BYTERANGE + B4 NMH resilience + B5 cookie forwarding + B6 takeover UX + B7 detector hardening + B8 MIME table + B13 persisted scheduler rules + B16 browser-proxy propagation → engine/extensions; B10/B11/B12/B14/B15 parked with observe-first; N1–N6 rejected) | ACTIVE (wave 1 DONE 2026-11-21: gate 0006 + specs + implementation + A/B + CI 11/11 at 73b98bd; wave 2 ACTIVATED 2026-11-21 under gate 0007 with owner D1:C scope — ENGINE SIDE DONE 2026-11-22 (B3 BYTERANGE + B13 .vdmq + B2p presets + B8 MIME table + B16 proxy propagation, per-item commits c6514d5..f236c9b, A/B no-regression); extension side (B4/B5/B6/B7/B8-js/B16 wiring) runs next) | `ASSESSMENTS/0006-s11i-adoption-wave1.md`, `ASSESSMENTS/0007-s11i-adoption-wave2.md` |
+| S11-i | S11 incorporation waves: adopt study-backlog techniques spec-first (wave 1 = B1 cross-connection content audit + single-connection recovery, B2 optional connections, B9 file-lock classification/retry → engine; wave 2 = B2-presets + B3 HLS BYTERANGE + B4 NMH resilience + B5 cookie forwarding + B6 takeover UX + B7 detector hardening + B8 MIME table + B13 persisted scheduler rules + B16 browser-proxy propagation → engine/extensions; B10/B11/B12/B14/B15 parked with observe-first; N1–N6 rejected) | ACTIVE (wave 1 DONE 2026-11-21: gate 0006 + specs + implementation + A/B + CI 11/11 at 73b98bd; wave 2 DONE 2026-11-23 under gate 0007 with owner D1:C scope — engine side 2026-11-22 (B3 BYTERANGE + B13 .vdmq + B2p presets + B8 MIME table + B16 proxy propagation, per-item commits c6514d5..f236c9b, A/B no-regression) + EXTENSION SIDE 2026-11-23 (B4 NM host resilience + B5 cookies on every add path + B6 takeover UX/taken.html + B7 detector hardening + B8-js UMD table consumption + B16 report wiring incl. the `proxy` permission, per-item commits 282ab74..1ac2c47, battery 76→240 assertions, CI 11/11 at 357a36f); both wave-2 sides closed — remaining adoption waits on new owner decisions) | `ASSESSMENTS/0006-s11i-adoption-wave1.md`, `ASSESSMENTS/0007-s11i-adoption-wave2.md` |
 | S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept (Android leg runs on the Kotlin-port engine today; Rust-core unification is S8's) | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; S12-e Android Views+KMP built (preview) under gate 0005; gtk3 + Qt + SwiftUI variants are gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` |
 
 ## Stage briefs
@@ -174,8 +174,15 @@ Each stage transition is gated by the adversarial consensus protocol
     from wave 1. Behavior specs: `docs/SPECS/S11-ADOPTIONS-WAVE2.md`.
     Implementation sequencing (per gate 0007): engine-side first
     (B3 → B13 → B2p → B8-core → B16-core), then extension-side
-    (B4 → B5 → B6 → B7 → B16 wiring), one revertable commit per item,
-    batteries + A/B per item, CI witness at each close.
+    (B4 → B5 → B6 → B7 → B8-js → B16 wiring), one revertable commit per item,
+    batteries + A/B per item, CI witness at each close. **Wave 2 closed
+    2026-11-23: both sides landed (engine commits c6514d5..f236c9b;
+    extension commits 282ab74..1ac2c47 — the node battery grew 76→240
+    assertions; the honest overhead witness: a synthetic 5000-candidate
+    gated DOM pass measured 4.63 ms in the dev sandbox; the B8 UMD
+    conversion caught the ESM emit being unloadable in a classic service
+    worker; B6's shelf + confirmation page still owe the owner's D5:A
+    runtime verification).**
   - **Owner decision round 1 (2026-11-21, `harness/DECISIONS.md`)**
     shapes the queue: D2:B runs S4 (DHT) in parallel with wave 2;
     D4:B keeps T1/T3 honest — the owner provisions a Windows VM

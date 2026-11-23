@@ -793,3 +793,77 @@ session reads this file first, then `ROADMAP.md`.
   spec committed), deep-dive session 2 (worker-thread range arithmetic,
   queue-state writer, site-login/refresh-link) — all standing parallel
   tracks.
+
+## 2026-11-23 (session 12) — S11-i wave 2 EXTENSION SIDE delivered; wave 2 closed
+
+- Context refresh (the session-11 line continued after another loss).
+  **Fetch-first, nine-times-proven:** origin/main was 27 commits ahead of
+  the stale local snapshot (S12-e gate 0005, the S11-T2 static study
+  d0afd29, S11-i wave 1 + gates 0007/0008 + decision ledger + the
+  D8:now deep-dive session 1 + wave-2 engine side). The stale summary's
+  todo list (d1–d8 recovery, T2 execution, D8 interpretation) was ALL
+  already done and pushed — `harness/DECISIONS.md` round 1/round 2
+  resolved the lost-context menu semantics durably. Fast-forwarded to
+  7e2bc79; the stray local BACKUPS.md row was already preserved on the
+  sandbox-backup branch (a274d96 contains it) — discarded cleanly.
+- **Wave-2 extension side implemented end-to-end (spec-first per the
+  committed S11-ADOPTIONS-WAVE2.md; per-item revertable commits
+  282ab74..1ac2c47):** B4 (`shared/nmhost.js` — persistent port
+  preferred with one-shot fallback; backoff 500 ms→8 s doubling with a
+  30 s-stability reset that also closes the 10-minute episode; queue cap
+  32 drop-oldest; first-send failure requeues exactly once; host-absence
+  patterns fail fast so the decline path stays correct), B5
+  (`shared/cookies.js` — the jar rides EVERY add path incl. URL-list
+  batches capped at the first 32 per-URL; NMH `addBatch` gained
+  `cookiesBy` with win7 port; the no-cookie-leak test is explicit),
+  B6 (`shared/takeover.js` + static self-contained `taken.html` — hash
+  read once, textContent only, immediate history.back; shelf
+  suppression feature-detected (Firefox no-ops); onDeterminingFilename
+  suggests our name once on our takeover; decline → resume + popup
+  error-note area incl. the B4 'engine unreachable' state), B7
+  (detector hardening — geometry 200×120 ours + 640×360 prominence,
+  state gate, bounded ancestor visibility walk, 128 KiB inline scan with
+  letter boundary, one media-filtered MutationObserver @ 250 ms
+  debounce + ResizeObserver only during bounded windows with full
+  teardown; site packs data-driven OFF by default), B8-js (the
+  generated MIME table became a UMD module — the ESM emit could NOT
+  load in a classic service worker, a genuine consumer-wiring catch;
+  generator + drift tripwire updated both trees; sniffed-list hint +
+  filename mirror + suggestion consume it), B16 wiring
+  (`shared/proxyreport.js` — system/mode-only reports carry no
+  endpoint, fixed endpoints limited to http/https/socks5; the
+  `browserProxy` field rides every add path with a 60 s cache; the
+  manifest `proxy` permission landed with B16's commit = the wave's
+  ONLY permission delta).
+- **Batteries/witnesses all green:** node battery 76→240 assertions
+  (backoff math, queue cap, host-absence matcher, mock-port
+  fail-then-reconnect, requeue-once, stable-reset, budget→dead,
+  one-shot fallback, cookie serializer/plan/map + no-leak, takeover
+  decline→resume pinned, XSS-inert confirm fixture, geometry/state/
+  overlay tables, inline-scan cap, pack defaults, two-window observer
+  teardown, honest overhead: 5000-candidate gated pass measured
+  4.63 ms in-sandbox, mime lookups, proxy shape table). Rust: fmt both
+  trees, clippy `-D warnings` clean, 125 vdm-core lib + 21 http_engine
+  + 7 hls_e2e + 4 NMH tests green, win7 `+1.75.0 check --workspace
+  --locked` + NMH tests green. All four extension packages build; the
+  Firefox patch (importScripts exact-replace + manifest scripts) was
+  byte-verified to carry every new shared module. **CI witness: ALL
+  11/11 checks GREEN at 357a36f** (8 required + 3 non-required
+  frontends).
+- Honest records: B6's shelf behavior + confirmation page still owe
+  the owner's D5:A runtime verification; pattern batches ride the
+  engine's no-options addBatch surface (B5 gap recorded in the study);
+  Firefox CHIPS jars documented as a limitation; the content_scripts
+  now ACTUALLY inject the shared modules (the old code silently
+  degraded grab-links — fixed riding B7, noted in its commit).
+- Environment notes: the 10th recycle gutted the stable rustc again
+  (re-provisioned 1.100.0 per rustup; CARGO_HOME=tools/cargo remains
+  CORRUPTED — the default ~/.cargo home with tools/cargo/bin on PATH
+  is the working recipe; 1.75 toolchain intact).
+- Next standing queue (per DECISIONS + gates 0007/0008): S4 DHT
+  implementation (spec committed; the only un-started ACTIVE stage),
+  deep-dive session 2 (worker-thread range arithmetic, queue-state
+  writer, site-login/refresh-link — fail-closed re-verify at start),
+  S12 promotion-gate preparation first in the S12 queue per D3:D/D5:A.
+  Wave-2 adoption is now fully closed; new adoptions wait on owner
+  decisions (the ledger takes round 3).
