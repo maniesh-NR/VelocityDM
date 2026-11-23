@@ -26,6 +26,11 @@
     ['filename', 'referer', 'cookies', 'userAgent', 'quality'].forEach(function (k) {
       if (item[k]) cmd[k] = item[k];
     });
+    // S11-i B16: the browser-reported effective proxy endpoint (additive;
+    // the engine suggests-never-overrides and probes before adopting)
+    if (item.browserProxy && typeof item.browserProxy === 'object') {
+      cmd.browserProxy = item.browserProxy;
+    }
     return cmd;
   }
 

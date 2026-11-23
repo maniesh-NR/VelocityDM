@@ -16,7 +16,8 @@
     "storage",
     "contextMenus",
     "cookies",
-    "tabs"
+    "tabs",
+    "proxy"
   ],
   "host_permissions": [
     "<all_urls>"

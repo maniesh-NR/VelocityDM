@@ -18,6 +18,7 @@ const NMHOST = require('../shared/nmhost.js');
 const COOKIES = require('../shared/cookies.js');
 const TK = require('../shared/takeover.js');
 const MIME = require('../shared/mime-table.js');
+const PROXY = require('../shared/proxyreport.js');
 
 let passed = 0;
 function ok(name, cond) {
@@ -792,6 +793,76 @@ console.log('mime-table (B8-js — generated JS copy of the Rust table)');
     filenameHint('https://x/manifest', 'application/x-unknown') === '');
   ok('hint: basename with a dot gets none',
     filenameHint('https://x/archive.tar.gz', 'application/gzip') === '');
+}
+
+console.log('proxyreport (B16 wiring — browser proxy report)');
+{
+  // resolveProxy: the chrome.proxy.settings.get value shapes
+  ok('system mode reports the mode only',
+    JSON.stringify(PROXY.resolveProxy({ mode: 'system' })) === '{"mode":"system"}');
+  ok('fixed_servers with singleProxy reports the endpoint',
+    (() => {
+      const r = PROXY.resolveProxy({ mode: 'fixed_servers', rules: { singleProxy: { scheme: 'socks5', host: '127.0.0.1', port: 1080 } } });
+      return r.mode === 'fixed' && r.scheme === 'socks5' && r.host === '127.0.0.1' && r.port === 1080;
+    })());
+  ok('fixed_servers defaults the scheme to http',
+    (() => {
+      const r = PROXY.resolveProxy({ mode: 'fixed_servers', rules: { singleProxy: { host: 'proxy.corp', port: 3128 } } });
+      return r.scheme === 'http';
+    })());
+  ok('fixed_servers without a usable entry reports the mode only',
+    JSON.stringify(PROXY.resolveProxy({ mode: 'fixed_servers', rules: {} })) === '{"mode":"fixed_servers"}');
+  ok('unsupported scheme reports the mode only (never a bad endpoint)',
+    JSON.stringify(PROXY.resolveProxy({ mode: 'fixed_servers', rules: { singleProxy: { scheme: 'quic', host: 'x', port: 1 } } })) === '{"mode":"fixed_servers"}');
+  ok('other modes pass through by name',
+    PROXY.resolveProxy({ mode: 'direct' }).mode === 'direct' &&
+    PROXY.resolveProxy({ mode: 'pac_script' }).mode === 'pac_script');
+  ok('absent/garbage values resolve to null',
+    PROXY.resolveProxy(null) === null && PROXY.resolveProxy(undefined) === null &&
+    PROXY.resolveProxy({}) === null && PROXY.resolveProxy('x') === null);
+
+  // endpointOf: only fixed+supported reports yield the add-command shape
+  ok('endpoint of a fixed report', (() => {
+    const e = PROXY.endpointOf({ mode: 'fixed', scheme: 'http', host: 'p', port: 80 });
+    return JSON.stringify(e) === '{"scheme":"http","host":"p","port":80}';
+  })());
+  ok('mode-only reports carry no endpoint', PROXY.endpointOf({ mode: 'system' }) === null &&
+    PROXY.endpointOf({ mode: 'fixed_servers' }) === null && PROXY.endpointOf(null) === null);
+
+  // browserProxyFor with fakes: report path + best-effort skips
+  const fakeApi = (value) => ({ settings: { get: (cb) => cb({ value: value }) } });
+  const sys = await PROXY.browserProxyFor(fakeApi({ mode: 'system' }));
+  ok('system mode yields no endpoint (nothing rides the add)', sys === null);
+  const fixed = await PROXY.browserProxyFor(fakeApi({
+    mode: 'fixed_servers',
+    rules: { singleProxy: { scheme: 'http', host: 'proxy.corp', port: 3129 } },
+  }));
+  ok('fixed proxy yields the endpoint', JSON.stringify(fixed) === '{"scheme":"http","host":"proxy.corp","port":3129}');
+  const throwing = { settings: { get: () => { throw new Error('permission denied'); } } };
+  ok('throwing API skips silently', (await PROXY.browserProxyFor(throwing)) === null);
+  ok('absent API skips silently', (await PROXY.browserProxyFor(null)) === null &&
+    (await PROXY.browserProxyFor(undefined)) === null &&
+    (await PROXY.browserProxyFor({})) === null);
+  const throwingAsync = { settings: { get: (cb) => cb(null) } };
+  ok('unusable details skip silently', (await PROXY.browserProxyFor(throwingAsync)) === null);
+
+  // the add-command builder carries the browserProxy field additively
+  const withProxy = MSG.add({ url: 'https://x/f.zip', browserProxy: { scheme: 'socks5', host: '127.0.0.1', port: 1080 } });
+  ok('add command carries the browserProxy endpoint',
+    withProxy.cmd === 'add' && JSON.stringify(withProxy.browserProxy) === '{"scheme":"socks5","host":"127.0.0.1","port":1080}');
+  ok('add without a proxy keeps today\'s shape', !('browserProxy' in MSG.add({ url: 'https://x/f.zip' })));
+  ok('junk browserProxy shapes are not invented by the builder',
+    !('browserProxy' in MSG.add({ url: 'https://x/f.zip', browserProxy: 'socks5://x:1' })));
+
+  // secrecy: the proxy endpoint never rides a log channel either
+  const logs2 = [];
+  const origWarn2 = console.warn;
+  console.warn = (...a) => logs2.push(a.join(' '));
+  const PROXY_API_SECRET = { settings: { get: (cb) => cb({ value: { mode: 'fixed_servers', rules: { singleProxy: { scheme: 'http', host: 'vpn-secret.example', port: 8080 } } } }) } };
+  const ep = await PROXY.browserProxyFor(PROXY_API_SECRET);
+  console.warn = origWarn2;
+  ok('proxy endpoint does not leak to logs', ep && ep.host === 'vpn-secret.example' &&
+    logs2.every((l) => l.indexOf('vpn-secret.example') === -1));
 }
 
 console.log('\n' + passed + ' assertions passed');

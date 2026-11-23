@@ -35,7 +35,7 @@ if name == 'firefox':
             'shared/detector.js', 'shared/patterns.js', 'shared/links.js',
             'shared/filters.js', 'shared/messaging.js', 'shared/nmhost.js',
             'shared/cookies.js', 'shared/takeover.js', 'shared/mime-table.js',
-            'shared/state.js', 'background.js'
+            'shared/proxyreport.js', 'shared/state.js', 'background.js'
         ]
     }
     m['browser_specific_settings'] = {
@@ -45,7 +45,7 @@ if name == 'firefox':
     # Firefox background.js must not call importScripts
     bg = open(path.replace('manifest.json', 'background.js')).read()
     bg = bg.replace(
-        "importScripts(\n  'shared/detector.js',\n  'shared/patterns.js',\n  'shared/links.js',\n  'shared/filters.js',\n  'shared/messaging.js',\n  'shared/nmhost.js',\n  'shared/cookies.js',\n  'shared/takeover.js',\n  'shared/mime-table.js',\n  'shared/state.js'\n);",
+        "importScripts(\n  'shared/detector.js',\n  'shared/patterns.js',\n  'shared/links.js',\n  'shared/filters.js',\n  'shared/messaging.js',\n  'shared/nmhost.js',\n  'shared/cookies.js',\n  'shared/takeover.js',\n  'shared/mime-table.js',\n  'shared/proxyreport.js',\n  'shared/state.js'\n);",
         "// Firefox event page: shared modules are loaded via manifest scripts")
     open(path.replace('manifest.json', 'background.js'), 'w').write(bg)
 json.dump(m, open(path, 'w'), indent=2)

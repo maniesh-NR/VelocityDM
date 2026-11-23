@@ -16,6 +16,7 @@ importScripts(
   'shared/cookies.js',
   'shared/takeover.js',
   'shared/mime-table.js',
+  'shared/proxyreport.js',
   'shared/state.js'
 );
 
@@ -25,6 +26,7 @@ var MSG = self.VDMMessaging;
 var NMHOSTLIB = self.VDMNMHost;
 var COOKIES = self.VDMCookies;
 var VDMTAKEOVER = self.VDMTakeover;
+var PROXYREPORT = self.VDMProxyReport;
 // S11-i B8-js: the generated MIME->extension table (Rust is the source of
 // truth; scripts/gen-mime-table.py emits this UMD copy)
 var MIMETABLE = self.VDMMimeTable;
@@ -166,6 +168,15 @@ async function handOffDownload(item) {
       },
       note: storeTakeoverNote,
       extForMime: EXT_FOR_MIME,
+      buildAdd: function (ready) { return MSG.add(ready); },
+      withJar: function (item, api) {
+        return COOKIES.withJar(item, api).then(function (r) {
+          return browserProxyEndpoint().then(function (endpoint) {
+            if (endpoint) r.browserProxy = endpoint;
+            return r;
+          });
+        });
+      },
     });
   } catch (e) { /* never break the pipeline on a takeover error */ }
   if (item && typeof item.id === 'number') takeoverPendingIds.delete(item.id);
@@ -210,9 +221,29 @@ chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
 
 var JAR_API = (typeof chrome !== 'undefined' && chrome.cookies) ? chrome.cookies : null;
 
+// S11-i B16: the browser's effective proxy (best-effort report; the
+// permission/API may be absent — then adds simply carry no browserProxy)
+var PROXY_API = (typeof chrome !== 'undefined' && chrome.proxy) ? chrome.proxy : null;
+var PROXY_CACHE_MS = 60000; // one settings read per minute, not per add
+var proxyCache = { at: 0, endpoint: null };
+
+function browserProxyEndpoint() {
+  var nowMs = Date.now();
+  if (nowMs - proxyCache.at < PROXY_CACHE_MS) {
+    return Promise.resolve(proxyCache.endpoint);
+  }
+  return PROXYREPORT.browserProxyFor(PROXY_API).then(function (endpoint) {
+    proxyCache = { at: nowMs, endpoint: endpoint };
+    return endpoint;
+  });
+}
+
 function addWithJar(item) {
   return COOKIES.withJar(item, JAR_API).then(function (ready) {
-    return sendNative(MSG.add(ready));
+    return browserProxyEndpoint().then(function (endpoint) {
+      if (endpoint) ready.browserProxy = endpoint;
+      return sendNative(MSG.add(ready));
+    });
   });
 }
 
@@ -223,7 +254,10 @@ function addWithJar(item) {
 // navigates; a decline surfaces the static note to the popup.
 function addVideoWithConfirm(url, referer, tab) {
   COOKIES.withJar({ url: url, referer: referer }, JAR_API).then(function (ready) {
-    return hostSend(MSG.add(ready));
+    return browserProxyEndpoint().then(function (endpoint) {
+      if (endpoint) ready.browserProxy = endpoint;
+      return hostSend(MSG.add(ready));
+    });
   }).then(function (normalized) {
     if (normalized.ok) {
       if (tab && tab.id != null) {
