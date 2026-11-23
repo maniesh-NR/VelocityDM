@@ -413,7 +413,10 @@ mod tests {
         let jars = cookies_by_from_msg(&json!({
             "cookiesBy": { "https://a/1": "s=1; p=2", "https://b/2": "" }
         }));
-        assert_eq!(jars.get("https://a/1").map(|s| s.as_str()), Some("s=1; p=2"));
+        assert_eq!(
+            jars.get("https://a/1").map(|s| s.as_str()),
+            Some("s=1; p=2")
+        );
         assert_eq!(jars.get("https://b/2").map(|s| s.as_str()), Some(""));
 
         // absent / null / non-object -> empty (today's behavior)
@@ -436,7 +439,14 @@ mod tests {
         let jars = cookies_by_from_msg(&json!({ "cookiesBy": many }));
         assert_eq!(jars.len(), 32);
         assert_eq!(jars.get("https://x/0").map(|s| s.as_str()), Some("j0"));
-        let missing: Vec<_> = (0..40).filter(|i| !jars.contains_key(&format!("https://x/{}", i))).collect();
-        assert_eq!(missing.len(), 8, "exactly 8 entries dropped by the cap: {:?}", missing);
+        let missing: Vec<_> = (0..40)
+            .filter(|i| !jars.contains_key(&format!("https://x/{}", i)))
+            .collect();
+        assert_eq!(
+            missing.len(),
+            8,
+            "exactly 8 entries dropped by the cap: {:?}",
+            missing
+        );
     }
 }
