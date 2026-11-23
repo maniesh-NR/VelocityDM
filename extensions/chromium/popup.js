@@ -191,7 +191,50 @@
     el('btn-grab-add').style.display = 'none';
   }
 
-  // ----------------------------------------------------------------- wire
+  // ---------------------------------------------------------------- notes
+  // takeover decline notes (B6) and the engine-unreachable state (B4);
+  // rendered via DOM nodes only, from our static strings
+  function renderNotes(state, note) {
+    const area = el('note-area');
+    const text = el('note-text');
+    const dismiss = el('note-dismiss');
+    let lead = '';
+    let rest = '';
+    let dismissible = false;
+    if (state && state.state && state.state !== 'connected' && state.state !== 'idle') {
+      lead = 'Engine unreachable.';
+      rest = ' The browser\u2019s own downloads continue.';
+    } else if (note && note.text) {
+      rest = ' ' + String(note.text);
+      dismissible = true;
+    } else {
+      area.style.display = 'none';
+      return;
+    }
+    text.textContent = '';
+    if (lead) {
+      const strong = document.createElement('b');
+      strong.textContent = lead;
+      text.appendChild(strong);
+    }
+    text.appendChild(document.createTextNode(rest));
+    area.style.display = 'block';
+    dismiss.style.display = dismissible ? 'inline-block' : 'none';
+  }
+
+  function pollNotes() {
+    send({ type: 'getTakeoverNote' }).then(function (n) {
+      send({ type: 'hostState' }).then(function (s) {
+        renderNotes(s, n && n.note);
+      });
+    });
+  }
+
+  el('note-dismiss').addEventListener('click', function () {
+    send({ type: 'clearTakeoverNote' }).then(function () { pollNotes(); });
+  });
+
+  // ------------------------------------------------------------------ wire
   el('btn-add').addEventListener('click', quickAdd);
   el('add-url').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') quickAdd();
@@ -210,9 +253,11 @@
   (function poll() {
     send({ type: 'getVideos' }).then(function (r) { renderVideos(r && r.videos); });
     send({ type: 'getDownloads' }).then(renderDownloads);
+    pollNotes();
   })();
   const timer = setInterval(function () {
     send({ type: 'getDownloads' }).then(renderDownloads);
+    pollNotes();
   }, 1000);
   window.addEventListener('unload', function () { clearInterval(timer); });
 })();

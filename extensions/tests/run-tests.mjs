@@ -16,6 +16,7 @@ const STATE = require('../shared/state.js');
 const MD3 = require('../shared/md3.js');
 const NMHOST = require('../shared/nmhost.js');
 const COOKIES = require('../shared/cookies.js');
+const TK = require('../shared/takeover.js');
 
 let passed = 0;
 function ok(name, cond) {
@@ -479,6 +480,108 @@ console.log('cookies (B5 — jar forwarding on every add path)');
   ok('no cookie value reaches any captured log channel',
     logs.every((l) => l.indexOf('TOPSECRET42') === -1));
   ok('commands do carry the jar (the leak test would be vacuous otherwise)', leakStrings.indexOf('TOPSECRET42') !== -1);
+}
+
+console.log('takeover (B6 — takeover UX)');
+{
+  // shelf key: takeover enabled while any intercept category is on
+  ok('shelf key: default settings enable takeover', TK.isEnabled(FILTERS.mergeSettings({})) === true);
+  ok('shelf key: empty categories disable takeover', TK.isEnabled(FILTERS.mergeSettings({ interceptCategories: [] })) === false);
+  ok('shelf key: absent settings disabled', TK.isEnabled(null) === false && TK.isEnabled(undefined) === false);
+
+  // filename mirror (the engine-side naming rule, ours)
+  ok('filename mirror: basename of the browser filename',
+    TK.filenameFor({ filename: '/home/u/Video.mkv', url: 'https://x/v' }) === 'Video.mkv');
+  ok('filename mirror: URL basename fallback', TK.filenameFor({ url: 'https://x/files/clip.mp4' }) === 'clip.mp4');
+  ok('filename mirror: mime ext appended when no ext',
+    TK.filenameFor({ filename: 'video', mime: 'video/mp2t' }, (m) => (m === 'video/mp2t' ? 'ts' : null)) === 'video.ts');
+  ok('filename mirror: existing ext never overridden',
+    TK.filenameFor({ filename: 'clip.bin', mime: 'video/mp4' }, () => 'mp4') === 'clip.bin');
+  ok('filename mirror: unknown mime leaves the name alone',
+    TK.filenameFor({ filename: 'video', mime: 'application/x-unknown' }, () => null) === 'video');
+  ok('filename mirror: no mime table wired keeps today\'s name',
+    TK.filenameFor({ filename: 'video', mime: 'video/mp4' }) === 'video');
+  ok('filename mirror: nothing usable yields empty',
+    TK.filenameFor({}) === '' && TK.filenameFor(null) === '');
+
+  // decline notes: our static words
+  ok('unreachable note', TK.noteFor({ ok: false, error: 'engine unreachable' }) === TK.NOTE_UNREACHABLE);
+  ok('malformed-reply note', TK.noteFor({ ok: false, error: 'malformed host reply' }) === TK.NOTE_UNREACHABLE);
+  ok('other decline note', TK.noteFor({ ok: false, error: 'missing url' }) === TK.NOTE_DECLINED);
+  ok('garbage reply note', TK.noteFor(null) === TK.NOTE_DECLINED);
+  ok('accept has no note', TK.noteFor({ ok: true }) === '');
+
+  // confirm target: encodeURIComponent in the hash
+  ok('confirm target encodes the url',
+    TK.confirmTarget('https://x/a b.mp4', 'chrome-extension://abc/taken.html') ===
+    'chrome-extension://abc/taken.html#https%3A%2F%2Fx%2Fa%20b.mp4');
+
+  // taken.html render rule: XSS-attempt fixture renders inert
+  {
+    const el = { textContent: '' };
+    const xss = '#<img src=x onerror=alert(1)>><script>evil()</script>';
+    const out = TK.renderConfirmInto(el, xss);
+    ok('xss fixture renders as text only', out === xss.substring(1) &&
+      String(el.textContent) === xss.substring(1));
+    ok('empty hash renders nothing', TK.renderConfirmInto(el, '') === null &&
+      TK.renderConfirmInto(el, '#') === null);
+    ok('percent-encoded hash decodes', TK.renderConfirmInto(el, '#https%3A%2F%2Fx%2Fv.mp4') === 'https://x/v.mp4');
+    ok('raw percent sequence tolerated', TK.renderConfirmInto(el, '#100%') === '100%');
+    ok('null element tolerated', TK.renderConfirmInto(null, '#x') === null);
+  }
+
+  // handOff orchestration with injectable deps
+  function makeDeps(reply) {
+    const calls = { paused: [], canceled: [], erased: [], resumed: [], notes: [], sent: [] };
+    return {
+      calls,
+      deps: {
+        getSettings: () => Promise.resolve(FILTERS.mergeSettings({})),
+        shouldTakeOver: FILTERS.shouldTakeOver,
+        withJar: (item) => Promise.resolve(Object.assign({ cookies: 'a=b' }, item)),
+        jarApi: null,
+        send: (cmd) => { calls.sent.push(cmd); return Promise.resolve(reply); },
+        downloads: {
+          pause: (id) => { calls.paused.push(id); return Promise.resolve(); },
+          cancel: (id) => { calls.canceled.push(id); return Promise.resolve(); },
+          erase: (q) => { calls.erased.push(q); return Promise.resolve(); },
+          resume: (id) => { calls.resumed.push(id); return Promise.resolve(); },
+        },
+        note: (text, url) => calls.notes.push({ text, url }),
+        buildAdd: (ready) => ({ cmd: 'add', url: ready.url, filename: ready.filename, cookies: ready.cookies }),
+      },
+    };
+  }
+  const item = { id: 7, url: 'https://x/f.zip', filename: 'f.zip', referrer: 'https://x/', mime: '', fileSize: 5 * 1024 * 1024 };
+
+  // decline path pinned: the browser download RESUMES
+  const d1 = makeDeps({ ok: false, error: 'engine unreachable' });
+  const r1 = await TK.handOff(item, d1.deps);
+  ok('decline: the browser download resumes (pinned)',
+    r1 === 'declined' && d1.calls.resumed.join() === '7' && d1.calls.canceled.length === 0);
+  ok('decline: pause happened before the send', d1.calls.paused.join() === '7');
+  ok('decline: the static note surfaced',
+    d1.calls.notes.length === 1 && d1.calls.notes[0].text === TK.NOTE_UNREACHABLE && d1.calls.notes[0].url === item.url);
+  ok('decline: the add command carried the jar', d1.calls.sent[0].cookies === 'a=b');
+
+  // accept path: cancel + erase, no resume, no note
+  const d2 = makeDeps({ ok: true, id: 3 });
+  const r2 = await TK.handOff(item, d2.deps);
+  ok('accept: browser download canceled and erased',
+    r2 === 'taken' && d2.calls.canceled.join() === '7' && d2.calls.erased.length === 1);
+  ok('accept: no resume, no note', d2.calls.resumed.length === 0 && d2.calls.notes.length === 0);
+
+  // skipped path: nothing paused, sent, resumed or noted
+  const d3 = makeDeps({ ok: true });
+  const r3 = await TK.handOff({ id: 9, url: 'https://x/f.bin', filename: 'f.bin', fileSize: 1024 }, d3.deps);
+  ok('non-takeover items are skipped untouched',
+    r3 === 'skipped' && d3.calls.paused.length === 0 && d3.calls.sent.length === 0 && d3.calls.resumed.length === 0);
+
+  // pause failure tolerated (the already-paused case)
+  const d4 = makeDeps({ ok: false, error: 'boom' });
+  d4.deps.downloads.pause = () => Promise.reject(new Error('already done'));
+  const r4 = await TK.handOff(item, d4.deps);
+  ok('pause failure tolerated (decline still resumes)', r4 === 'declined' && d4.calls.resumed.join() === '7');
 }
 
 console.log('\n' + passed + ' assertions passed');

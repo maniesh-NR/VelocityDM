@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VelocityDM</title>
+<!-- S11-i B6: static, self-contained confirmation page (no remote
+     resources). The hash fragment is read ONCE, rendered via
+     textContent only (never innerHTML, never a location assignment
+     from the fragment), then the page goes back immediately. -->
+<style>
+  :root {
+    --md-primary: #BAC3FF; --md-on-primary: #08318F;
+    --md-surface: #121318; --md-on-surface: #E3E1E9;
+    --md-on-surface-variant: #C7C5D0; --md-outline-variant: #46464F;
+    --md-surface-container: #1E1F25;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font: 14px/1.5 system-ui, sans-serif;
+    background: var(--md-surface); color: var(--md-on-surface);
+  }
+  main {
+    max-width: 640px; margin: 24px; padding: 24px 28px;
+    background: var(--md-surface-container);
+    border: 1px solid var(--md-outline-variant); border-radius: 16px;
+  }
+  h1 { font-size: 16px; margin: 0 0 12px; color: var(--md-primary); font-weight: 600; }
+  .url {
+    font-family: monospace; font-size: 12px; word-break: break-all;
+    color: var(--md-on-surface-variant);
+    padding: 10px 12px; border: 1px solid var(--md-outline-variant);
+    border-radius: 10px; margin: 0 0 12px;
+  }
+  .note { font-size: 12px; color: var(--md-on-surface-variant); margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>VelocityDM is downloading this video</h1>
+  <p class="url" id="url"></p>
+  <p class="note">The download continues in the background. Returning to the page&hellip;</p>
+</main>
+<script src="shared/takeover.js"></script>
+<script>
+(function () {
+  'use strict';
+  /* global VDMTakeover, window, document */
+  // read the hash once, render via textContent, go back immediately
+  var el = document.getElementById('url');
+  if (window.VDMTakeover) {
+    window.VDMTakeover.renderConfirmInto(el, window.location.hash);
+  }
+  window.history.back();
+})();
+</script>
+</body>
+</html>

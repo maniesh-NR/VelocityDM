@@ -14,6 +14,7 @@ importScripts(
   'shared/messaging.js',
   'shared/nmhost.js',
   'shared/cookies.js',
+  'shared/takeover.js',
   'shared/state.js'
 );
 
@@ -22,6 +23,7 @@ var FILTERS = self.VDMFilters;
 var MSG = self.VDMMessaging;
 var NMHOSTLIB = self.VDMNMHost;
 var COOKIES = self.VDMCookies;
+var VDMTAKEOVER = self.VDMTakeover;
 
 var NATIVE_HOST = 'com.velocitydm.nmh';
 var VIDEOS_KEY = 'vdm_recent_videos';
@@ -108,53 +110,73 @@ chrome.webRequest.onResponseHeaders.addListener(
 );
 
 // ---------------------------------------------------------------------------
-// download takeover
+// download takeover (S11-i B6: shelf, filename participation, decline note)
 // ---------------------------------------------------------------------------
 
+// download ids we are actively taking over (filename participation)
+var takeoverPendingIds = new Set();
+var TAKEOVER_NOTE_KEY = 'vdm_takeover_note';
+
+function storeTakeoverNote(text, url) {
+  chrome.storage.session.set({
+    [TAKEOVER_NOTE_KEY]: { text: text, url: url || '', at: Date.now() },
+  }).catch(function () {});
+}
+
 async function handOffDownload(item) {
-  const settings = await getSettings();
-  const filename = item.filename && item.filename.indexOf('/') !== -1
-    ? item.filename.substring(item.filename.lastIndexOf('/') + 1)
-    : item.filename;
-  const probe = {
-    url: item.url,
-    filename: filename,
-    mime: item.mime,
-    fileSize: item.fileSize || item.totalBytes || 0,
-    byExtensionId: item.byExtensionId,
-  };
-  if (!FILTERS.shouldTakeOver(probe, settings)) return;
-
-  // pause the browser download while we hand it off
-  try { await chrome.downloads.pause(item.id); } catch (e) { /* already done */ }
-
-  let cookies = '';
+  if (item && typeof item.id === 'number') {
+    // marked before any await so the filename listener sees it
+    takeoverPendingIds.add(item.id);
+  }
+  var result;
   try {
-    const all = await chrome.cookies.getAll({ url: item.url });
-    cookies = all.map(function (c) { return c.name + '=' + c.value; }).join('; ');
-  } catch (e) { /* cookies permission may be restricted */ }
-
-  const command = MSG.add({
-    url: item.url,
-    filename: filename,
-    referer: item.referrer || '',
-    cookies: cookies,
-  });
-
-  hostSend(command).then(function (normalized) {
-    if (normalized.ok) {
-      // VelocityDM owns it now: drop the browser download
-      chrome.downloads.cancel(item.id).catch(function () {});
-      chrome.downloads.erase({ id: item.id }).catch(function () {});
-    } else {
-      // host unreachable or declined: let the browser finish the download
-      chrome.downloads.resume(item.id).catch(function () {});
-    }
-  });
+    result = await VDMTAKEOVER.handOff(item, {
+      getSettings: getSettings,
+      shouldTakeOver: FILTERS.shouldTakeOver,
+      withJar: COOKIES.withJar,
+      jarApi: JAR_API,
+      send: hostSend,
+      buildAdd: function (ready) { return MSG.add(ready); },
+      downloads: {
+        pause: function (id) { return chrome.downloads.pause(id); },
+        cancel: function (id) { return chrome.downloads.cancel(id); },
+        erase: function (q) { return chrome.downloads.erase(q); },
+        resume: function (id) { return chrome.downloads.resume(id); },
+      },
+      note: storeTakeoverNote,
+    });
+  } catch (e) { /* never break the pipeline on a takeover error */ }
+  if (item && typeof item.id === 'number') takeoverPendingIds.delete(item.id);
+  return result;
 }
 
 chrome.downloads.onCreated.addListener(function (item) {
   handOffDownload(item).catch(function () {});
+});
+
+// Shelf suppression (Chromium-only, feature-detected; Firefox no-ops):
+// while takeover is enabled in settings the shelf is off for ALL
+// downloads (the documented trade-off); disabling any intercept category
+// turns it back on.
+function applyShelf() {
+  var api = (typeof chrome !== 'undefined' && chrome.downloads &&
+    typeof chrome.downloads.setShelfEnabled === 'function')
+    ? chrome.downloads.setShelfEnabled.bind(chrome.downloads)
+    : null;
+  if (!api) return; // Firefox has no shelf API — no-op by design
+  getSettings().then(function (settings) {
+    api(VDMTAKEOVER.isEnabled(settings)).catch(function () {});
+  }).catch(function () {});
+}
+
+// Filename participation: suggest our filename ONCE, on our takeover
+// (the browser item matches the engine's naming); downloads we are not
+// taking over are untouched (never fighting a user rename).
+chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
+  if (!item || !takeoverPendingIds.has(item.id)) return;
+  takeoverPendingIds.delete(item.id);
+  var name = VDMTAKEOVER.filenameFor(item, null);
+  if (name) suggest({ filename: name, conflictAction: 'uniquify' });
 });
 
 // ---------------------------------------------------------------------------
@@ -170,6 +192,27 @@ function addWithJar(item) {
   return COOKIES.withJar(item, JAR_API).then(function (ready) {
     return sendNative(MSG.add(ready));
   });
+}
+
+// Content-script video takeover (S11-i B6): the add rides the jar like
+// every other path, and on SUCCESS the current tab navigates to the
+// static confirmation page (taken.html — hash read once, textContent
+// only, immediate history.back). The downloads-pipeline path never
+// navigates; a decline surfaces the static note to the popup.
+function addVideoWithConfirm(url, referer, tab) {
+  COOKIES.withJar({ url: url, referer: referer }, JAR_API).then(function (ready) {
+    return hostSend(MSG.add(ready));
+  }).then(function (normalized) {
+    if (normalized.ok) {
+      if (tab && tab.id != null) {
+        var target = VDMTAKEOVER.confirmTarget(
+          url, chrome.runtime.getURL('taken.html'));
+        chrome.tabs.update(tab.id, { url: target }).catch(function () {});
+      }
+    } else {
+      storeTakeoverNote(VDMTAKEOVER.noteFor(normalized), url);
+    }
+  }).catch(function () {});
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +261,8 @@ chrome.contextMenus.onClicked.addListener(function (info, tab) {
   } else if (info.menuItemId === 'vdm-image' && info.srcUrl) {
     addWithJar({ url: info.srcUrl, referer: pageUrl });
   } else if (info.menuItemId === 'vdm-video' && (info.srcUrl || info.linkUrl)) {
-    addWithJar({ url: info.srcUrl || info.linkUrl, referer: pageUrl });
+    // content-script video takeover: confirm-in-tab on success (B6)
+    addVideoWithConfirm(info.srcUrl || info.linkUrl, pageUrl, tab);
   } else if (info.menuItemId === 'vdm-magnet') {
     const mag = selectedMagnet(info);
     if (mag) sendNative(MSG.addTorrent(mag));
@@ -264,7 +308,22 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         break;
       case 'saveSettings':
         await chrome.storage.local.set({ settings: msg.settings });
+        applyShelf(); // takeover enablement may have changed (B6)
         sendResponse({ ok: true });
+        break;
+      case 'hostState':
+        // the popup surfaces 'engine unreachable' while the link is down
+        sendResponse({ ok: true, state: HOST.state() });
+        break;
+      case 'getTakeoverNote':
+        chrome.storage.session.get(TAKEOVER_NOTE_KEY).then(function (data) {
+          sendResponse({ ok: true, note: data[TAKEOVER_NOTE_KEY] || null });
+        });
+        break;
+      case 'clearTakeoverNote':
+        chrome.storage.session.remove(TAKEOVER_NOTE_KEY).then(function () {
+          sendResponse({ ok: true, note: null });
+        });
         break;
       case 'nativePing':
         hostSend(MSG.ping()).then(function (normalized) {
@@ -299,3 +358,6 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   })();
   return true; // async sendResponse
 });
+
+// startup: align the shelf with the current takeover settings (B6)
+applyShelf();

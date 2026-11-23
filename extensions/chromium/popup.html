@@ -92,6 +92,15 @@
   }
   .grab { text-align: center; }
   .grab button { width: 100%; }
+  /* takeover decline / engine-unreachable note (S11-i B6/B4) */
+  .note-area {
+    margin: 6px 12px 0; padding: 8px 10px;
+    background: var(--md-surface-container);
+    border: 1px solid var(--md-error); border-radius: 10px;
+  }
+  .note-area .note { font-size: 11px; color: var(--md-on-surface-variant); }
+  .note-area .note b { color: var(--md-error); font-weight: 600; }
+  .note-area button { margin-top: 6px; }
   footer { padding: 4px 12px 10px; color: var(--md-on-surface-variant); font-size: 10px; text-align: center; }
   footer a { color: var(--md-primary); text-decoration: none; }
 </style>
@@ -122,6 +131,11 @@
 <section class="addrow">
   <input id="add-url" type="text" placeholder="Paste URL, magnet: or batch pattern" spellcheck="false">
   <button id="btn-add">Add</button>
+</section>
+
+<section class="note-area" id="note-area" style="display:none">
+  <div class="note" id="note-text"></div>
+  <button class="ghost" id="note-dismiss" style="display:none">Dismiss</button>
 </section>
 
 <section>
