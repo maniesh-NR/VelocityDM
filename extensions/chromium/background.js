@@ -13,6 +13,7 @@ importScripts(
   'shared/filters.js',
   'shared/messaging.js',
   'shared/nmhost.js',
+  'shared/cookies.js',
   'shared/state.js'
 );
 
@@ -20,6 +21,7 @@ var DETECTOR = self.VDMDetector;
 var FILTERS = self.VDMFilters;
 var MSG = self.VDMMessaging;
 var NMHOSTLIB = self.VDMNMHost;
+var COOKIES = self.VDMCookies;
 
 var NATIVE_HOST = 'com.velocitydm.nmh';
 var VIDEOS_KEY = 'vdm_recent_videos';
@@ -156,6 +158,21 @@ chrome.downloads.onCreated.addListener(function (item) {
 });
 
 // ---------------------------------------------------------------------------
+// cookie jar (S11-i B5): every add path with an http(s) URL forwards the
+// jar — context-menu link/image/video adds, popup manual adds, batch adds
+// (per-URL, capped at the first 32 URLs) and the takeover path (unchanged).
+// The jar itself is never logged.
+// ---------------------------------------------------------------------------
+
+var JAR_API = (typeof chrome !== 'undefined' && chrome.cookies) ? chrome.cookies : null;
+
+function addWithJar(item) {
+  return COOKIES.withJar(item, JAR_API).then(function (ready) {
+    return sendNative(MSG.add(ready));
+  });
+}
+
+// ---------------------------------------------------------------------------
 // context menus
 // ---------------------------------------------------------------------------
 
@@ -197,11 +214,11 @@ function selectedMagnet(info) {
 chrome.contextMenus.onClicked.addListener(function (info, tab) {
   const pageUrl = tab && tab.url ? tab.url : '';
   if (info.menuItemId === 'vdm-link' && info.linkUrl) {
-    sendNative(MSG.add({ url: info.linkUrl, referer: pageUrl }));
+    addWithJar({ url: info.linkUrl, referer: pageUrl });
   } else if (info.menuItemId === 'vdm-image' && info.srcUrl) {
-    sendNative(MSG.add({ url: info.srcUrl, referer: pageUrl }));
+    addWithJar({ url: info.srcUrl, referer: pageUrl });
   } else if (info.menuItemId === 'vdm-video' && (info.srcUrl || info.linkUrl)) {
-    sendNative(MSG.add({ url: info.srcUrl || info.linkUrl, referer: pageUrl }));
+    addWithJar({ url: info.srcUrl || info.linkUrl, referer: pageUrl });
   } else if (info.menuItemId === 'vdm-magnet') {
     const mag = selectedMagnet(info);
     if (mag) sendNative(MSG.addTorrent(mag));
@@ -209,10 +226,16 @@ chrome.contextMenus.onClicked.addListener(function (info, tab) {
     chrome.tabs.sendMessage(tab.id, { type: 'grabLinks' }, function (groups) {
       if (chrome.runtime.lastError || !groups) return;
       const urls = self.VDMLinks.flatten(groups);
-      if (urls.length) sendNative(MSG.addBatch(urls));
+      if (urls.length) sendBatchWithJars(urls);
     });
   }
 });
+
+function sendBatchWithJars(urls) {
+  COOKIES.jarsForBatch(urls, JAR_API).then(function (r) {
+    sendNative(MSG.addBatch(urls, r.map));
+  });
+}
 
 function sendNative(command) {
   hostSend(command).then(function (normalized) {
@@ -249,11 +272,16 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         });
         break;
       case 'addDownload':
-        sendNative(MSG.add(msg.item || {}));
+        // popup manual add: forward the jar for http(s) URLs (B5)
+        addWithJar(msg.item || {});
         sendResponse({ ok: true });
         break;
       case 'addBatch':
-        sendNative(MSG.addBatch(msg.pattern || msg.urls || []));
+        if (Array.isArray(msg.urls)) {
+          sendBatchWithJars(msg.urls);
+        } else {
+          sendNative(MSG.addBatch(msg.pattern || []));
+        }
         sendResponse({ ok: true });
         break;
       case 'addTorrent':

@@ -94,10 +94,22 @@ fn handle(msg: Value) -> Value {
             let params = if let Some(p) = msg.get("pattern").and_then(|p| p.as_str()) {
                 json!({ "pattern": p })
             } else if let Some(list) = msg.get("urls").and_then(|u| u.as_array()) {
-                // expand a raw list by adding each URL
+                // expand a raw list by adding each URL; S11-i B5: an
+                // optional `cookiesBy` map carries per-URL cookie jars
+                // (built by the extension, capped at the first 32 URLs of
+                // the batch — re-capped here defensively; non-string
+                // entries dropped) so authenticated batch adds ride the
+                // page session like single adds do
+                let jars = cookies_by_from_msg(&msg);
                 let mut ids = Vec::new();
                 for u in list.iter().filter_map(|x| x.as_str()) {
-                    if let Ok(r) = call_daemon("downloads.add", json!({ "url": u })) {
+                    let mut params = json!({ "url": u });
+                    if let Some(jar) = jars.get(u) {
+                        if !jar.is_empty() {
+                            params["options"] = json!({ "headers": [["Cookie", jar]] });
+                        }
+                    }
+                    if let Ok(r) = call_daemon("downloads.add", params) {
                         ids.push(r["id"].as_u64().unwrap_or(0));
                     }
                 }
@@ -292,6 +304,22 @@ fn browser_proxy_from_msg(msg: &Value) -> Result<Option<Value>, String> {
     Ok(Some(json!({ "type": kind, "host": host, "port": port })))
 }
 
+/// S11-i B5: the per-URL cookie map for URL-list batches — at most the
+/// first 32 entries, string values only (anything else is dropped, never
+/// an error: the batch still downloads).
+fn cookies_by_from_msg(msg: &Value) -> std::collections::HashMap<String, String> {
+    let mut out = std::collections::HashMap::new();
+    let Some(obj) = msg.get("cookiesBy").and_then(|v| v.as_object()) else {
+        return out;
+    };
+    for (k, v) in obj.iter().take(32) {
+        if let Some(s) = v.as_str() {
+            out.insert(k.clone(), s.to_string());
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,5 +399,41 @@ mod tests {
             &json!({ "browserProxy": { "scheme": "http", "host": "x", "port": 70000 } })
         )
         .is_err());
+    }
+
+    /// S11-i B5: the per-URL cookie map for URL-list batches — capped at
+    /// the first 32 entries, string values only, absent/negative shapes
+    /// tolerated (the batch still downloads).
+    #[test]
+    fn cookies_by_shape_at_nmh_boundary() {
+        // well-formed map forwards verbatim
+        let jars = cookies_by_from_msg(&json!({
+            "cookiesBy": { "https://a/1": "s=1; p=2", "https://b/2": "" }
+        }));
+        assert_eq!(jars.get("https://a/1").map(|s| s.as_str()), Some("s=1; p=2"));
+        assert_eq!(jars.get("https://b/2").map(|s| s.as_str()), Some(""));
+
+        // absent / null / non-object -> empty (today's behavior)
+        assert!(cookies_by_from_msg(&json!({})).is_empty());
+        assert!(cookies_by_from_msg(&json!({ "cookiesBy": null })).is_empty());
+        assert!(cookies_by_from_msg(&json!({ "cookiesBy": ["a"] })).is_empty());
+
+        // non-string values are dropped, never an error
+        let jars = cookies_by_from_msg(&json!({
+            "cookiesBy": { "https://a/1": "s=1", "https://a/2": 7, "https://a/3": null }
+        }));
+        assert_eq!(jars.len(), 1);
+
+        // the first-32 cap holds even when more entries ride the frame
+        // (serde_json's Map iterates in sorted key order — the assertion is
+        // order-independent: exactly 32 of the 40 entries survive)
+        let many: serde_json::Map<String, Value> = (0..40)
+            .map(|i| (format!("https://x/{i}"), json!(format!("j{i}"))))
+            .collect();
+        let jars = cookies_by_from_msg(&json!({ "cookiesBy": many }));
+        assert_eq!(jars.len(), 32);
+        assert_eq!(jars.get("https://x/0").map(|s| s.as_str()), Some("j0"));
+        let missing: Vec<_> = (0..40).filter(|i| !jars.contains_key(&format!("https://x/{i}"))).collect();
+        assert_eq!(missing.len(), 8, "exactly 8 entries dropped by the cap: {missing:?}");
     }
 }

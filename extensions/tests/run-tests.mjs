@@ -15,6 +15,7 @@ const MSG = require('../shared/messaging.js');
 const STATE = require('../shared/state.js');
 const MD3 = require('../shared/md3.js');
 const NMHOST = require('../shared/nmhost.js');
+const COOKIES = require('../shared/cookies.js');
 
 let passed = 0;
 function ok(name, cond) {
@@ -399,6 +400,85 @@ function makeLink(over) {
   ok('queue-full note fired once', notes.length === 1);
   ok('log channel carries static strings only',
     notes.every((n) => n.indexOf('sekrit') === -1 && n.indexOf('SESSIONCOOKIE') === -1));
+}
+
+console.log('cookies (B5 — jar forwarding on every add path)');
+{
+  // serializer shape (matches the takeover path's output)
+  ok('serializer matches the takeover shape',
+    COOKIES.serializeJar([{ name: 'a', value: '1' }, { name: 'b', value: '2' }]) === 'a=1; b=2');
+  ok('empty jar forwards an empty string', COOKIES.serializeJar([]) === '');
+  ok('malformed entries are skipped', COOKIES.serializeJar([{ name: 'a', value: '1' }, null, { name: '', value: 'x' }]) === 'a=1');
+  ok('non-array tolerated', COOKIES.serializeJar(null) === '');
+
+  // jarFor with a fake cookies API (session AND persistent cookies alike)
+  const api = { getAll: (q) => Promise.resolve([{ name: 'sid', value: 'S1' }, { name: 'pref', value: 'P' }]) };
+  const jar = await COOKIES.jarFor('https://x/f.zip', api);
+  ok('jar read serializes name=value pairs', jar === 'sid=S1; pref=P');
+  ok('non-http(s) URLs get no jar', (await COOKIES.jarFor('magnet:?xt=1', api)) === '' &&
+    (await COOKIES.jarFor('ftp://x/', api)) === '');
+  ok('absent API tolerated (best-effort)', (await COOKIES.jarFor('https://x/f.zip', null)) === '');
+  const throwing = { getAll: () => Promise.reject(new Error('restricted')) };
+  ok('restricted permission tolerated (empty jar)', (await COOKIES.jarFor('https://x/f.zip', throwing)) === '');
+
+  // withJar attaches the jar to add items (the shared add-path helper)
+  const withJar = await COOKIES.withJar({ url: 'https://x/f.zip', referer: 'https://x/' }, api);
+  ok('withJar attaches cookies to the add item', withJar.cookies === 'sid=S1; pref=P' && withJar.referer === 'https://x/');
+  const magnet = await COOKIES.withJar({ url: 'magnet:?xt=urn:btih:abc' }, api);
+  ok('magnet adds carry no cookies', !('cookies' in magnet));
+  const emptyJarApi = { getAll: () => Promise.resolve([]) };
+  const empty = await COOKIES.withJar({ url: 'https://x/f.zip' }, emptyJarApi);
+  ok('empty jar forwards an empty string (today\'s shape)', empty.cookies === '');
+
+  // batch plan: per-URL, capped at the first 32 http(s) URLs
+  const urls = [];
+  for (let i = 0; i < 40; i++) urls.push('https://x/' + i);
+  urls.splice(5, 0, 'magnet:?xt=1', 'javascript:void(0)');
+  const plan = COOKIES.batchCookiePlan(urls);
+  ok('batch cookie cap is 32', plan.withCookies.length === 32 && COOKIES.BATCH_COOKIE_CAP === 32);
+  ok('only http(s) URLs get jars', plan.withCookies.every((u) => /^https?:/.test(u)));
+  ok('non-http urls and overflow are skipped', plan.skipped === urls.length - 32);
+  ok('empty batch plans empty', COOKIES.batchCookiePlan([]).withCookies.length === 0);
+
+  // jarsForBatch: the per-URL map only carries NON-EMPTY jars
+  const perUrl = {};
+  for (let i = 0; i < 40; i++) perUrl['https://x/' + i] = (i === 0) ? [] : [{ name: 't', value: String(i) }];
+  const batchApi = { getAll: (q) => Promise.resolve(perUrl[q.url] || []) };
+  const r = await COOKIES.jarsForBatch(urls, batchApi);
+  ok('batch map covers the first 32 http(s) URLs', r.covered === 32);
+  ok('empty jars are omitted from the map', !('https://x/0' in r.map));
+  ok('map values are serialized jars', r.map['https://x/1'] === 't=1');
+
+  // every add path builds a command carrying cookies (builder level):
+  // context-menu/popup/takeover single adds ride MSG.add's cookies field
+  const addCmd = MSG.add({ url: 'https://x/f.zip', referer: 'https://x/', cookies: 'sid=S1' });
+  ok('single add carries cookies', addCmd.cmd === 'add' && addCmd.cookies === 'sid=S1');
+  // batch adds ride MSG.addBatch's cookiesBy (cap 32)
+  const batchCmd = MSG.addBatch(urls, { 'https://x/1': 't=1' });
+  ok('batch add carries the per-URL cookies map', batchCmd.cmd === 'addBatch' && batchCmd.cookiesBy['https://x/1'] === 't=1');
+  ok('batch add without jars keeps today\'s shape', !('cookiesBy' in MSG.addBatch(['u1'])));
+  ok('pattern batch keeps today\'s shape', !('cookiesBy' in MSG.addBatch('https://x/p[1:2].jpg')));
+
+  // no-cookie-leak (the secrecy condition): no jar substring reaches a
+  // captured log channel across the module surface
+  const logs = [];
+  const origLog = console.log;
+  const origWarn = console.warn;
+  const origErr = console.error;
+  console.log = (...a) => logs.push(a.join(' '));
+  console.warn = (...a) => logs.push(a.join(' '));
+  console.error = (...a) => logs.push(a.join(' '));
+  const secretApi = { getAll: () => Promise.resolve([{ name: 'SID', value: 'TOPSECRET42' }]) };
+  await COOKIES.withJar({ url: 'https://sec.example/f.zip' }, secretApi);
+  await COOKIES.jarsForBatch(['https://sec.example/f.zip'], secretApi);
+  const batchLeak = MSG.addBatch(['https://sec.example/f.zip'], { 'https://sec.example/f.zip': 'SID=TOPSECRET42' });
+  const leakStrings = JSON.stringify(batchLeak);
+  console.log = origLog;
+  console.warn = origWarn;
+  console.error = origErr;
+  ok('no cookie value reaches any captured log channel',
+    logs.every((l) => l.indexOf('TOPSECRET42') === -1));
+  ok('commands do carry the jar (the leak test would be vacuous otherwise)', leakStrings.indexOf('TOPSECRET42') !== -1);
 }
 
 console.log('\n' + passed + ' assertions passed');

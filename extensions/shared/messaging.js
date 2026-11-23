@@ -29,11 +29,15 @@
     return cmd;
   }
 
-  function addBatch(patternOrUrls) {
+  function addBatch(patternOrUrls, cookiesBy) {
     if (typeof patternOrUrls === 'string') {
       return { cmd: 'addBatch', pattern: patternOrUrls };
     }
-    return { cmd: 'addBatch', urls: patternOrUrls || [] };
+    const cmd = { cmd: 'addBatch', urls: patternOrUrls || [] };
+    // S11-i B5: per-URL cookie jars for explicit URL-list batches
+    // (capped at the first 32 URLs; the host applies them per-URL).
+    if (cookiesBy && typeof cookiesBy === 'object') cmd.cookiesBy = cookiesBy;
+    return cmd;
   }
 
   function addTorrent(magnetOrPath) {
