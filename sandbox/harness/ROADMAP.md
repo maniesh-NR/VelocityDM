@@ -228,14 +228,14 @@ Each stage transition is gated by the adversarial consensus protocol
     promotion gate (the frozen v1.0.0-family release ASSETS keep the
     Compose APK);
     **queue order per owner D3:D + D5:A (`harness/DECISIONS.md`):**
-    promotion-gate preparation first (parity matrices, packaging
-    plan, the owner-verification protocol document), then SSE
-    wiring for the Swift client, then S12-lin2 **gtk-rs/gtk3-rs**
-    (needs GTK3 dev libs on CI), S12-lin3 **Qt (cxx-qt)**, S12-mac2
-    **SwiftUI** — the owner's runtime verification moment stays
-    AFTER wave-2 close + SSE wiring per D5:A (verify a full surface
-    then). Tracked as GitHub issue #16 on the `v1.1.0 - roadmap`
-    milestone.
+    promotion-gate preparation DONE (2026-11-23: parity matrices +
+    packaging plan + owner-verification protocol at
+    `docs/SPECS/S12-PROMOTION-GATES.md`), then SSE wiring for the
+    Swift client, then S12-lin2 **gtk-rs/gtk3-rs** (needs GTK3 dev
+    libs on CI), S12-lin3 **Qt (cxx-qt)**, S12-mac2 **SwiftUI** —
+    the owner's runtime verification moment stays AFTER wave-2 close
+    + SSE wiring per D5:A (verify a full surface then). Tracked as
+    GitHub issue #16 on the `v1.1.0 - roadmap` milestone.
   - **S12-e execution plan (gate 0005 consensus — 5× PROCEED-WITH-
     CONDITIONS, zero BLOCK; conditions folded below):** replace the
     Compose UI with an **Android View-based Material 3** UI (MDC 1.12.0

@@ -940,3 +940,45 @@ session reads this file first, then `ROADMAP.md`.
   at start, Ghidra re-provision per RUNBOOK), S12 promotion-gate
   preparation first in the S12 queue per D3:D/D5:A, S5+ remain PENDING
   until the owner activates them.
+
+## 2026-11-23 (session 13, continued) — S12 promotion-gate PREPARATION delivered (D3:D first-in-queue)
+
+- With S4 closed and the deep-dive session 2 requiring a fresh-session
+  fail-closed start (fingerprint re-verify + Ghidra re-provision —
+  tools/ghidra is a 484K stub again, the known recycle pattern), this
+  session executed the other standing track: the D3:D first-in-queue
+  item — the promotion-gate PREPARATION for S12.
+- **Delivered `docs/SPECS/S12-PROMOTION-GATES.md`** (preparation only —
+  the gates themselves stay five-role-gated at promotion time):
+  - **Parity matrices** grounded in the current sources (verified
+    2026-11-23, not copied from stale gate text): add-path/task-list/
+    settings/MD3/engine-integration per surface. Ground-truth updates
+    vs the 0004-era notes: Slint DOES accept magnet: + local .torrent
+    (grep-verified); Swift accepts magnet: but not local .torrent
+    paths; Android's Kotlin-port engine is http/https-only by design
+    (S8 owns unification) — its settings gaps are measured against the
+    Compose app it replaces, not the desktop surface.
+  - **Packaging plan**: per-surface asset deltas grounded in release.yml's
+    actual composition (verified live: no preview frontend ships in any
+    v1.0.0 asset today) — win32.exe → windows zips, velocitydm-slint →
+    linux tars (already a workspace member; two cp lines), VelocityDM.app
+    → macos zips (needs a NEW macos-latest job — osxcross cannot build
+    Swift), Views APK → the -android release (versionCode/versionName
+    bumps are the gate's own). v* ruleset 27298722 + frozen-release
+    constraints restated per gate 0005.
+  - **Owner-verification protocol (D5:A)**: per-surface runtime
+    checklists (Win32 DPI drag test, Slint musl, Swift daemon-death
+    graceful degrade, Android rotation/process-death, extensions
+    takeover incl. B6 confirmation + B4 reconnect), evidence recorded
+    as issue-#16 comments (the authoritative runtime evidence), fail →
+    issue + gate blocked; honest boundary: the agent has no displays
+    or devices.
+  - **Gap register** (verified current): filename UI absent in
+    Win32/Slint/Swift; Swift local .torrent + stale rows + SSE; Win32
+    Enter/TAB + brush churn; Android release-size delta to record at
+    gate.
+  - **Gate order**: SSE wiring → owner verification moment →
+    per-surface promotions (five-role + packaging in the same stage) →
+    remaining frontends (S12-lin2/lin3/mac2).
+- ROADMAP S12 queue note updated (preparation DONE); issue #16
+  commented with the preparation record.
