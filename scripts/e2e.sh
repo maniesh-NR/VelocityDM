@@ -7,6 +7,9 @@ cd "$(dirname "$0")/.."
 BIN=./target/release/velocitydm
 NMH=./target/release/velocitydm-nmh
 ADDR=127.0.0.1:36991
+# S4 (DHT): the test suite never touches the public DHT — the daemon's DHT
+# bootstrap is off for this harness (lookups no-op without a local mini-DHT).
+export VDM_DHT_BOOTSTRAP=off
 WORK=$(mktemp -d /tmp/vdm-e2e-XXXX)
 FAILS=0
 PASS=0

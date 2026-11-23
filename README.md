@@ -16,7 +16,7 @@ VelocityDM 1.0.0
 | --- | --- |
 | HTTP/HTTPS | segmented transfers (guided work-stealing leases), **persistent connections across segments** (70% fewer handshakes, up to 1.7x faster on WAN RTTs), mirrors with **throughput-weighted selection** and automatic failover, retry with backoff, ETag/Last-Modified resume, checksum verification (MD5/SHA-1/SHA-256) |
 | Video | HLS `.m3u8` (master playlists, variant selection, AES-128-CBC), DASH detection, video sniffing via browser extension |
-| BitTorrent | `.torrent` + `magnet:` (BEP-3/9/10), HTTP trackers, rarest-first piece selection, per-file selection, seeding + built-in tracker (`velocitydm seed`) |
+| BitTorrent | `.torrent` + `magnet:` (BEP-3/9/10), HTTP trackers + **DHT (BEP-5) trackerless magnet resolution**, rarest-first piece selection, per-file selection, seeding + built-in tracker (`velocitydm seed`) |
 | Queue | priorities, max-simultaneous, daily stop-window, start-at scheduling, shutdown/command when the queue drains |
 | Batch | URL patterns like `https://site/pic[001:120].jpg`, page link grabber |
 | Networking | HTTP CONNECT + SOCKS5 proxies (with auth), global + per-download speed limits |

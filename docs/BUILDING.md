@@ -28,7 +28,18 @@ node extensions/tests/run-tests.mjs      # 64 extension assertions
 ./scripts/bench-perf.sh         # A/B perf benchmark (VDM_RTT_MS simulates WAN RTT)
 ```
 
-The integration tests bind ephemeral localhost ports only.
+The integration tests bind ephemeral localhost ports only. The DHT (S4)
+tests use an in-process mini-DHT over loopback UDP — the public DHT is never
+touched by the test suite; `VDM_DHT_BOOTSTRAP=off` keeps the e2e harnesses
+offline as well.
+
+**DHT privacy note (S4):** DHT lookups inherently reveal the info_hash to
+the queried nodes — that is BEP-5's design. Nothing beyond the info_hash,
+our node id, and a UDP port leaves the process (no names, no paths, no
+credentials); announce tokens are never logged. The public BEP-5 routers
+are resolved by DNS at runtime and queried once per download; set
+`VDM_DHT_BOOTSTRAP=off` to disable the DHT bootstrap entirely, or a
+comma-separated `host:port` list to pin custom routers.
 
 **Connection presets note (S11-i B2p):** the `connPreset` option
 (`auto|high|medium|low`, default `auto`) caps the BASE connection count per
