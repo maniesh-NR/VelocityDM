@@ -1,6 +1,7 @@
 //! BitTorrent download orchestration: torrent/magnet resolution, peer
 //! coordination, resume state, progress events.
 
+use crate::bt::dht::Dht;
 use crate::bt::magnet::Magnet;
 use crate::bt::metainfo::Metainfo;
 use crate::bt::peer::{
@@ -44,6 +45,11 @@ pub struct BtOptions {
     pub announce_port: u16,
     pub connect_timeout: Duration,
     pub io_timeout: Duration,
+    /// S4 (DHT): bootstrap override. `None` = the public BEP-5 routers
+    /// (resolved lazily at runtime); `Some(addrs)` pins a list (the local
+    /// mini-DHT e2e injects its loopback node). Engine-internal — not part
+    /// of any RPC schema.
+    pub dht_bootstrap: Option<Vec<std::net::SocketAddr>>,
     /// External cancel/pause flag.
     pub stop: Option<Arc<AtomicBool>>,
     /// Optional shared rate limiter.
@@ -60,6 +66,7 @@ impl Default for BtOptions {
             announce_port: 0,
             connect_timeout: Duration::from_secs(10),
             io_timeout: Duration::from_secs(30),
+            dht_bootstrap: None,
             stop: None,
             rate_limit: None,
         }
@@ -117,6 +124,23 @@ pub fn download_blocking(
     opts: &BtOptions,
     on_event: &mut dyn FnMut(BtEvent),
 ) -> Result<DownloadedTorrent> {
+    // S4 (DHT): one DHT node per magnet download, created lazily here and
+    // dropped with the download — torrent-file tasks and non-BT engines
+    // never bind a DHT socket (the idle no-op promise). A start failure
+    // degrades to tracker-only mode instead of failing the task.
+    let dht = match &spec {
+        BtSpec::Magnet(_) => {
+            match Dht::start_with_bootstrap(&opts.out_dir, "0.0.0.0:0", opts.dht_bootstrap.clone())
+            {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    eprintln!("dht: start failed ({}) — continuing without DHT", e);
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
     // 1) resolve metainfo
     let (meta, trackers): (Arc<Metainfo>, Vec<String>) = match spec {
         BtSpec::TorrentFile(p) => {
@@ -132,13 +156,13 @@ pub fn download_blocking(
             (Arc::new(m), t)
         }
         BtSpec::Magnet(mag) => {
-            let info_bytes = fetch_metadata(&mag, opts)?;
+            let info_bytes = fetch_metadata(&mag, opts, dht.as_ref())?;
             let m = Metainfo::from_info_bytes(info_bytes, &mag.trackers)?;
             (Arc::new(m), mag.trackers.clone())
         }
     };
     on_event(BtEvent::Metadata(meta.clone()));
-    if trackers.is_empty() {
+    if trackers.is_empty() && dht.is_none() {
         return Err(Error::Torrent(
             "no HTTP trackers available (UDP/DHT not supported)".into(),
         ));
@@ -248,8 +272,29 @@ pub fn download_blocking(
         left,
         TrackerEvent::Started,
     );
+    // S4: the DHT peer source — parallel when trackers resolve, the sole
+    // source for a trackerless magnet (same peer set, dedup via `attempted`).
+    let mut dht_thread: Option<std::thread::JoinHandle<Vec<std::net::SocketAddr>>> =
+        dht.as_ref().map(|d| {
+            let dht = d.clone();
+            let info_hash = meta.info_hash;
+            let announce_port = opts.announce_port;
+            std::thread::spawn(move || {
+                dht.lookup_peers(info_hash, announce_port, Duration::from_secs(30))
+            })
+        });
+    let mut initial_peers = initial_peers;
     if initial_peers.is_empty() {
-        let msg = if failures.is_empty() {
+        // trackerless (or all announces failed): the DHT lookup is the peer
+        // source — wait for it, bounded by its own budget
+        if let Some(handle) = dht_thread.take() {
+            initial_peers = handle.join().unwrap_or_default();
+        }
+    }
+    if initial_peers.is_empty() {
+        let msg = if trackers.is_empty() {
+            "DHT lookup returned no peers".to_string()
+        } else if failures.is_empty() {
             "tracker returned no peers".to_string()
         } else {
             failures.join("; ")
@@ -340,6 +385,24 @@ pub fn download_blocking(
                 {
                     attempted.insert(addr);
                     spawn_peer(shared.clone(), meta.clone(), addr, peer_id, opts);
+                }
+            }
+        }
+        // S4: consume the parallel DHT lookup once it lands (dedup into the
+        // same spawn discipline as the tracker re-announces)
+        if dht_thread
+            .as_ref()
+            .map(|h| h.is_finished())
+            .unwrap_or(false)
+        {
+            if let Some(handle) = dht_thread.take() {
+                for addr in handle.join().unwrap_or_default() {
+                    if !attempted.contains(&addr)
+                        && shared.peers.load(Ordering::Relaxed) < opts.max_peers as u32
+                    {
+                        attempted.insert(addr);
+                        spawn_peer(shared.clone(), meta.clone(), addr, peer_id, opts);
+                    }
                 }
             }
         }
@@ -727,7 +790,7 @@ fn write_piece(shared: &Arc<Shared>, meta: &Arc<Metainfo>, index: u32, data: &[u
 /// request metadata while downloading).
 const OUR_UT_METADATA: u8 = 1;
 
-fn fetch_metadata(magnet: &Magnet, opts: &BtOptions) -> Result<Vec<u8>> {
+fn fetch_metadata(magnet: &Magnet, opts: &BtOptions, dht: Option<&Dht>) -> Result<Vec<u8>> {
     let peer_id = crate::util::new_peer_id();
     let (peers, _ok, failures) = announce_all(
         &magnet.trackers,
@@ -739,10 +802,22 @@ fn fetch_metadata(magnet: &Magnet, opts: &BtOptions) -> Result<Vec<u8>> {
         0,
         TrackerEvent::Started,
     );
-    let candidates: Vec<std::net::SocketAddr> = peers.into_iter().take(8).collect();
+    let mut candidates: Vec<std::net::SocketAddr> = peers.into_iter().take(8).collect();
+    if candidates.is_empty() {
+        // S4: trackerless magnet or all announces failed — the DHT lookup
+        // supplies the metadata candidates
+        if let Some(dht) = dht {
+            let found = dht.lookup_peers(
+                magnet.info_hash,
+                opts.announce_port,
+                Duration::from_secs(30),
+            );
+            candidates = found.into_iter().take(8).collect();
+        }
+    }
     if candidates.is_empty() {
         return Err(Error::Torrent(format!(
-            "magnet: no peers from trackers{}",
+            "magnet: no peers from trackers or DHT{}",
             if failures.is_empty() {
                 String::new()
             } else {

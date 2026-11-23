@@ -124,6 +124,9 @@ fn magnet_download_e2e() {
             max_peers: 4,
             connect_timeout: std::time::Duration::from_secs(5),
             io_timeout: std::time::Duration::from_secs(10),
+            // S4: no DHT bootstrap in this tracker-backed test — the public
+            // network is never touched by the suite
+            dht_bootstrap: Some(Vec::new()),
             ..Default::default()
         },
         &mut |evt: BtEvent| {

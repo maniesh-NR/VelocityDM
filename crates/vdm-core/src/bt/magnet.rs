@@ -46,11 +46,6 @@ impl Magnet {
         }
         let info_hash =
             info_hash.ok_or_else(|| Error::Torrent("magnet has no xt info hash".into()))?;
-        if trackers.is_empty() {
-            return Err(Error::Torrent(
-                "magnet has no trackers (DHT is not enabled; add &tr=...)".into(),
-            ));
-        }
         Ok(Magnet {
             info_hash,
             name,
@@ -226,7 +221,16 @@ mod tests {
         assert!(Magnet::parse("http://x").is_err());
         assert!(Magnet::parse("magnet:?dn=x").is_err());
         assert!(Magnet::parse(&format!("magnet:?xt=urn:btih:{}", "z".repeat(40))).is_err());
-        assert!(Magnet::parse(&format!("magnet:?xt=urn:btih:{}", HASH_HEX)).is_err()); // no trackers
         assert!(Magnet::parse("magnet:?xt=urn:sha1:abc&tr=http://t/").is_err());
+    }
+
+    #[test]
+    fn trackerless_parse_now_valid() {
+        // S4 (DHT): a trackerless magnet is valid — the DHT resolves it
+        let m = Magnet::parse(&format!("magnet:?xt=urn:btih:{}", HASH_HEX)).unwrap();
+        assert!(m.trackers.is_empty());
+        let m2 = Magnet::parse(&format!("magnet:?xt=urn:btih:{}&dn=Named", HASH_HEX)).unwrap();
+        assert_eq!(m2.name.as_deref(), Some("Named"));
+        assert_eq!(m2.info_hash, m.info_hash);
     }
 }

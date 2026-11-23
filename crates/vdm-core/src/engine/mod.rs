@@ -20,10 +20,28 @@ pub use crate::engine::task::HttpOptions;
 use crate::token_bucket::TokenBucket;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// S4 (DHT) bootstrap override from the environment for daemon processes.
+/// Unset = the public BEP-5 routers (production default); `off` = no
+/// bootstrap (lookups no-op — the e2e harness sets this so the test suite
+/// never touches the public DHT); a comma-separated `host:port` list pins
+/// custom routers. Engine-internal — not part of any RPC schema.
+fn dht_bootstrap_from_env() -> Option<Vec<SocketAddr>> {
+    match std::env::var("VDM_DHT_BOOTSTRAP") {
+        Err(_) => None,
+        Ok(v) if v.trim().eq_ignore_ascii_case("off") => Some(Vec::new()),
+        Ok(list) => Some(
+            list.split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect(),
+        ),
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineConfig {
@@ -441,6 +459,7 @@ impl Engine {
                 announce_port: 0,
                 connect_timeout: Duration::from_secs(10),
                 io_timeout: Duration::from_secs(30),
+                dht_bootstrap: dht_bootstrap_from_env(),
                 stop: Some(control.stop_flag()),
                 rate_limit: if limit_bps > 0 {
                     Some(Arc::new(TokenBucket::new(limit_bps, 256 * 1024)))
