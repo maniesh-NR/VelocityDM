@@ -14,6 +14,7 @@ const FILTERS = require('../shared/filters.js');
 const MSG = require('../shared/messaging.js');
 const STATE = require('../shared/state.js');
 const MD3 = require('../shared/md3.js');
+const NMHOST = require('../shared/nmhost.js');
 
 let passed = 0;
 function ok(name, cond) {
@@ -162,6 +163,243 @@ console.log('md3 (Material You)');
     /^#[0-9a-fA-F]{6}$/.test(MD3.tonal(258, 120, 40)) && /^#[0-9a-fA-F]{6}$/.test(MD3.tonal(60, 120, 80)));
 }
 
+
+console.log('nmhost (B4 — NM host resilience)');
+{
+  // pure: backoff math (500 ms doubling to the 8 s cap; 30 s reset rule)
+  ok('backoff doubles', NMHOST.nextBackoffMs(500) === 1000 &&
+    NMHOST.nextBackoffMs(1000) === 2000 &&
+    NMHOST.nextBackoffMs(4000) === 8000);
+  ok('backoff caps at 8 s', NMHOST.nextBackoffMs(8000) === 8000);
+  ok('backoff from scratch starts at 500 ms', NMHOST.nextBackoffMs(0) === 500 && NMHOST.nextBackoffMs(null) === 500);
+  ok('stable reset after 30 s only', NMHOST.shouldResetBackoff(30000) && !NMHOST.shouldResetBackoff(29999) && !NMHOST.shouldResetBackoff(null));
+
+  // pure: host-absence matcher
+  ok('absence: not found', NMHOST.isHostAbsence('Native host not found.'));
+  ok('absence: not installed', NMHOST.isHostAbsence('The specified native host is not installed.'));
+  ok('absence: access denied', NMHOST.isHostAbsence('Access is denied.'));
+  ok('absence: host exited', NMHOST.isHostAbsence('Native host has exited.'));
+  ok('transient errors are not absence', !NMHOST.isHostAbsence('connection reset by peer') &&
+    !NMHOST.isHostAbsence('') && !NMHOST.isHostAbsence(null) && !NMHOST.isHostAbsence(undefined));
+  ok('absence match is case-insensitive', NMHOST.isHostAbsence('NATIVE HOST HAS EXITED'));
+
+  // pure: bounded queue (cap 32, drop-oldest)
+  {
+    const q0 = [];
+    for (let i = 0; i < NMHOST.QUEUE_CAP; i++) q0.push({ command: { n: i }, requeued: false });
+    const res = NMHOST.queuePush(q0, { command: { n: 99 }, requeued: false });
+    ok('queue cap is 32', NMHOST.QUEUE_CAP === 32 && res.queue.length === 32);
+    ok('drop-oldest keeps the newest', res.dropped.command.n === 0 && res.queue[31].command.n === 99);
+  }
+
+  // pure: episode budget window (10 minutes)
+  ok('budget: inside / outside / unset', NMHOST.withinBudget(1000, 1000 + 599999) &&
+    !NMHOST.withinBudget(1000, 1000 + 600000) && NMHOST.withinBudget(null, 999999));
+}
+
+// integration-style with a mock port + fake clock -------------------------
+function fakeClock() {
+  let ms = 0;
+  const pending = [];
+  return {
+    now: () => ms,
+    setTimeout(fn, d) { pending.push({ fn, at: ms + d }); return pending.length - 1; },
+    clearTimeout(h) { if (pending[h]) pending[h].fn = null; },
+    advance(d) {
+      ms += d;
+      for (;;) {
+        let idx = -1;
+        for (let i = 0; i < pending.length; i++) {
+          if (pending[i].fn && pending[i].at <= ms) { idx = i; break; }
+        }
+        if (idx === -1) break;
+        const fn = pending[idx].fn;
+        pending[idx].fn = null;
+        fn();
+      }
+    },
+  };
+}
+
+function mockPort() {
+  const posted = [];
+  const msgL = [];
+  const discL = [];
+  return {
+    posted,
+    postMessage(cmd) { posted.push(cmd); },
+    disconnect() {},
+    onMessage: { addListener(fn) { msgL.push(fn); } },
+    onDisconnect: { addListener(fn) { discL.push(fn); } },
+    _reply(r) { msgL.slice().forEach((fn) => fn(r)); },
+    _drop(err) { discL.slice().forEach((fn) => fn(err)); },
+  };
+}
+
+function makeLink(over) {
+  const clk = fakeClock();
+  const env = {
+    hostName: 'com.velocitydm.nmh',
+    now: clk.now,
+    setTimeout: clk.setTimeout,
+    clearTimeout: clk.clearTimeout,
+  };
+  Object.assign(env, over);
+  const link = NMHOST.createLink(env);
+  return { link, clk };
+}
+
+{
+  // first send fails (transient drop) -> re-queued -> delivered after reconnect
+  const P1 = mockPort();
+  let factory = () => P1;
+  let connects = 0;
+  const { link, clk } = makeLink({
+    connectNative: () => { connects++; return factory(); },
+  });
+  const p = link.send({ cmd: 'ping' });
+  ok('connected after the first send', link.state() === 'connected' && connects === 1 && P1.posted.length === 1);
+  P1._drop('connection reset by peer'); // in-flight failure, transient
+  ok('backoff state after a transient drop', link.state() === 'backoff');
+  ok('first retry waits 500 ms', link._nextDelayMs() === 500);
+  const P2 = mockPort();
+  factory = () => P2;
+  clk.advance(500);
+  ok('reconnect attempted after the backoff', connects === 2 && link.state() === 'connected');
+  ok('command re-queued and delivered after reconnect', P2.posted.length === 1 && P2.posted[0].cmd === 'ping');
+  P2._reply({ ok: true, pong: true });
+  const r = await p;
+  ok('reply resolved after the reconnect', r.ok === true && r.pong === true);
+}
+
+{
+  // re-queue exactly once: a second transient failure rejects the command
+  const P1 = mockPort();
+  let factory = () => P1;
+  const { link, clk } = makeLink({
+    connectNative: () => factory(),
+  });
+  const p = link.send({ cmd: 'status' });
+  P1._drop('connection reset'); // failure #1: re-queued once
+  const P2 = mockPort();
+  factory = () => P2;
+  clk.advance(500);
+  P2._drop('connection reset'); // failure #2 while in flight again: rejected
+  const r = await p.catch((e) => e);
+  ok('second failure rejects the command', r && r.ok === false && r.error === 'engine unreachable');
+}
+
+{
+  // stable >= 30 s closes the episode: the backoff restarts at 500 ms
+  const P1 = mockPort();
+  let factory = () => P1;
+  const { link, clk } = makeLink({ connectNative: () => factory() } );
+  link.send({ cmd: 'ping' }).catch(() => {});
+  P1._drop('connection reset');
+  const P2 = mockPort();
+  factory = () => P2;
+  clk.advance(500); // reconnect to P2
+  P2._reply({ ok: true }); // reply resolves the first command
+  ok('connected and idle after the reconnect', link.state() === 'connected' && link._nextDelayMs() === null);
+  // destabilize once to raise the backoff (short-lived stability keeps it)
+  P2._drop('connection reset');
+  ok('short-lived stability keeps the backoff growing', link.state() === 'backoff' && link._nextDelayMs() === 1000);
+  const P3 = mockPort();
+  factory = () => P3;
+  clk.advance(1000); // the retry tick reconnects to P3
+  clk.advance(31000); // 31 s of stability on P3
+  P3._drop('connection reset');
+  ok('30 s of stability resets the backoff to 500 ms', link.state() === 'backoff' && link._nextDelayMs() === 500);
+}
+
+{
+  // host absence: graceful degradation — fail fast, no retry churn
+  const P1 = mockPort();
+  const { link } = makeLink({ connectNative: () => P1 });
+  const p = link.send({ cmd: 'add', url: 'https://x/f.zip' });
+  P1._drop('Native host not found.');
+  ok('absence state entered', link.state() === 'absent');
+  ok('no retry churn while absent', link._nextDelayMs() === null);
+  const r = await p.catch((e) => e);
+  ok('in-flight command failed fast (decline path preserved)', r && r.ok === false && r.error === 'engine unreachable');
+  // a fresh link with the host present delivers (the re-probe recovers)
+  let lastPort = null;
+  const { link: link2 } = makeLink({
+    connectNative: () => { lastPort = mockPort(); return lastPort; },
+  });
+  const q = link2.send({ cmd: 'ping' });
+  ok('re-probe connects when the host appears', link2.state() === 'connected' && lastPort && lastPort.posted.length === 1);
+  lastPort._reply({ ok: true, pong: true });
+  const r2 = await q;
+  ok('recovered link delivers the command', r2 && r2.ok === true && r2.pong === true);
+}
+
+{
+  // episode budget: repeated refusals stop after 10 minutes (dead state)
+  const P1 = mockPort();
+  let factory = () => P1;
+  let refused = false;
+  const { link, clk } = makeLink({
+    connectNative: () => (refused ? null : P1),
+  });
+  const p0 = link.send({ cmd: 'ping' }).catch((e) => e);
+  P1._drop('connection reset');
+  refused = true; // every reconnect attempt refuses from now on
+  let guard = 0;
+  while (link.state() !== 'dead' && guard < 500) {
+    clk.advance(9000); // longer than any single backoff wait
+    guard++;
+  }
+  ok('reconnect attempts stop after the 10-minute budget', link.state() === 'dead');
+  const r0 = await p0;
+  ok('the queued command is rejected when the budget expires', r0 && r0.ok === false && r0.error === 'engine unreachable');
+  const r = await link.send({ cmd: 'ping' }).catch((e) => e);
+  ok('dead link rejects new commands immediately', r && r.ok === false && r.error === 'engine unreachable');
+}
+
+{
+  // one-shot fallback: delivery without a port capability
+  const sent = [];
+  const { link } = makeLink({
+    sendNativeMessage: (name, command, cb) => { sent.push({ name, command }); cb({ ok: true, pong: true }); },
+  });
+  const r = await link.send({ cmd: 'ping' });
+  ok('one-shot fallback delivers', r.ok === true && r.pong === true && sent.length === 1 &&
+    sent[0].name === 'com.velocitydm.nmh');
+  ok('one-shot link reports connected', link.state() === 'connected');
+}
+
+{
+  // one-shot fallback with host absence: fail fast + decline preserved
+  const sent = [];
+  const { link } = makeLink({
+    sendNativeMessage: (name, command, cb) => { sent.push(command); cb(undefined); },
+  });
+  globalThis.chrome = { runtime: { lastError: { message: 'Native host not found.' } } };
+  const p = link.send({ cmd: 'add', url: 'https://x/f.zip' });
+  const r = await p.catch((e) => e);
+  ok('one-shot absence rejects the command', r && r.ok === false && r.error === 'engine unreachable');
+  ok('one-shot absence degrades to absent state', link.state() === 'absent');
+  delete globalThis.chrome;
+  ok('command payload was sent to the one-shot API', sent.length === 1 && sent[0].cmd === 'add');
+}
+
+{
+  // secrecy precondition for B5: the log channel never carries commands
+  const notes = [];
+  const P1 = mockPort();
+  const { link } = makeLink({
+    connectNative: () => P1,
+    log: (m) => notes.push(m),
+  });
+  // fill the pipeline: one in flight + a full queue -> the 34th drops oldest
+  for (let i = 0; i < NMHOST.QUEUE_CAP + 2; i++) {
+    link.send({ cmd: 'add', url: 'https://x/f.zip', cookies: 'SESSIONCOOKIE' + i + '=sekrit' + i }).catch(() => {});
+  }
+  ok('queue-full note fired once', notes.length === 1);
+  ok('log channel carries static strings only',
+    notes.every((n) => n.indexOf('sekrit') === -1 && n.indexOf('SESSIONCOOKIE') === -1));
+}
 
 console.log('\n' + passed + ' assertions passed');
 if (process.exitCode) console.error('FAILURES PRESENT');

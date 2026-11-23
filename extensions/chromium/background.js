@@ -12,16 +12,40 @@ importScripts(
   'shared/links.js',
   'shared/filters.js',
   'shared/messaging.js',
+  'shared/nmhost.js',
   'shared/state.js'
 );
 
 var DETECTOR = self.VDMDetector;
 var FILTERS = self.VDMFilters;
 var MSG = self.VDMMessaging;
+var NMHOSTLIB = self.VDMNMHost;
 
 var NATIVE_HOST = 'com.velocitydm.nmh';
 var VIDEOS_KEY = 'vdm_recent_videos';
 var VIDEO_CAP = 50;
+
+// The native-host link (S11-i B4): persistent port preferred, one-shot
+// fallback; bounded backoff reconnect; a bounded command queue. The link
+// is created once per service-worker lifetime; a connected port keeps the
+// worker alive on current Chrome.
+var HOST = NMHOSTLIB.createLink({
+  hostName: NATIVE_HOST,
+  connectNative: (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.connectNative)
+    ? function (name) { return chrome.runtime.connectNative(name); }
+    : undefined,
+  sendNativeMessage: function (name, command, cb) {
+    chrome.runtime.sendNativeMessage(name, command, cb);
+  },
+  log: function (m) { console.warn('VelocityDM:', m); },
+});
+
+/** Send through the link; always resolves to a normalized reply object. */
+function hostSend(command) {
+  return HOST.send(command).then(function (r) { return r; }, function (e) {
+    return (e && typeof e === 'object' && e.error) ? e : { ok: false, error: 'engine unreachable' };
+  });
+}
 
 // ---------------------------------------------------------------------------
 // settings
@@ -115,14 +139,13 @@ async function handOffDownload(item) {
     cookies: cookies,
   });
 
-  chrome.runtime.sendNativeMessage(NATIVE_HOST, command, function (reply) {
-    const normalized = MSG.normalize(reply);
+  hostSend(command).then(function (normalized) {
     if (normalized.ok) {
       // VelocityDM owns it now: drop the browser download
       chrome.downloads.cancel(item.id).catch(function () {});
       chrome.downloads.erase({ id: item.id }).catch(function () {});
     } else {
-      // host unreachable: let the browser finish the download
+      // host unreachable or declined: let the browser finish the download
       chrome.downloads.resume(item.id).catch(function () {});
     }
   });
@@ -192,8 +215,7 @@ chrome.contextMenus.onClicked.addListener(function (info, tab) {
 });
 
 function sendNative(command) {
-  chrome.runtime.sendNativeMessage(NATIVE_HOST, command, function (reply) {
-    const normalized = MSG.normalize(reply);
+  hostSend(command).then(function (normalized) {
     if (!normalized.ok) {
       console.warn('VelocityDM host:', normalized.error);
     }
@@ -222,8 +244,8 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         sendResponse({ ok: true });
         break;
       case 'nativePing':
-        chrome.runtime.sendNativeMessage(NATIVE_HOST, MSG.ping(), function (reply) {
-          sendResponse(MSG.normalize(reply));
+        hostSend(MSG.ping()).then(function (normalized) {
+          sendResponse(normalized);
         });
         break;
       case 'addDownload':
@@ -239,8 +261,8 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         sendResponse({ ok: true });
         break;
       case 'getDownloads':
-        chrome.runtime.sendNativeMessage(NATIVE_HOST, MSG.status(), function (reply) {
-          sendResponse(MSG.normalize(reply));
+        hostSend(MSG.status()).then(function (normalized) {
+          sendResponse(normalized);
         });
         break;
       default:
