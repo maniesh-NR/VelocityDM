@@ -220,19 +220,29 @@ pub fn percent_decode_bytes(s: &str) -> Vec<u8> {
     out
 }
 
-/// Random bytes (peer ids, boundary strings). Tries the OS entropy source,
-/// falls back to a time/pid-seeded xorshift.
+/// Random bytes (peer ids, boundary strings, DHT secrets). Tries the OS
+/// entropy source, falls back to a clock+pid+counter-seeded xorshift
+/// (no `/dev/urandom` on Windows).
 pub fn random_bytes(n: usize) -> Vec<u8> {
     use std::io::Read;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static CALLS: AtomicU64 = AtomicU64::new(0);
     let mut buf = vec![0u8; n];
     if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
         if f.read_exact(&mut buf).is_ok() {
             return buf;
         }
     }
-    // fallback: xorshift seeded from clock + pid
+    // fallback: xorshift seeded from clock + pid + a per-process call
+    // counter. The counter is load-bearing: without it, two calls inside
+    // the same millisecond that recycle the same heap block address (the
+    // Windows allocator re-serves same-size blocks) draw IDENTICAL
+    // streams — observed as colliding DHT token secrets on windows-latest
+    // CI (2026-11-23, the token_rotation_single_use failure).
+    let ctr = CALLS.fetch_add(1, Ordering::Relaxed);
     let mut state = now_ms()
         ^ (std::process::id() as u64).wrapping_mul(0x9E3779B97F4A7C15)
+        ^ ctr.wrapping_mul(0x9E3779B97F4A7C15).rotate_left(32)
         ^ (&buf as *const _ as u64);
     for b in buf.iter_mut() {
         state ^= state << 13;
@@ -315,5 +325,15 @@ mod tests {
         let id = new_peer_id();
         assert_eq!(&id[..8], b"-VD1000-");
         assert!(id[8..].iter().any(|&b| b != 0));
+    }
+
+    #[test]
+    fn random_bytes_rapid_calls_differ() {
+        // Fallback regression (Windows): same-millisecond calls that
+        // recycled the same heap block address used to draw identical
+        // streams. The call counter must keep rapid calls distinct.
+        let a = random_bytes(16);
+        let b = random_bytes(16);
+        assert_ne!(a, b);
     }
 }
