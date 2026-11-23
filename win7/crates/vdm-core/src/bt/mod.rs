@@ -8,11 +8,14 @@
 //! - [`tracker`]: HTTP tracker client + in-process tracker server.
 //! - [`peer`]: peer wire protocol (BEP-3) + extension handshake (BEP-10) +
 //!   ut_metadata (BEP-9).
+//! - [`dht`]: DHT (BEP-5) trackerless peer discovery — KRPC, routing
+//!   table, announce tokens, iterative lookup.
 //! - [`seeder`]: seeding server (also used as the test harness and by
 //!   `velocitydm seed`).
 //! - [`engine`]: download orchestration (torrent & magnet), resume, events.
 
 pub mod bencode;
+pub mod dht;
 pub mod engine;
 pub mod magnet;
 pub mod metainfo;
