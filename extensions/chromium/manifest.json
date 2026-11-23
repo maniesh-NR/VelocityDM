@@ -45,6 +45,9 @@
         "<all_urls>"
       ],
       "js": [
+        "shared/detector.js",
+        "shared/filters.js",
+        "shared/links.js",
         "content.js"
       ],
       "run_at": "document_idle"

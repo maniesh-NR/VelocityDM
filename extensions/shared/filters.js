@@ -24,6 +24,9 @@
     confirmTakeover: false,
     // NMH application name
     nativeHostName: 'com.velocitydm.nmh',
+    // S11-i B7: data-driven site packs (selectors + urlPatterns);
+    // OFF by default — none ship enabled
+    sitePacks: [],
   };
 
   function mergeSettings(stored) {

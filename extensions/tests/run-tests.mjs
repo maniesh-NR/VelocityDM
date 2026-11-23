@@ -584,5 +584,163 @@ console.log('takeover (B6 — takeover UX)');
   ok('pause failure tolerated (decline still resumes)', r4 === 'declined' && d4.calls.resumed.join() === '7');
 }
 
+console.log('detector B7 (DOM detection hardening)');
+{
+  function fakeEl(over) {
+    return Object.assign({
+      isConnected: true,
+      readyState: 2,
+      videoWidth: 0,
+      networkState: 0,
+      currentSrc: 'https://x/v.mp4',
+      src: '',
+      title: '',
+      getBoundingClientRect() { return { width: 320, height: 180 }; },
+      parentElement: null,
+    }, over);
+  }
+
+  // geometry gating table (thresholds ours: 200x120 / 640x360)
+  ok('geometry: 320x180 passes', DET.passesGeometry(fakeEl({})) === true);
+  ok('geometry: 200x120 boundary passes', DET.passesGeometry(fakeEl({ getBoundingClientRect: () => ({ width: 200, height: 120 }) })) === true);
+  ok('geometry: 199x120 fails (width gate)', DET.passesGeometry(fakeEl({ getBoundingClientRect: () => ({ width: 199, height: 120 }) })) === false);
+  ok('geometry: 150x90 fails', DET.passesGeometry(fakeEl({ getBoundingClientRect: () => ({ width: 150, height: 90 }) })) === false);
+  ok('geometry: clipped to zero fails', DET.passesGeometry(fakeEl({ getBoundingClientRect: () => ({ width: 0, height: 0 }) })) === false);
+  ok('geometry: detached element fails', DET.passesGeometry(fakeEl({ isConnected: false })) === false);
+  ok('prominence: 640x360 yes, 639x360 no',
+    DET.isProminent(fakeEl({ getBoundingClientRect: () => ({ width: 640, height: 360 }) })) === true &&
+    DET.isProminent(fakeEl({ getBoundingClientRect: () => ({ width: 639, height: 360 }) })) === false);
+
+  // state gating table
+  ok('state: readyState>=2 passes', DET.passesState(fakeEl({ readyState: 2 })) === true);
+  ok('state: readyState 1 without dimensions fails',
+    DET.passesState(fakeEl({ readyState: 1, videoWidth: 0, networkState: 2 })) === false);
+  ok('state: loading with known dimensions passes',
+    DET.passesState(fakeEl({ readyState: 0, videoWidth: 1280, networkState: 2 })) === true);
+  ok('state: readyState dominates the loading rule',
+    DET.passesState(fakeEl({ readyState: 4, videoWidth: 0, networkState: 0 })) === true);
+
+  // overlay exclusion (display/visibility on the element chain)
+  ok('overlay: display:none on the element excludes',
+    DET.chainVisible(fakeEl({}), () => ({ display: 'none' })) === false);
+  ok('overlay: visibility:hidden on an ancestor excludes',
+    DET.chainVisible(fakeEl({ parentElement: fakeEl({}) }), (n) =>
+      (n.parentElement ? { visibility: 'hidden' } : { display: 'block' })) === false);
+  ok('overlay: clean chain passes',
+    DET.chainVisible(fakeEl({ parentElement: fakeEl({}) }), () => ({ display: 'block' })) === true);
+
+  // combined candidate
+  ok('candidate: gates combine and carry the source',
+    (() => { const c = DET.domCandidate(fakeEl({}), () => ({ display: 'block' })); return c.ok && c.url === 'https://x/v.mp4'; })());
+  ok('candidate: hidden element rejected',
+    DET.domCandidate(fakeEl({}), () => ({ visibility: 'hidden' })).ok === false);
+  ok('candidate: prominence flag carries',
+    DET.domCandidate(fakeEl({ getBoundingClientRect: () => ({ width: 640, height: 360 }) }), () => ({})).prominent === true);
+  ok('candidate: <source> child fallback',
+    (() => { const c = DET.domCandidate(fakeEl({ currentSrc: '', src: '', querySelector: () => ({ src: 'https://x/s.m3u8' }) }), () => ({})); return c.ok && c.url === 'https://x/s.m3u8'; })());
+
+  // inline-script scan: first 128 KiB only
+  {
+    const beyond = 'x'.repeat(DET.INLINE_SCAN_CAP) + ' https://x/late.mp4 ';
+    ok('inline scan: URL beyond the 128 KiB cap is not matched',
+      DET.scanInlineScript(beyond).indexOf('https://x/late.mp4') === -1);
+    const within = ' https://x/early.mp4 ' + 'y'.repeat(DET.INLINE_SCAN_CAP);
+    ok('inline scan: URL inside the cap is matched',
+      DET.scanInlineScript(within).indexOf('https://x/early.mp4') !== -1);
+    ok('inline scan: non-media URLs are not matched',
+      DET.scanInlineScript('https://x/page.html https://x/a.mp4').join() === 'https://x/a.mp4' &&
+      DET.scanInlineScript('https://x/page.html').length === 0);
+    ok('inline scan: .mp4x is not a media URL (letter boundary)',
+      DET.scanInlineScript('https://x/a.mp4x').length === 0);
+    ok('inline scan: same URL deduped',
+      DET.scanInlineScript('https://x/a.mp4 https://x/a.mp4').length === 1);
+    ok('inline scan: query strings tolerated',
+      DET.scanInlineScript('https://x/a.mp4?sig=1').join() === 'https://x/a.mp4');
+    ok('inline scan: empty/null tolerated',
+      DET.scanInlineScript('').length === 0 && DET.scanInlineScript(null).length === 0);
+  }
+
+  // site packs: data-driven, OFF by default
+  ok('packs: default settings load none', DET.loadPacks(FILTERS.mergeSettings({})).length === 0);
+  ok('packs: absent settings load none', DET.loadPacks(null).length === 0);
+  ok('packs: a real pack loads', DET.loadPacks({ sitePacks: [{ selectors: ['.x'], urlPatterns: ['cdn.example'] }] }).length === 1);
+  ok('packs: junk entries filtered', DET.loadPacks({ sitePacks: [null, {}, 7, 'x'] }).length === 0);
+  ok('pack match: url pattern substring', DET.packMatches({ urlPatterns: ['cdn.example'] }, 'https://cdn.example/v.mp4') === true);
+  ok('pack match: non-matching url', DET.packMatches({ urlPatterns: ['cdn.example'] }, 'https://other/v.mp4') === false);
+  ok('pack match: pattern-less pack never matches', DET.packMatches({}, 'https://x/') === false && DET.packMatches(null, 'https://x/') === false);
+
+  // bounded detection window: observers, debounce, teardown across two windows
+  function fakeObsCtor(instances) {
+    return function (cb) {
+      const inst = { cb, observed: [], disconnected: false };
+      inst.observe = function (t) { inst.observed.push(t); };
+      inst.disconnect = function () { inst.disconnected = true; };
+      instances.push(inst);
+      return inst;
+    };
+  }
+  {
+    const moInst = [];
+    const roInst = [];
+    const changes = [];
+    const clk2 = fakeClock();
+    const mk = () => DET.detectionWindow({
+      MutationObserver: fakeObsCtor(moInst),
+      ResizeObserver: fakeObsCtor(roInst),
+      setTimeout: clk2.setTimeout,
+      clearTimeout: clk2.clearTimeout,
+      gather: () => [{ url: 'https://x/a.mp4' }],
+      onChange: (vs) => changes.push(vs),
+    });
+    const w = mk();
+    w.open();
+    ok('window: both observers armed', moInst.length === 1 && roInst.length === 1 && w.isOpen());
+    const videoRec = { addedNodes: [{ tagName: 'VIDEO' }], removedNodes: [] };
+    const divRec = { addedNodes: [{ tagName: 'DIV' }], removedNodes: [] };
+    moInst[0].cb([videoRec]);
+    moInst[0].cb([videoRec]); // rapid double mutation
+    clk2.advance(DET.OBSERVER_DEBOUNCE_MS);
+    ok('window: media mutation refreshes (debounced to one)', changes.length === 1);
+    moInst[0].cb([divRec]);
+    clk2.advance(DET.OBSERVER_DEBOUNCE_MS);
+    ok('window: non-media mutation ignored', changes.length === 1);
+    w.close();
+    ok('window: full teardown (both disconnected)', moInst[0].disconnected && roInst[0].disconnected && !w.isOpen());
+    // a pending debounce is cancelled by close (no post-close refresh)
+    const w2 = mk();
+    w2.open();
+    moInst[1].cb([videoRec]);
+    w2.close();
+    clk2.advance(DET.OBSERVER_DEBOUNCE_MS * 4);
+    ok('window: close cancels the pending refresh', changes.length === 1);
+    ok('window: second window arms fresh observers (no leak)',
+      moInst.length === 2 && moInst[1] !== moInst[0] && moInst[0].disconnected === true);
+    moInst[1].cb([videoRec]);
+    clk2.advance(DET.OBSERVER_DEBOUNCE_MS);
+    ok('window: the fresh window still works', changes.length === 2);
+    w2.close();
+    ok('window: second window torn down', moInst[1].disconnected && roInst[1].disconnected);
+  }
+
+  // overhead demonstration: a synthetic heavy DOM (5k candidates) pass
+  {
+    const els = [];
+    for (let i = 0; i < 5000; i++) {
+      els.push(fakeEl({
+        currentSrc: 'https://x/v' + i + '.mp4',
+        getBoundingClientRect() { return { width: 200 + (i % 60), height: 120 }; },
+      }));
+    }
+    const t0 = process.hrtime.bigint();
+    let pass = 0;
+    for (const el of els) {
+      if (DET.domCandidate(el, () => ({ display: 'block', visibility: 'visible' })).ok) pass++;
+    }
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    console.log('  overhead: 5000-candidate gated pass measured at ' + ms.toFixed(2) + ' ms');
+    ok('overhead: 5000-candidate pass under the 250 ms budget', ms < 250 && pass === 5000);
+  }
+}
+
 console.log('\n' + passed + ' assertions passed');
 if (process.exitCode) console.error('FAILURES PRESENT');

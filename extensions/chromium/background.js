@@ -299,6 +299,25 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       case 'getVideos':
         sendResponse({ ok: true, videos: await getVideos() });
         break;
+      case 'domVideos':
+        // S11-i B7: the content script's bounded detection window pushes
+        // DOM candidates; they merge into the same list the popup reads
+        if (sender && Array.isArray(msg.videos)) {
+          for (const v of msg.videos.slice(0, VIDEO_CAP)) {
+            if (v && v.url && /^https?:/i.test(v.url)) {
+              await pushVideo({
+                url: v.url,
+                title: v.title || DETECTOR.titleFor(v.url),
+                quality: v.quality || '',
+                kind: v.kind || 'dom',
+                pageUrl: v.pageUrl || '',
+                size: 0,
+              });
+            }
+          }
+        }
+        sendResponse({ ok: true });
+        break;
       case 'clearVideos':
         await chrome.storage.session.remove(VIDEOS_KEY);
         sendResponse({ ok: true, videos: [] });

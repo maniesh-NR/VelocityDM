@@ -104,6 +104,37 @@
     });
   }
 
+  // S11-i B7: a popup-open detection pass asks the active tab's content
+  // script for DOM candidates and merges them into the displayed list
+  function detectDomVideos() {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      const tab = tabs && tabs[0];
+      if (!tab || tab.id == null) return;
+      chrome.tabs.sendMessage(tab.id, { type: 'detectVideos' }, function (res) {
+        void chrome.runtime.lastError; // no content script on this page
+        if (!res || !res.ok || !Array.isArray(res.videos)) return;
+        // merge into the stored list via the background (kind 'dom'),
+        // then render the union so the pass is visible immediately
+        res.videos.slice(0, 10).forEach(function (v) {
+          if (v && v.url && /^https?:/i.test(v.url)) {
+            chrome.runtime.sendMessage({ type: 'domVideos', videos: [v] }, function () {
+              void chrome.runtime.lastError;
+            });
+          }
+        });
+        send({ type: 'getVideos' }).then(function (r) {
+          const stored = (r && r.videos) || [];
+          const seen = {};
+          stored.forEach(function (v) { seen[v.url] = true; });
+          const fresh = res.videos.filter(function (v) {
+            return v && v.url && /^https?:/i.test(v.url) && !seen[v.url];
+          });
+          renderVideos(stored.concat(fresh));
+        });
+      });
+    });
+  }
+
   // -------------------------------------------------------------- downloads
   function renderDownloads(reply) {
     const box = el('downloads');
@@ -254,6 +285,7 @@
     send({ type: 'getVideos' }).then(function (r) { renderVideos(r && r.videos); });
     send({ type: 'getDownloads' }).then(renderDownloads);
     pollNotes();
+    detectDomVideos(); // S11-i B7: popup-open detection pass
   })();
   const timer = setInterval(function () {
     send({ type: 'getDownloads' }).then(renderDownloads);
