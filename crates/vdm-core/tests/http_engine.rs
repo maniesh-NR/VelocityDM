@@ -31,7 +31,14 @@ fn state_of(engine: &Engine, id: u64) -> TaskState {
 fn b21_no_resume_restart_is_explicit_and_coherent() {
     use vdm_core::engine::state::ResumeState;
     let server = TestServer::start();
-    let data: Vec<u8> = (0..512 * 1024u32).map(|i| (i * 13 + 1) as u8).collect();
+    // 48 KiB (not 512 KiB): the probe's ranged-GET fallback reads the
+    // full-body 200 through ONE 64 KiB read_body pull, so the connection
+    // drains fully before the engine drops it. A larger body would be
+    // abandoned mid-read (the probe discards the exceeds-limit error),
+    // sending an RST that raced the NEXT connection's body write on the
+    // macOS CI runner (sequential ephemeral-port reuse) — the head
+    // arrived but the body died with an EOF. Behavior shape unchanged.
+    let data: Vec<u8> = (0..48 * 1024u32).map(|i| (i * 13 + 1) as u8).collect();
     server.set_file("/nores/f.bin", data.clone());
     let dir = tempfile::tempdir().unwrap();
     let dl = dir.path().join("dl");
