@@ -14,7 +14,7 @@ vdm-core = { path = "../crates/vdm-core" }
 vdm-rpc = { path = "../crates/vdm-rpc" }
 vdm-md3 = { path = "../crates/vdm-md3" }
 gtk = "0.18.2"
-glib = "0.18"
+glib = "0.20"
 serde = "1"
 serde_json = "1"
 
