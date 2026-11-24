@@ -403,6 +403,83 @@ installer-stub overview. Evidence JSON stayed in the throwaway dir.
 New-tool provenance: npm-distributed MIT-licensed client tooling, no
 network calls to the studied vendor beyond the pinned artifact URL.
 
+## 4d. Session-16 independent re-derivation (2026-11-24): transport/TLS layer,
+request hygiene, FTP state machine, legacy protocols
+
+An independent session rebuilt the toolchain from the RUNBOOK recipes and
+re-derived the study end-to-end through the **rea 6.10.1 attach-mode
+pipeline** (Ghidra 12.2 provider; caller-prepared bounded-resource project;
+`search`/`xrefs`/`decompile` queries — recipe now in `RUNBOOK.md`). The
+fail-closed fingerprint gate re-verified the pinned installer byte-exact;
+payload extraction independently recovered the engine image via a generic
+zlib/zip stream-carve (`scripts/extract_idm_payload.py`, kept as a
+cross-check of `unpack_idm.py`). Findings below are our own words; the
+first bullet set **confirms prior sections**, the rest adds new
+observations.
+
+**Parity confirmations (already covered above):** the four-form worker
+range ladder with inclusive-end arithmetic (§4c); `If-Range:`/`ETag:`/
+`Last-Modified:` resume validators and the case-insensitive
+conditional-header validator stage covering `If-Range`/`If-Match`/
+`If-Unmodified-Since` (§4c/B18); chunked transfer decoding and gzip/
+deflate content decoding; proxy CONNECT tunneling with per-connection
+retry counters (§4b); one native-messaging host name registered under
+Chrome/Edge/Firefox NativeMessagingHosts (§3); installer imports and
+runtime `LoadLibrary`-ed network stack (§1/§2).
+
+**TLS is the OS Schannel provider, with explicit TLS 1.3 client
+enablement.** The engine logs Schannel credential creation, loads
+`schannel.dll`, and writes client protocol policy under the system
+SCHANNEL registry key including a TLS 1.3 client subkey. WININET is
+confined to a utility role — URL cracking/canonicalization, cookie
+get/set (browser-session context), and cache-entry lookup — never the
+transport. (Ours: rustls with a webpki root store; the observable lesson
+is that protocol-version policy is a first-class, externally configurable
+setting.)
+
+**Outbound header hygiene is a charset whitelist.** Header values
+(user-agent, cookies, referer chain) pass a strict token/field character
+allowlist; disallowed characters are silently replaced with `_` rather
+than dropped or escaped — injection defense at the value level, in
+addition to our existing CRLF/NUL sanitization at the emission boundary.
+
+**Range capability probing has a user-visible no-resume state.**
+`Accept-Ranges` is read and `Content-Range` parsed; a server that rejects
+ranged requests falls back to single-stream, and a server with no resume
+support after a transfer interruption produces an explicit user-facing
+state ("cannot resume this file") instead of a silent restart. `Retry-After`
+from the server is honored on retryable failures.
+
+**Connections default to `Connection: Keep-Alive` and are reused** across
+segment requests of the same download.
+
+**The generic request builder is a slot machine, not a hardcoded template.**
+One format family carries ~17 optional `%s` header slots filled from
+per-connection state (UA, Accept, Referer, Cookie, Keep-Alive, auth,
+conditional validators, proxy credentials…), and there are **two builder
+families with different header ordering** (one Host-first, one UA-first) —
+per-protocol/per-profile request shapes.
+
+**FTP is a PASV capability state machine.** The FTP layer is a class
+hierarchy (`FTPConnection::try_set_pasv_cpbl`, `SendPasv`,
+`ProcessPasvReply`, `ProcessPasvOK`, session-level passive-mode setting)
+with reply parsing, data-socket IP extraction, and a graceful "server
+does not support PASV" fallback; each lifecycle step carries its own
+classified error text. (Ours: not implemented; recorded as parity
+knowledge for a future FTP stage, spec-first.)
+
+**Legacy protocol family (recorded, non-goal).** Compiled-in RTMP variants
+(`rtmp://`, `rtmpt://`, `rtmpe://` with a secure-catch path) and Flash
+FCS handshakes (`application/x-fcs` POSTs with a Shockwave Flash
+user-agent). Dead formats; same posture as the site-adapter note — no
+adoption.
+
+**Process/env behaviors (§2 additions):** configuration hot-reload via a
+registry change notification; privileged helper launch via token
+inspection/duplication and `CreateProcessAsUserW` (integration helpers in
+the right user/session context); the NativeMessagingHosts registration
+also covers the CocCoc browser (extends §3's browser list).
+
 ## 5. Improvement backlog (mapped to VelocityDM areas)
 
 Legend — target: our code area; tier: provenance (all T2, 2026-11-21,

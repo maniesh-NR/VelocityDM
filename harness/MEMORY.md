@@ -1143,3 +1143,47 @@ session reads this file first, then `ROADMAP.md`.
 - Next standing queue: owner runtime verification (D5:A) of the full
   Swift surface — SSE wiring was its last prerequisite; then per-surface
   promotions (§5 steps 3–4), each under its own gate.
+
+## 2026-11-24 (session 16) — S11 T2 independent re-derivation via the rea attach pipeline
+
+- Owner's "next step" resumed the rea directive. Toolchain had been half-lost
+  again (tools/ghidra gutted to 484 KB, tools/jdk gone): Ghidra 12.2 reinstalled
+  from the official release (zip SHA-256 re-verified), Temurin JDK 25.0.5.1
+  restored, `JAVA_HOME_OVERRIDE` re-patched. rea 6.10.1 via `npm i -g
+  rea-agents`; `rea doctor --provider ghidra` all green. `7zip-bin` (npm)
+  supplied the missing 7za binary — this sandbox has no sudo and apt is
+  unusable; npm ships prebuilt binaries that work.
+- Fail-closed gate PASSED again: fresh official-URL download matched the
+  pinned SHA-256 + 12,164,608 bytes + PE32 i386; Authenticode chain
+  observed (DigiCert G4 → Tonec Inc.).
+- Pipeline: generic zlib/zip stream-carve recovered ~50 binaries + CHMs +
+  language INIs + 2 CRX bundles from the installer (cross-check of
+  `unpack_idm.py`'s container parse; script kept in the toolbox as
+  `scripts/extract_idm_payload.py`), engine image identified, Ghidra project
+  prepared with bounded resources (248 s), rea attach mode for
+  search/xrefs/decompile.
+- **OOM lesson:** rea's own in-session Ghidra import was SIGKILLed (2 GB
+  bridge heap vs 4 GB cgroup). Caller-prepared project + `REA_GHIDRA_
+  PROJECT_PATH=<...>.gpr` + bare `REA_GHIDRA_PROGRAM_NAME` = the safe lane;
+  recipe + gotchas in RUNBOOK ("rea attach mode").
+- **Reconcile (standing lesson, third proof):** fetch-before-push revealed
+  origin 25+ commits ahead — sessions 10/14/15 had ALREADY executed D8:now
+  (deep-dive sessions 1+2), waves 1–3 of S11-i, S4 DHT, S12 SSE, and a T2
+  disclosure in CLEAN_ROOM.md. Stash → ff → re-apply; conflicts resolved by
+  taking the CI-proven remote state and layering only unique work.
+- **Unique value landed:** RESEARCH-IDM-STUDY.md §4d — parity confirmations
+  (range ladder, If-Range/ETag validators, chunked/gzip, CONNECT, NMH shape)
+  + NEW observations: Schannel TLS with explicit TLS 1.3 client enablement
+  (WININET confined to URL/cookie/cache utilities, never transport), outbound
+  header charset-whitelist hygiene, Accept-Ranges/Content-Range probing with
+  an explicit user-visible no-resume state, Retry-After honored, Keep-Alive
+  default + reuse, ~17-slot request builder with two header-order families,
+  FTP PASV capability state machine, legacy RTMP/RTMPT/RTMPE + Flash fcs
+  family (recorded non-goal), registry hot-reload + token-duplicated helper
+  launch, CocCoc NativeMessagingHosts coverage.
+- D-series: menus were conversation-local (unrecoverable from repo files);
+  remote history shows D1:C, D3:D, D5:A, D7:B, D8:now already executed by
+  their parallel sessions; D6 (depended on T2) re-presented to the owner in
+  the session reply with §4d attached.
+- Throwaway discipline held: /tmp/vdm-t2 wiped, binary never stored;
+  no code changes in this session — docs/harness only.
