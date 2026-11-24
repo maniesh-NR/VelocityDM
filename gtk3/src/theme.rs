@@ -305,7 +305,8 @@ mod tests {
         assert_eq!(cfg.download_dir, PathBuf::from("/tmp/dl"));
         assert_eq!(cfg.default_connections, 32); // clamped 1..=32
         assert_eq!(cfg.scheduler.max_active, 1); // clamped 1..=16
-        assert_eq!(cfg.global_limit_bps, 2_000_000);
+                                                 // parse_bytes is 1024-based: 2M = 2 MiB = 2_097_152.
+        assert_eq!(cfg.global_limit_bps, 2_097_152);
         assert!(cfg.proxy.is_some());
         assert_eq!(
             cfg.scheduler.stop_window,

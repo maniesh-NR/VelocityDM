@@ -128,9 +128,11 @@ mod tests {
     fn config_tolerant_parse() {
         // EngineConfig is not PartialEq — assert on Option presence.
         assert!(parse_config("garbage").is_none());
-        // Unknown keys are additive-tolerant on the core's serde, but a
-        // structurally broken file yields None -> default config.
-        assert!(parse_config("[]").is_none());
+        // NOTE: "[]" is NOT a failure case — serde deserializes structs
+        // from sequences, and with all-default fields an empty sequence
+        // yields the default config. Truly broken inputs only:
+        assert!(parse_config("null").is_none());
+        assert!(parse_config("{").is_none());
     }
 
     #[test]
