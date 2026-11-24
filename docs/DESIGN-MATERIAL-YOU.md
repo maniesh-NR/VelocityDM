@@ -12,7 +12,7 @@ frontends (CI-built) until each passes its promotion gate.
 | Windows 10+ | Raw Win32 + Direct2D (GPU-accelerated 2D vector drawing) | `frontend/win32/` — CI-built (windows-latest); preview |
 | Windows 7 | headless payload (no GUI, by design) | unchanged (`win7/`) |
 | macOS (older) | Swift + AppKit | `macos-app/` — SwiftPM package; CI-built (macos-latest); client of the shared core over the loopback JSON-RPC protocol |
-| macOS (newer) | SwiftUI variant | sub-stage (S12-mac2); AppKit covers the older systems first |
+| macOS (newer) | SwiftUI variant | `macos-swiftui/` — SwiftPM package (macOS 12 floor, zero third-party deps); CI-built (macos-latest `swiftui-frontend`); client of the shared core (JSON-RPC + SSE); **built (preview) under gate 0013** — ships in no release asset until its promotion gate; Monterey users keep the AppKit app |
 | Linux (modern) | Rust + Slint | `crates/velocitydm-slint/` — workspace member, covered by the required fmt/clippy/test checks on all three CI OSes; in-process shared core |
 | Linux (older) | Rust + gtk-rs / gtk3-rs | `gtk3/` — built (S12-lin2, preview, gate 0012): standalone tree, in-process shared core, static hex-only GtkCssProvider (19/27 role subset); CI-built (ubuntu-latest + libgtk-3-dev); ships in no release asset until its promotion gate |
 | Linux (Qt alternative) | Qt (cxx-qt) | sub-stage (S12-lin3): requires a C++/Qt toolchain; tracked, not built |
@@ -38,7 +38,7 @@ Consumers today:
 | egui GUI (shipped) | in-process (`theme.rs` delegates to the crate) |
 | Slint frontend | in-process (fills the `Theme` global each paint) |
 | Win32/Direct2D frontend | in-process (brushes built from scheme roles) |
-| macOS Swift | **Swift port of the same math** (`Md3.swift` — identical constants; deterministic parity, no build step) |
+| macOS Swift | **Swift port of the same math** (`Md3.swift` — identical constants; deterministic parity, no build step). BOTH Swift trees carry a copy: AppKit `macos-app/Md3.swift` (canonical for Swift ports) and `macos-swiftui/Md3.swift` (SwiftUI `Color` bridge replacing the NSColor/CGColor ones; honest 18/27 subset header) — the SwiftUI copy is golden-pinned against the Rust-generated `md3-tokens-baseline.json` (288 values, the Swift-side drift tripwire; regenerate via `scripts/gen-md3-golden-swift.py`) |
 | Browser extensions | the JS engine (`md3.js`), same model (tone tables aligned; CIELAB vs OKLab color space documented there) |
 | Android (Views, S12-e) | OS dynamic color on 12+; below 12 the **Kotlin port of the same math** (`android/shared` commonMain), goldens asserted against the Rust-generated `md3-tokens-baseline.json` (drift tripwire) |
 
@@ -87,10 +87,20 @@ platform owns the interaction.
   drawn from primitives; native LineEdit/CheckBox/Slider; Timer-driven
   model refresh; in-process engine + RPC server.
 - **Swift/AppKit** (`macos-app/`): SwiftPM, macOS 10.15+, programmatic
-  layer-backed AppKit; polls `downloads.list` at 200ms (SSE wiring is a
-  follow-up); `Md3.swift` is the token-engine port; prefs in
-  UserDefaults (`vdm.seed`, `vdm.dark`). Build: `swift build`; run
+  layer-backed AppKit; consumes the daemon's `GET /events` SSE stream
+  (gate 0010, a0f801f — the 200 ms poll is replaced and the stale-rows
+  gap is fixed in source); `Md3.swift` is the token-engine port; prefs
+  in UserDefaults (`vdm.seed`, `vdm.dark`). Build: `swift build`; run
   against the daemon binary.
+- **SwiftUI** (`macos-swiftui/`): SwiftPM, macOS 12+, SwiftUI `@main`
+  App lifecycle (AppKit only via the `@NSApplicationDelegateAdaptor`
+  termination hook); same SSE consumer contract restated (rule 8 of
+  `docs/SPECS/S12-MAC2-SWIFTUI.md`); every daemon-relayed string
+  renders through `VDMText` (sanitize + `Text(verbatim:)` — the
+  `LocalizedStringKey` Markdown/link-injection axis is closed); prefs
+  under the SAME keys. Does NOT raise the AppKit app's 10.15 floor.
+  Build: `swift build` + `swift test` (the golden tests only compile
+  via test); run against the daemon binary.
 
 ## Promotion criteria (a frontend becomes the shipped default)
 

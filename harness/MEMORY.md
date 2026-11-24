@@ -1281,3 +1281,74 @@ session reads this file first, then `ROADMAP.md`.
   fresh five-role gate, spec-first; S12-lin3 Qt after it. The D5:A owner runtime-verification
   moment remains the owner's (protocol prepared in `S12-PROMOTION-GATES.md` §3; the agent
   cannot substitute — no displays, no devices here).
+
+## 2026-11-24 (session 19) — S12-mac2 SwiftUI implementation + close (gate 0013, C2/C3)
+
+- Reconcile: local HEAD was at gate-0013 activation (6dd6e4e, spec committed
+  spec-first) with the `macos-swiftui/` tree UNTRACKED and incomplete —
+  Package.swift + three of six sources existed; SseClient, the app UI, the
+  test target, the CI job, .gitignore lines and BUILDING/README were all
+  missing. The owner's standing directive ("proceed down the remaining
+  adoption backlog with a fresh gate", D11) had already been executed as
+  wave 4 (gate 0011) by the parallel sessions; the live queue position was
+  S12-mac2 implementation → close. Proceeded there.
+- **C2 revert unit (9476934, single commit):** `macos-swiftui/**` complete —
+  adapted `SseClient.swift` (cookie-less session + redirect refusal added;
+  frame-split/parse extracted into pure testable `SseFrameBuffer`/`SseFrames`),
+  completed `RpcClient.swift` review (added the MISSING `NoRedirectSession`
+  redirect-refusal delegate the spec rule 4 pin demands), `AppModel.swift`
+  (@MainActor ObservableObject carrying the full gate-0010 state machine:
+  ticks merge keyed by id + metadata-drift coalesced 150 ms re-list; ticks
+  DROPPED inside the resync window so the full re-list precedes any merge
+  after (re)connect; fixed stale banner + frozen rows + 2 s probe;
+  launch-with-dead-daemon idempotency via the initial-list-failure path;
+  settings clamps conn 1...32 / max-active 1...16 applied on save; merge-
+  semantics Apply grounded at crates/vdm-rpc/src/lib.rs:630 so unexposed
+  fields survive), `Views.swift` (@main + adaptor + VDMText-only rendering;
+  filename + torrentPath fields close the registered Swift gaps in this
+  tree; notice-line parity; no 13-only APIs), tests (Md3GoldenTests 288
+  generated values, SseFrameTests, ClientParseTests, SanitizeTests), CI
+  `swiftui-frontend` job, .gitignore lines, BUILDING.md section, tree README.
+  Separate tiny header-truth commit (5f2cc2e) OUTSIDE the revert unit: the
+  AppKit `Md3.swift` "Full Material Design 3 color-role set" claim corrected
+  to the honest 18/27 + the named missing roles (zero code change).
+- **Pre-commit verification WITHOUT a Swift toolchain:** the golden values
+  were proven by porting the exact Swift math to Python — 288/288
+  comparisons match the Rust-generated baseline (the Swift-side tripwire
+  would have been green; the shipped math carries no drift). Brace-balance
+  scan caught nothing; the real compile risk was isolation annotations
+  (@MainActor on AppDelegate, @MainActor-typed `finish` closure) — judged
+  from source, per spec rule 11 (source review is the ONLY local battery).
+- **CI evidence-then-fix cycle (1 round):** `macOS frontend (SwiftUI)` red
+  on 9476934 — `missing argument for parameter 'dark' in call` × 16 (the
+  golden table constructs `Md3Scheme(...)` via the memberwise init whose
+  FIRST parameter is `dark:`; the generator omitted it). Fix d11dd1a is at
+  the GENERATOR (`scripts/gen-md3-golden-swift.py`), not a hand edit; dark
+  fields verified agreeing across all 16 blocks. **CI 13/13 GREEN at
+  d11dd1a5 (8 required + 5 preview)** — verified live on the check-runs API,
+  newest-SHA-only reading (the spec's exact close wording).
+- **Close executed (C3, grounded in implemented code):** parity-matrix
+  SwiftUI columns §1.1–§1.5 in `docs/SPECS/S12-PROMOTION-GATES.md` grounded
+  in `macos-swiftui/Sources/` (the "Swift"/"Swift/AppKit" columns now
+  explicitly mean the AppKit tree); the stale §1.2 Swift stale-rows cell
+  refreshed to "fixed in source 2026-11-24"; gap register updated with the
+  spec-pinned wording — both registered Swift gaps "closed in the S12-mac2
+  SwiftUI tree; macos-app still carries both gaps (its promotion owns
+  them)"; §5 gate order flips (S12-mac2 DONE preview, next S12-lin3 Qt);
+  DESIGN-MATERIAL-YOU macOS-newer row flip + consumers note (both Swift
+  trees, golden tripwire provenance) + the stale AppKit SSE line corrected
+  (gate 0010 landed — "polls at 200ms (SSE wiring is a follow-up)" was
+  false); ROADMAP S12 row + brief flip; RUNBOOK §"SwiftUI preview
+  (S12-mac2)" (two truths: zero local Swift verification — CI sole
+  witness; red swiftui-frontend does NOT block tag cuts; golden table is
+  GENERATED, fix the generator); issue #16 close comment.
+- Honest boundaries held: no local build/test/format claims anywhere; no
+  engine deltas → no bench A/B owed; no S11/T2 linkage → no CLEAN_ROOM row
+  owed (explicit in the gate record); recorded debt NOT filled (per the
+  activation record): §2 packaging table and §3 owner-verification
+  checklist have no SwiftUI rows — owed before the SwiftUI promotion gate
+  is queued; no Dependabot coverage for SwiftPM trees (no dependabot.yml).
+- Next standing queue: **S12-lin3 Qt (cxx-qt)** — last remaining S12
+  sub-stage, needs its own five-role gate + spec FIRST (a C++/Qt toolchain
+  is a real provisioning question in this sandbox). The D5:A owner
+  runtime-verification moment remains the owner's.
