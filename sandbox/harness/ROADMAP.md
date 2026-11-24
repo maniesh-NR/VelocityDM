@@ -230,12 +230,17 @@ Each stage transition is gated by the adversarial consensus protocol
     **queue order per owner D3:D + D5:A (`harness/DECISIONS.md`):**
     promotion-gate preparation DONE (2026-11-23: parity matrices +
     packaging plan + owner-verification protocol at
-    `docs/SPECS/S12-PROMOTION-GATES.md`), then SSE wiring for the
-    Swift client, then S12-lin2 **gtk-rs/gtk3-rs** (needs GTK3 dev
-    libs on CI), S12-lin3 **Qt (cxx-qt)**, S12-mac2 **SwiftUI** —
-    the owner's runtime verification moment stays AFTER wave-2 close
-    + SSE wiring per D5:A (verify a full surface then). Tracked as
-    GitHub issue #16 on the `v1.1.0 - roadmap` milestone.
+    `docs/SPECS/S12-PROMOTION-GATES.md`); **SSE wiring for the Swift
+    client DONE (2026-11-24, gate 0010: spec
+    `docs/SPECS/S12-SSE-WIRING.md` + implementation a0f801f, CI 11/11
+    green incl. the swift-frontend compile witness; the 200 ms poll is
+    replaced by GET /events consumption and the stale-rows gap is
+    closed in source)**; next: S12-lin2 **gtk-rs/gtk3-rs** (needs GTK3
+    dev libs on CI), S12-lin3 **Qt (cxx-qt)**, S12-mac2 **SwiftUI** —
+    the owner's runtime verification moment is NOW UNBLOCKED (D5:A:
+    verify a full surface — the Swift checklist rows incl. the SSE/
+    stale-rows behavior) and precedes the per-surface promotions.
+    Tracked as GitHub issue #16 on the `v1.1.0 - roadmap` milestone.
   - **S12-e execution plan (gate 0005 consensus — 5× PROCEED-WITH-
     CONDITIONS, zero BLOCK; conditions folded below):** replace the
     Compose UI with an **Android View-based Material 3** UI (MDC 1.12.0

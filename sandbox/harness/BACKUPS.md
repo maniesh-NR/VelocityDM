@@ -25,4 +25,4 @@ execution plan / every output that changed something), never fixed-interval
   (98e03de docs, 5c61982 B17+B18, 21dc5f2 B19); CI 11/11 green at 21dc5f2
   (after one windows flake rerun); bench record scripts/s11i3-bench-record.txt;
   throwaway dir /tmp/s11-dd2 wiped; dirty files at manifest time: 0.
-| 2026-11-24T04:15:11Z | agent execution plan | sandbox-backup | 35cdd14 | scripts+harness+manifest |
+| 2026-11-24T05:16:33Z | S12 SSE wiring close (gate 0010): spec+implementation a0f801f, CI 11/11 green incl. swift-frontend compile witness, issue #16 commented | sandbox-backup | 96aaf49 | scripts+harness+manifest |
