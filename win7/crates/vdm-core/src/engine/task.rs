@@ -194,14 +194,18 @@ pub fn probe(url: &Url, cfg: &ClientCfg) -> Result<ProbeResult> {
                     }
                 } else {
                     fatal = None;
-                    if r2.status == 206 {
+                    // S11-i B17: an invalid ranged response yields no usable
+                    // size here — the probe stays advisory (fail-open to the
+                    // other size sources, never fatal).
+                    let r17 = classify_ranged_response(r2.status, &r2.headers, (0, 0));
+                    if r2.status == 206 && r17.is_none() {
                         accepts_ranges = true;
                         if let Some(cr) = r2.header("content-range") {
                             if let Some(total) = cr.rsplit('/').next() {
                                 size = total.trim().parse().unwrap_or(size);
                             }
                         }
-                    } else if size == 0 {
+                    } else if r2.status != 206 && size == 0 {
                         size = r2.content_length().unwrap_or(0);
                     }
                     if etag.is_none() {
@@ -245,10 +249,117 @@ pub fn is_retryable(e: &Error) -> bool {
 }
 
 fn ranged_get(url: &Url, cfg: &ClientCfg, start: u64, end: u64) -> Result<http::Response> {
-    let req = Request::get(url).header("Range", &format!("bytes={}-{}", start, end));
+    let mut req = Request::get(url).header("Range", &format!("bytes={}-{}", start, end));
+    // S11-i B17: ranged requests pin the identity coding (RFC 9110 §12.5.3)
+    // so byte-offset arithmetic cannot shift under a content coding —
+    // unless the caller already chose an encoding (user intent wins).
+    if !has_accept_encoding(&cfg.extra_headers) && !has_accept_encoding(&req.headers) {
+        req = req.header("Accept-Encoding", "identity");
+    }
     let mut conn = Conn::connect(url, cfg)?;
     conn.request(&req, cfg)
 }
+
+// ---------------------------------------------------------------------------
+// S11-i B17/B18/B19 helpers (docs/SPECS/S11-ADOPTIONS-WAVE3.md; public-spec
+// sources: RFC 9110 §8.4 / §12.5.3 / §13.1.5 / §14 — behavior re-spec'd from
+// the committed wave-3 spec, not from any binary).
+// ---------------------------------------------------------------------------
+
+/// True when the caller already supplies an Accept-Encoding header
+/// (case-insensitive): user intent wins, never emit a second value.
+fn has_accept_encoding(headers: &[(String, String)]) -> bool {
+    headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("accept-encoding"))
+}
+
+/// Parse `Content-Range: bytes <start>-<end>/<total|*>` (RFC 9110 §14.4;
+/// the range unit compares case-insensitively).
+fn parse_content_range(v: &str) -> Option<(u64, u64)> {
+    let rest = v.trim();
+    if rest.len() < 5 || !rest[..5].eq_ignore_ascii_case("bytes") {
+        return None;
+    }
+    let rest = rest[5..].trim();
+    let (range, _) = rest.split_once('/')?;
+    let (s, e) = range.trim().split_once('-')?;
+    Some((s.trim().parse().ok()?, e.trim().parse().ok()?))
+}
+
+/// Why a response to a ranged request is rejected before any of its bytes is
+/// trusted (S11-i B17). Header-only checks, off the hot path.
+#[derive(Debug, PartialEq, Eq)]
+enum RangedInvalid {
+    /// A content coding was announced (byte-offset arithmetic would shift).
+    Compressed,
+    /// A multipart/byteranges-family reply to a single-range request.
+    Multipart,
+    /// 206 whose Content-Range does not exactly match the requested range.
+    ContentRangeMismatch,
+}
+
+impl RangedInvalid {
+    fn reason(&self) -> &'static str {
+        match self {
+            RangedInvalid::Compressed => "compressed ranged response",
+            RangedInvalid::Multipart => "multipart ranged response",
+            RangedInvalid::ContentRangeMismatch => "content-range mismatch",
+        }
+    }
+}
+
+/// Classify a response to a ranged request for `want: (start, end)`.
+/// Severity is the caller's: worker = retry-path invalid; audit =
+/// inconclusive (never a B1 conflict signal); probe = no usable size.
+fn classify_ranged_response(
+    status: u16,
+    headers: &[(String, String)],
+    want: (u64, u64),
+) -> Option<RangedInvalid> {
+    let header = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    };
+    if header("content-encoding").is_some() {
+        return Some(RangedInvalid::Compressed);
+    }
+    if let Some(ct) = header("content-type") {
+        let low = ct.to_ascii_lowercase();
+        if low.contains("multipart/byteranges") || low.contains("multipart/x-byteranges") {
+            return Some(RangedInvalid::Multipart);
+        }
+    }
+    if status == 206 {
+        return match header("content-range").and_then(parse_content_range) {
+            Some(range) if range == want => None,
+            _ => Some(RangedInvalid::ContentRangeMismatch),
+        };
+    }
+    None
+}
+
+/// S11-i B18 (RFC 9110 §13.1.5): with a validator sent, a 200 full body for
+/// a ranged request at offset > 0 is a DEFINITIVE changed-resource verdict —
+/// it cannot heal via retries, so the worker fails fast instead of churning
+/// MAX_RETRIES across every mirror.
+fn ranged_200_is_changed(status: u16, pos: u64, validator_sent: bool) -> bool {
+    status == 200 && pos > 0 && validator_sent
+}
+
+/// S11-i B18: the in-memory If-Range validator (etag preferred, else
+/// last-modified). Deliberately NOT persisted — `ResumeState` stays
+/// untouched; after a restart the task resumes without it (the B17
+/// invariants and the B1 audit still guard those bytes).
+fn if_range_validator(etag: Option<&str>, last_modified: Option<&str>) -> Option<String> {
+    etag.map(|s| s.to_string())
+        .or_else(|| last_modified.map(|s| s.to_string()))
+}
+
+/// S11-i B18 fast-fail reason (distinct namespace from the B19 marker).
+const RESOURCE_CHANGED_MSG: &str = "resource changed since download started";
 
 fn filename_from_disposition(d: &str) -> Option<String> {
     for part in d.split(';') {
@@ -257,7 +368,7 @@ fn filename_from_disposition(d: &str) -> Option<String> {
             let decoded = v
                 .splitn(3, '\'')
                 .nth(2)
-                .map(|s| crate::util::percent_decode(s))
+                .map(crate::util::percent_decode)
                 .unwrap_or_else(|| v.to_string());
             let name = crate::util::sanitize_filename(&decoded);
             if !name.is_empty() {
@@ -641,6 +752,12 @@ fn run_audit(
         Ok(r) => r,
         Err(_) => return, // inconclusive
     };
+    // S11-i B17: an invalid ranged response is INCONCLUSIVE for the audit —
+    // never a B1 conflict signal, never trusted bytes.
+    if classify_ranged_response(resp.status, &resp.headers, (start, end)).is_some() {
+        let _ = resp.read_body(4096);
+        return;
+    }
     let full_file = start == 0 && end + 1 == size;
     if !(resp.status == 206 || (resp.status == 200 && full_file)) {
         let _ = resp.read_body(4096);
@@ -971,6 +1088,10 @@ fn run_segmented(
     // leaves the scaled base unchanged. The B2 spawn/retire machinery and
     // its own cap are untouched (presets bound the BASE only).
     let connections = apply_preset_ceiling(connections, &opts.conn_preset);
+    // S11-i B18: in-memory If-Range validator for this run (never persisted;
+    // ResumeState untouched — cross-restart validator persistence is a
+    // recorded non-goal of wave 3).
+    let if_range = if_range_validator(probe.etag.as_deref(), probe.last_modified.as_deref());
     // Mirror list: final probe URL first, then user mirrors, deduplicated.
     let mut mirrors: Vec<String> = vec![probe.final_url.to_string_full()];
     for m in opts.mirrors.iter() {
@@ -1100,6 +1221,7 @@ fn run_segmented(
         let file = file.clone();
         let state_sync = state_sync.clone();
         let cfg = worker_cfg.clone();
+        let if_range = if_range.clone();
         let mirrors = mirrors.clone();
         let mirror_stats = mirror_stats.clone();
         let done = done.clone();
@@ -1126,6 +1248,7 @@ fn run_segmented(
                 file,
                 state_sync,
                 cfg,
+                if_range,
                 mirrors,
                 mirror_stats,
                 workers,
@@ -1717,6 +1840,7 @@ fn worker(
     file: Arc<Mutex<std::fs::File>>,
     state: Arc<Mutex<ResumeState>>,
     cfg: ClientCfg,
+    if_range: Option<String>,
     mirrors: Vec<String>,
     mirror_stats: Arc<Vec<MirrorStat>>,
     workers: usize,
@@ -1819,7 +1943,20 @@ fn worker(
                     continue 'attempt;
                 }
             };
-            let req = Request::get(&mirror_url).header("Range", &format!("bytes={}-{}", pos, end));
+            let mut req =
+                Request::get(&mirror_url).header("Range", &format!("bytes={}-{}", pos, end));
+            // S11-i B18: If-Range validator (RFC 9110 §13.1.5) — a compliant
+            // server answers 200 when the resource changed since the probe,
+            // 206 when these bytes are still the ones we probed.
+            if let Some(v) = &if_range {
+                req = req.header("If-Range", v);
+            }
+            // S11-i B17: ranged requests pin the identity coding so byte
+            // offsets cannot shift under a content coding (RFC 9110
+            // §12.5.3); a caller-chosen encoding always wins.
+            if !has_accept_encoding(&cfg.extra_headers) && !has_accept_encoding(&req.headers) {
+                req = req.header("Accept-Encoding", "identity");
+            }
             let resp_result = conn.as_mut().unwrap().request(&req, &cfg);
             let mut resp = match resp_result {
                 Ok(r) => r,
@@ -1843,6 +1980,34 @@ fn worker(
                 }
             };
             conn_recycled = false;
+            // S11-i B18: definitive changed-resource verdict — with a
+            // validator sent, a 200 at pos>0 cannot heal; fail fast with an
+            // honest reason instead of churning MAX_RETRIES across mirrors.
+            if ranged_200_is_changed(resp.status, pos, if_range.is_some()) {
+                let _ = resp.read_body(4096);
+                return WorkerExit::Failed(RESOURCE_CHANGED_MSG.to_string());
+            }
+            // S11-i B17: reject invalid ranged responses before any byte is
+            // trusted; they ride the existing bounded retry/mirror path with
+            // a distinct reason and never widen the lease or trigger the B1
+            // audit-conflict machinery.
+            if let Some(inv) = classify_ranged_response(resp.status, &resp.headers, (pos, end)) {
+                let code = resp.status;
+                let _ = resp.read_body(4096);
+                conn = resp.into_conn(); // drained; may still recycle
+                retries += 1;
+                mirror_stats[mirror_idx].record_fail();
+                if retries > MAX_RETRIES {
+                    return WorkerExit::Failed(format!("{} (HTTP {})", inv.reason(), code));
+                }
+                let next = (mirror_idx + 1) % mirrors_n;
+                if next != mirror_idx {
+                    mirror_idx = next;
+                    conn = None; // conn belongs to the failed mirror
+                }
+                std::thread::sleep(Duration::from_millis(backoff_ms(retries)));
+                continue 'attempt;
+            }
             let ok_status =
                 resp.status == 206 || (resp.status == 200 && pos == 0 && end + 1 == size);
             if !ok_status {
@@ -2382,5 +2547,127 @@ mod tests {
                 leases: AtomicU64::new(self.leases.load(Ordering::Relaxed)),
             }
         }
+    }
+
+    // ---- S11-i B17/B18/B19 (docs/SPECS/S11-ADOPTIONS-WAVE3.md) ----
+
+    #[test]
+    fn accept_encoding_detection_is_case_insensitive() {
+        assert!(!has_accept_encoding(&[]));
+        assert!(!has_accept_encoding(&[(
+            "Accept".to_string(),
+            "*".to_string()
+        )]));
+        assert!(has_accept_encoding(&[(
+            "Accept-Encoding".to_string(),
+            "gzip".to_string()
+        )]));
+        assert!(has_accept_encoding(&[(
+            "ACCEPT-ENCODING".to_string(),
+            "identity".to_string()
+        )]));
+    }
+
+    #[test]
+    fn content_range_parse_matrix() {
+        assert_eq!(parse_content_range("bytes 0-99/500"), Some((0, 99)));
+        assert_eq!(parse_content_range("BYTES 10-20/*"), Some((10, 20)));
+        assert_eq!(parse_content_range("bytes */500"), None);
+        assert_eq!(parse_content_range("bytes 5-4/10"), Some((5, 4)));
+        assert_eq!(parse_content_range("chunky 1-2/3"), None);
+        assert_eq!(parse_content_range(""), None);
+    }
+
+    #[test]
+    fn ranged_response_invariant_matrix() {
+        let want = (100u64, 199u64);
+        let ok = vec![
+            (
+                "Content-Range".to_string(),
+                "bytes 100-199/1000".to_string(),
+            ),
+            (
+                "Content-Type".to_string(),
+                "application/octet-stream".to_string(),
+            ),
+        ];
+        assert_eq!(classify_ranged_response(206, &ok, want), None);
+        // a coded body announcement invalidates the response
+        let gz = vec![
+            (
+                "Content-Range".to_string(),
+                "bytes 100-199/1000".to_string(),
+            ),
+            ("Content-Encoding".to_string(), "gzip".to_string()),
+        ];
+        assert_eq!(
+            classify_ranged_response(206, &gz, want),
+            Some(RangedInvalid::Compressed)
+        );
+        assert_eq!(
+            classify_ranged_response(200, &gz, want),
+            Some(RangedInvalid::Compressed)
+        );
+        // the multipart family (both observed spellings)
+        for ct in ["multipart/byteranges; boundary=x", "multipart/x-byteranges"] {
+            let mp = vec![
+                (
+                    "Content-Range".to_string(),
+                    "bytes 100-199/1000".to_string(),
+                ),
+                ("Content-Type".to_string(), ct.to_string()),
+            ];
+            assert_eq!(
+                classify_ranged_response(206, &mp, want),
+                Some(RangedInvalid::Multipart)
+            );
+        }
+        // content-range must match the requested range exactly on a 206
+        let shifted = vec![("Content-Range".to_string(), "bytes 99-198/1000".to_string())];
+        assert_eq!(
+            classify_ranged_response(206, &shifted, want),
+            Some(RangedInvalid::ContentRangeMismatch)
+        );
+        let short = vec![(
+            "Content-Range".to_string(),
+            "bytes 100-150/1000".to_string(),
+        )];
+        assert_eq!(
+            classify_ranged_response(206, &short, want),
+            Some(RangedInvalid::ContentRangeMismatch)
+        );
+        assert_eq!(
+            classify_ranged_response(206, &[], want),
+            Some(RangedInvalid::ContentRangeMismatch)
+        );
+        let unsatisfiable = vec![("Content-Range".to_string(), "bytes */1000".to_string())];
+        assert_eq!(
+            classify_ranged_response(206, &unsatisfiable, want),
+            Some(RangedInvalid::ContentRangeMismatch)
+        );
+        // a plain 200 to a ranged request is NOT classified here (the
+        // worker's ok_status / B18 changed-resource rules own that case)
+        assert_eq!(classify_ranged_response(200, &ok, want), None);
+    }
+
+    #[test]
+    fn if_range_validator_precedence() {
+        assert_eq!(
+            if_range_validator(Some("\"abc\""), Some("yesterday")),
+            Some("\"abc\"".to_string())
+        );
+        assert_eq!(
+            if_range_validator(None, Some("yesterday")),
+            Some("yesterday".to_string())
+        );
+        assert_eq!(if_range_validator(None, None), None);
+    }
+
+    #[test]
+    fn resource_changed_fast_fail_decision() {
+        assert!(ranged_200_is_changed(200, 1, true));
+        assert!(!ranged_200_is_changed(200, 0, true));
+        assert!(!ranged_200_is_changed(200, 1, false));
+        assert!(!ranged_200_is_changed(206, 1, true));
     }
 }

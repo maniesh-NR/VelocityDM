@@ -40,6 +40,18 @@ pub struct TestServer {
     /// reference) and late leases crawl — deterministic on every platform,
     /// independent of probe fallbacks or request ordering.
     pub degrade_after: Arc<AtomicU32>,
+    /// S11-i B17 e2e: the first N ranged responses to "/b17" paths carry a
+    /// REAL zlib `Content-Encoding: deflate` body (a stored-block stream of
+    /// the same slice — valid zlib, but NOT the raw bytes the range
+    /// promises). A correct engine rejects the response and retries; the
+    /// final file must still be byte-identical to the source.
+    pub compressed_ranged_remaining: Arc<AtomicU32>,
+    /// S11-i B18 e2e: when armed, ranged requests with start > 0 to
+    /// "/b18.bin" are answered with a 200 full body (the resource-changed
+    /// simulation; the pos==0 request stays a clean 206).
+    pub b18_return_200: Arc<AtomicBool>,
+    /// S11-i B18 e2e: set once a ranged request carrying `If-Range` arrives.
+    pub b18_if_range_seen: Arc<AtomicBool>,
     /// byte ranges (exclusive end) already served per path (for the
     /// inconsistent-edge flip)
     covered: Arc<Mutex<Coverage>>,
@@ -63,6 +75,9 @@ impl TestServer {
         let flip_budget = Arc::new(std::sync::atomic::AtomicI32::new(0));
         let flip_budget_c = flip_budget.clone();
         let degrade = Arc::new(AtomicU32::new(0));
+        let b17compress = Arc::new(AtomicU32::new(0));
+        let b18ret200 = Arc::new(AtomicBool::new(false));
+        let b18seen = Arc::new(AtomicBool::new(false));
         let covered: Arc<Mutex<Coverage>> = Arc::new(Mutex::new(HashMap::new()));
         let conns = Arc::new(AtomicU32::new(0));
         let reqs: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -77,6 +92,9 @@ impl TestServer {
         let reqs_c = reqs.clone();
         let stop_c = stop.clone();
         let types_c = types.clone();
+        let b17c = b17compress.clone();
+        let b18r = b18ret200.clone();
+        let b18s = b18seen.clone();
         listener.set_nonblocking(true).unwrap();
         let handle = std::thread::spawn(move || loop {
             if stop_c.load(Ordering::Relaxed) {
@@ -94,6 +112,9 @@ impl TestServer {
                     let degrade = degrade_c.clone();
                     let covered = covered_c.clone();
                     let reqs = reqs_c.clone();
+                    let b17c = b17c.clone();
+                    let b18r = b18r.clone();
+                    let b18s = b18s.clone();
                     std::thread::spawn(move || {
                         let _ = serve(
                             stream,
@@ -106,6 +127,9 @@ impl TestServer {
                             degrade,
                             covered,
                             reqs,
+                            b17c,
+                            b18r,
+                            b18s,
                         );
                     });
                 }
@@ -127,9 +151,18 @@ impl TestServer {
             covered,
             connections_accepted: conns,
             requests_per_path: reqs,
+            compressed_ranged_remaining: b17compress,
+            b18_return_200: b18ret200,
+            b18_if_range_seen: b18seen,
             stop,
             handle: Some(handle),
         }
+    }
+
+    /// Arm the S11-i B17 e2e: the first `n` ranged responses to "/b17" paths
+    /// carry a real zlib body announced as `Content-Encoding: deflate`.
+    pub fn set_compressed_ranged(&self, n: u32) {
+        self.compressed_ranged_remaining.store(n, Ordering::SeqCst);
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -194,6 +227,9 @@ fn serve(
     degrade_after: Arc<AtomicU32>,
     covered: Arc<Mutex<Coverage>>,
     requests_per_path: Arc<Mutex<HashMap<String, u32>>>,
+    b17compress: Arc<AtomicU32>,
+    b18_return_200: Arc<AtomicBool>,
+    b18_if_range_seen: Arc<AtomicBool>,
 ) -> std::io::Result<()> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
@@ -214,6 +250,7 @@ fn serve(
             *reqs.entry(path.to_string()).or_insert(0) += 1;
         }
         let mut range: Option<(u64, Option<u64>)> = None;
+        let mut if_range_req = false;
         for line in lines {
             if let Some((k, v)) = line.split_once(':') {
                 if k.trim().eq_ignore_ascii_case("range") {
@@ -225,7 +262,14 @@ fn serve(
                         range = Some((start, end));
                     }
                 }
+                // S11-i B18 e2e witness: a ranged request carrying If-Range
+                if k.trim().eq_ignore_ascii_case("if-range") {
+                    if_range_req = true;
+                }
             }
+        }
+        if range.is_some() && if_range_req {
+            b18_if_range_seen.store(true, Ordering::SeqCst);
         }
         // flaky handling
         if path.starts_with("/flaky") {
@@ -271,6 +315,21 @@ fn serve(
                 }
                 match range {
                     Some((start, end)) => {
+                        // S11-i B18 e2e: the changed-resource simulation —
+                        // ranged requests above byte 0 get a 200 full body.
+                        if path == "/b18.bin" && b18_return_200.load(Ordering::SeqCst) && start > 0
+                        {
+                            let resp = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nETag: {}\r\nContent-Type: {}\r\nConnection: keep-alive\r\n\r\n",
+                                body.len(),
+                                etag,
+                                content_type
+                            );
+                            stream.write_all(resp.as_bytes())?;
+                            stream.write_all(&body)?;
+                            stream.flush()?;
+                            continue;
+                        }
                         let start = start.min(body.len() as u64) as usize;
                         let end = end
                             .map(|e| (e + 1).min(body.len() as u64) as usize)
@@ -278,6 +337,23 @@ fn serve(
                         if start >= end {
                             write_simple(&mut stream, 416, "Range Not Satisfiable", b"range")?;
                             continue;
+                        }
+                        // S11-i B17 e2e: the first budgeted ranged responses
+                        // carry a real zlib stream (of the clamped slice)
+                        // announced as `Content-Encoding: deflate`.
+                        let mut compressed_body: Option<Vec<u8>> = None;
+                        if path.starts_with("/b17") {
+                            let prev =
+                                b17compress.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+                                    if n > 0 {
+                                        Some(n - 1)
+                                    } else {
+                                        None
+                                    }
+                                });
+                            if prev.is_ok() {
+                                compressed_body = Some(zlib_stored(&body[start..end]));
+                            }
                         }
                         // S11-i B1: the inconsistent-edge flip — armed,
                         // covered-repetition, exactly the engine-audit
@@ -328,9 +404,16 @@ fn serve(
                         } else {
                             0
                         };
+                        let out_slice: &[u8] = compressed_body.as_deref().unwrap_or(slice);
+                        let ce_line = if compressed_body.is_some() {
+                            "Content-Encoding: deflate\r\n"
+                        } else {
+                            ""
+                        };
                         let resp = format!(
-                            "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nAccept-Ranges: bytes\r\nETag: {}\r\nContent-Type: {}\r\nConnection: keep-alive\r\n\r\n",
-                            slice.len(),
+                            "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\n{}Content-Range: bytes {}-{}/{}\r\nAccept-Ranges: bytes\r\nETag: {}\r\nContent-Type: {}\r\nConnection: keep-alive\r\n\r\n",
+                            out_slice.len(),
+                            ce_line,
                             start,
                             end - 1,
                             body.len(),
@@ -339,13 +422,13 @@ fn serve(
                         );
                         stream.write_all(resp.as_bytes())?;
                         if slow > 0 {
-                            for chunk in slice.chunks(4096) {
+                            for chunk in out_slice.chunks(4096) {
                                 stream.write_all(chunk)?;
                                 stream.flush()?;
                                 std::thread::sleep(Duration::from_millis(slow as u64));
                             }
                         } else {
-                            stream.write_all(slice)?;
+                            stream.write_all(out_slice)?;
                         }
                         stream.flush()?;
                     }
@@ -422,6 +505,37 @@ fn hex_of(s: &str) -> String {
         h = h.wrapping_mul(31).wrapping_add(b as u64);
     }
     format!("{:016x}", h)
+}
+
+/// Wrap `data` in a zlib stream built from stored (uncompressed) deflate
+/// blocks — valid zlib that decompresses to `data`, with wire bytes that
+/// differ from `data` (S11-i B17 e2e discriminator). Hand-rolled from
+/// RFC 1950/1951 (the tests must not depend on a compression crate).
+fn zlib_stored(data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(data.len() + data.len() / 65535 * 5 + 16);
+    out.push(0x78); // CMF: deflate, 32K window
+    out.push(0x01); // FLG: check bits valid, no dict, fastest
+    if data.is_empty() {
+        out.extend_from_slice(&[0x01, 0x00, 0x00, 0xff, 0xff]);
+    } else {
+        let last = data.chunks(65535).count() - 1;
+        for (i, chunk) in data.chunks(65535).enumerate() {
+            out.push(if i == last { 0x01 } else { 0x00 }); // BFINAL+BTYPE=00
+            let len = chunk.len() as u16;
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(&(!len).to_le_bytes());
+            out.extend_from_slice(chunk);
+        }
+    }
+    // Adler-32 trailer (RFC 1950)
+    let mut a: u32 = 1;
+    let mut b: u32 = 0;
+    for &byte in data {
+        a = (a + byte as u32) % 65521;
+        b = (b + a) % 65521;
+    }
+    out.extend_from_slice(&((b << 16) | a).to_be_bytes());
+    out
 }
 
 /// Whether the recorded served intervals (exclusive ends) already cover

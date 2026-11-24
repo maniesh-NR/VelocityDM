@@ -1,0 +1,28 @@
+label:            s11i3-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.80
+throughput_MBps:  159.2
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+label:            s11i3-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.81
+throughput_MBps:  159.0
+tcp_connections:  13
+http_requests:    38
+byte_identical:   yes
+label:            s11i3-post
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        1.41
+throughput_MBps:  91.1
+tcp_connections:  13
+http_requests:    38
+byte_identical:   yes
+label:            s11i3-post
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.80
+throughput_MBps:  159.1
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes

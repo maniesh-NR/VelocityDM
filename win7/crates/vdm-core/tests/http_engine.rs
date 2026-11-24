@@ -813,3 +813,98 @@ fn rate_limited_task_never_spawns_optional_connections() {
     engine.shutdown();
     server.stop();
 }
+
+// ---- S11-i wave 3 (docs/SPECS/S11-ADOPTIONS-WAVE3.md) ----
+
+#[test]
+fn b17_compressed_ranged_response_is_rejected_then_retried() {
+    let server = TestServer::start();
+    let data: Vec<u8> = (0..2 * 1024 * 1024u32)
+        .map(|i| (i * 11 + 5) as u8)
+        .collect();
+    server.set_file("/b17.bin", data.clone());
+    // two early ranged responses are REAL zlib bodies announced as
+    // Content-Encoding: deflate — valid zlib, wrong bytes for the range.
+    server.set_compressed_ranged(2);
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path());
+    let id = engine
+        .add_download(
+            &server.url("/b17.bin"),
+            HttpOptions {
+                checksum_algo: Some("sha256".into()),
+                checksum_hex: Some(sha256_hex(&data)),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(
+        wait_until_ms(45_000, || state_of(&engine, id) == TaskState::Completed),
+        "state: {:?} err: {:?}",
+        engine.get(id).map(|s| s.state),
+        engine.get(id).and_then(|s| s.error)
+    );
+    // the budget was consumed: the invalid responses were rejected
+    assert_eq!(
+        server
+            .compressed_ranged_remaining
+            .load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+    // the file is the SOURCE, never the zlib bytes
+    let got = std::fs::read(dir.path().join("b17.bin")).unwrap();
+    assert_eq!(got, data);
+    assert_eq!(engine.get(id).unwrap().checksum_ok, Some(true));
+    engine.shutdown();
+    server.stop();
+}
+
+#[test]
+fn b18_if_range_changed_resource_fails_fast() {
+    let server = TestServer::start();
+    let data: Vec<u8> = (0..2 * 1024 * 1024u32).map(|i| (i * 3 + 1) as u8).collect();
+    server.set_file("/b18.bin", data.clone());
+    server
+        .b18_return_200
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path());
+    let id = engine
+        .add_download(
+            &server.url("/b18.bin"),
+            HttpOptions {
+                connections: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(wait_until_ms(20_000, || state_of(&engine, id) == TaskState::Failed));
+    let snap = engine.get(id).unwrap();
+    assert!(
+        snap.error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("resource changed since download started"),
+        "error: {:?}",
+        snap.error
+    );
+    // the validator actually rode the ranged requests
+    assert!(server
+        .b18_if_range_seen
+        .load(std::sync::atomic::Ordering::SeqCst));
+    // NO retry churn: HEAD + one ranged request per worker (2), each answered
+    // once; the old behavior retried MAX_RETRIES times per mirror.
+    let ranged = *server
+        .requests_per_path
+        .lock()
+        .unwrap()
+        .get("/b18.bin")
+        .unwrap_or(&0);
+    assert!(
+        ranged <= 4,
+        "changed resource should fail fast, got {} ranged+head requests",
+        ranged
+    );
+    engine.shutdown();
+    server.stop();
+}
