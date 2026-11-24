@@ -14,10 +14,11 @@ performance, stability, and resource use?
 | Re-verification (activation gate) | Fresh HTTPS download from the official URL on 2026-11-21; size and SHA-256 matched the pinned fingerprint byte-exact before any work started (fail-closed policy honored; no re-pin needed) |
 | Tier | T2 — static reverse engineering (decompile/disassemble; no execution of any studied binary; this sandbox has no Windows anyway) |
 | Owner T2 clearance | Owner directive received in-chat on 2026-11-21, verbatim: "Use Ghidra CLI analyzeHeadless to decompile and reverse engineer the IDM install file (https://download.internetdownloadmanager.com/idman643build18.exe) to study if there are any methods of download management or browser integration that can be incorporated in to this project to improve performance, stability, and resource use". Recorded as the T2 clearance the S11 brief requires (separate from and after the 0003 amendment gate). Disclaimer per protocol: the panel is not legal counsel; posture is owner-authorized static analysis of a lawfully obtained copy for interoperability study. |
-| Tools | Ghidra 12.2.2 `analyzeHeadless` (+ Temurin JDK 25; zip hash-verified per RUNBOOK), binutils `objdump`/`strings`, Python `zlib`/`zipfile` for container unpacking |
+| Tools | Ghidra 12.2.2 `analyzeHeadless` (+ Temurin JDK 25; zip hash-verified per RUNBOOK), binutils `objdump`/`strings`, Python `zlib`/`zipfile` for container unpacking; deep-dive session 2 (2026-11-24) adds **REA 6.10.1** (`rea-agents`) as the structured evidence layer (PE import/resource/hardening inspection, the JavaScript application analyzer on the Firefox XPI, and a Ghidra-provider overview of the installer stub) — the targeted bounded decompile stays on the established no-analysis Ghidra script pipeline, because REA's native provider requires full auto-analysis, which still exceeds this sandbox's budget on the 2.97 MB code image |
 | Fully decompiled components | installer stub (272 functions, all decompiled), `IDMMsgHost.exe` (83 functions, all decompiled), `MediumILStart.exe` (172 functions, all decompiled) |
 | Bounded-to-strings components | `IDMan.exe` (2.97 MB of code — full Ghidra decompile exceeds this sandbox's CPU/RAM/time budget; analyzed via imports, strings, RTTI class names, version resources, **then the D7/D8 function-level deep-dive of its scheduler/connection-scaling machinery — see §4b**), 16 integration helper binaries (imports + strings), all three Firefox XPI generations and the Chrome CRX (JavaScript read in full) |
 | Deep-dive provenance (D7:B, D8:now) | Function-level decompile of the reference engine's scheduler + connection scaling, session 1 of a bounded multi-session effort, 2026-11-21: same pinned artifact (fail-closed re-verified byte-exact at session start), same throwaway-dir discipline (all decompiler output wiped after distillation), Ghidra 12.2 no-analysis import + anchor-string/backward-start + RTTI-chain scripts + bounded targeted decompilation (184 functions selected by evidence; helper scripts backed up with the sandbox toolbox); findings below are functional descriptions in our own words — no code, structures, or constants copied for implementation use |
+| Deep-dive provenance (session 2, 2026-11-24) | The commissioned deep-dive continued on its session-2 targets (worker range arithmetic, queue-state writer, site-login/refresh-link) under the same barriers: pinned artifact re-downloaded from the official URL and verified byte-exact before any work (fail-closed honored, no re-pin); Ghidra 12.2 + Temurin JDK 25 re-provisioned per RUNBOOK; REA 6.10.1 installed and bound to the Ghidra provider for structured evidence; bounded targeted decompilation (152 functions incl. 10/10 session-2 anchor functions and the header-range builders + If-Range site), all output confined to the wiped throwaway dir; findings in §4c below are functional descriptions in our own words |
 | T2 artifacts | All raw material (installer binary, extracted payloads, decompiler output) lived only in a throwaway directory outside the repo and was wiped after distillation; the binary was never committed, stored in the repo, or backed up |
 
 Clean-room barrier (unchanged, restated): nothing below is copied code,
@@ -329,6 +330,79 @@ save-side of the queue files), and the site-login/refresh-link
 routines. The bounded toolchain and scripts for this deep-dive are
 backed up with the sandbox toolbox (see RUNBOOK's Ghidra section).
 
+## 4c. Session-2 deep-dive findings (2026-11-24): worker range requests,
+response invariants, login/refresh machinery
+
+All functional descriptions, our own words; anchors selected from string
+use-sites, functions located by bounded backward-start discovery and
+validated decompilation (152 functions this session).
+
+**Worker range-request construction.** The per-connection request builder
+emits a ladder of byte-range shapes: a bounded range for a normal segment
+(`bytes=<start>-<end>`), an open-ended range for a resumed tail
+(`bytes=<start>-`), a bounded probe (`bytes=0-<n>`) and a full open probe
+(`bytes=0-`) for size discovery. Functionally this matches the
+lease/range-pool model VelocityDM already runs (parity confirmation, not
+an adoption).
+
+**Coding discipline on ranged requests.** The builder sends
+`Accept-Encoding: identity` for range requests (byte-offset arithmetic
+stays valid — a coded body would silently shift every offset), while the
+non-ranged default negotiates compression (`gzip, deflate`). A per-task
+configured encoding overrides where set. Our engine sends no
+Accept-Encoding at all today — the gap behind backlog **B17**.
+
+**Response-side invariant validation.** A dedicated validator inspects
+every ranged response head before bytes are trusted: it detects
+`multipart/byteranges`-family content types (with boundary harvesting) for
+a single-range request, `chunked` transfer encoding, a compressed body
+(the gzip/x-gzip/deflate/x-deflate/brotli coding family), and parses
+`Content-Length`, `ETag`, and `Content-Range: bytes <s>-<e>/<t>` with
+64-bit arithmetic. Second backlog **B17** half.
+
+**Stale-resource detection on resume.** The resume path appends an
+`If-Range:` validator header (a tiny dedicated appender function fed from
+the download's stored validator; the response validator parses `ETag:`),
+so a compliant server answers 200 (resource changed) instead of a 206
+that would graft different bytes. Backlog **B18**.
+
+**Expired-address handling (site-login/refresh-link).** The reference
+walks an owner-page refresh flow: it downloads the owner web page to
+re-derive the address, and a page analyzer parses `http-equiv=refresh`
+meta redirects, harvests `http-equiv=Set-Cookie` pseudo-headers, and
+GATES the scrape on robots meta `none/nofollow` compliance. A
+manual-login flow generates a per-download login page the user opens, and
+per-project session/auth state (authorization on/off, login/password,
+manual-login URL, logout URL, a logout-deny flag) persists per project
+with a schema-version field and a fingerprint value in per-project
+storage files. Backlog **B19** adopts the honest minimum (failure
+classification + guidance); the full re-scrape machinery is a recorded
+non-goal with the robots-compliance constraint carried forward.
+
+**Site-specific CDN adapters (observed, NOT recommended).** The binary
+carries compiled-in adapters for at least one signed-URL media CDN: a host
+gate, range negotiation via URL QUERY parameters instead of the Range
+header (`&bytes=<start>-<end>` shapes), signature-parameter normalization
+(`?sig=`/`?signature=` rewriting), and duration/init/length query
+parameter handling. We keep our data-driven observe-first posture — no
+public specification governs these quirks, and hard-coding third-party
+site behavior is a maintenance and compliance liability (same philosophy
+as the B15 note).
+
+**Query-range variant (observed, NOT recommended).** The same query-
+parameter range convention appears in a generic builder (`bytes=0-`,
+`bytes=0-<n>`, `bytes=<start>-<end>` in the URL). Recorded for parity
+awareness only.
+
+**REA evidence layer (session 2).** REA 6.10.1 ran the structured PE
+inspection (imports/resources/hardening) on the pinned installer and the
+extracted engine module, its JavaScript application analyzer produced a
+structured inventory of the Firefox XPI (3 parsed scripts; the wave-1
+manual §3 read cross-checked), and its Ghidra provider produced the
+installer-stub overview. Evidence JSON stayed in the throwaway dir.
+New-tool provenance: npm-distributed MIT-licensed client tooling, no
+network calls to the studied vendor beyond the pinned artifact URL.
+
 ## 5. Improvement backlog (mapped to VelocityDM areas)
 
 Legend — target: our code area; tier: provenance (all T2, 2026-11-21,
@@ -352,6 +426,9 @@ as S11-i waves close (wave 1: B1/B2/B9 adopted 2026-11-21 under gate
 | B7 | Video detection hardening in content scripts: geometry gating (min width/height, `videoWidth`/`networkState` while `readyState<1`), transparent-overlay visibility filter, MutationObserver+ResizeObserver on players, inline-script URL scraping, site-specific selector packs | `extensions/shared/detector.js` | fewer false positives (resource + UX) | **ADOPTED (wave 2 extension side, gate 0007)**: geometry gate 200×120 ours (NOT the reference's 15×10) + 640×360 prominence tier, state gate, bounded 32-step ancestor visibility walk, inline scan capped at the first 128 KiB with a letter-boundary regex, one MutationObserver (media-tag-filtered, 250 ms debounce) + a ResizeObserver on candidates active only during bounded windows with full teardown; site packs data-driven and OFF by default; honest overhead witness: a synthetic 5000-candidate gated pass measured 4.63 ms in the dev sandbox |
 | B8 | MIME→extension normalization table for filename choices | `extensions/shared/*` + core naming | correctness | ~100-entry data table, ours from scratch; **core side ADOPTED (wave 2 engine side, gate 0007)**: `vdm-core/src/mime.rs` (110 entries from the public IANA registry + widely-served vendor aliases; parameters/case normalized; octet-stream deliberately absent) applied only when the URL yields no extension — never overrides an explicit filename or an existing extension; **extension side ADOPTED (wave 2 extension side)**: the generated copy is now a UMD module (the ESM emit could not load in a classic service worker — caught at consumer wiring), the sniffed-video list gains a filename hint, and the onDeterminingFilename suggestion + takeover filename mirror use the table; drift tripwire enforces Rust/JS equality |
 | B9 | Assembly-conflict UX: explicit "another app (AV) holds the file; reboot+resume to assemble" messaging and retry path | `vdm-core/src/engine/task.rs` + frontend surfaces | recoverability | **ADOPTED (wave 1, gate 0006)**: lock-classification + bounded finalize retry + resumable failure |
+| B17 | Ranged-request coding discipline (`Accept-Encoding: identity` on range requests) + ranged-response invariants (reject compressed / multipart / Content-Range-mismatched responses before any byte is trusted) | `vdm-core/src/engine/task.rs` (+ win7) | eliminates the silent-corruption class on misbehaving servers | **ADOPTED (wave 3, gate 0009)** — public-spec source RFC 9110 §8.4/§12.5.3/§14; specs `docs/SPECS/S11-ADOPTIONS-WAVE3.md` |
+| B18 | If-Range validator on in-run ranged requests; 200-at-offset>0 classified definitively as "resource changed" (fast honest failure instead of retry churn) | `vdm-core/src/engine/task.rs` (+ win7) | stability + honest failure reasons on changed resources | **ADOPTED (wave 3, gate 0009)** — RFC 9110 §13.1.5; cross-restart validator persistence is a recorded non-goal (ResumeState untouched) |
+| B19 | Expired-link guidance: 403/410 classified as refreshable with actionable guidance in the extension popup | `vdm-core/src/engine/task.rs` + `extensions/chromium/popup.js` | UX recoverability | **ADOPTED (wave 3, gate 0009)** — honest minimum; the reference's full owner-page re-scrape (meta-refresh, Set-Cookie http-equiv, robots meta gating) is a recorded non-goal for any future re-scrape feature to honor |
 
 **Candidate (worth a spec + bench, decide at the gate):**
 
@@ -387,11 +464,12 @@ future local index/search need (our state model does not need it today).
   measurement is likewise pending that VM.
 - `IDMan.exe`'s 2.97 MB of code was analyzed at the strings/imports/
   RTTI level in the original study; the commissioned function-level
-  deep-dive (D7:B / D8:now) has now covered the scheduler,
+  deep-dive (D7:B / D8:now) has covered the scheduler,
   queue-persistence, limits, and connection-scaling machinery (184
-  functions, §4b) with the worker-thread range arithmetic and the
-  queue-state writer queued as session-2 targets — still bounded,
-  never wholesale.
+  functions, §4b) and, in session 2 (2026-11-24), the worker range
+  arithmetic, response invariants, and the site-login/refresh-link
+  machinery (152 further functions incl. all session-2 anchors, §4c) —
+  still bounded, never wholesale.
 - Findings are for build 6.43.18 only; the vendor rotates builds and
   the fail-closed re-pin policy stands.
 - This document contains no proprietary code, structures copied for

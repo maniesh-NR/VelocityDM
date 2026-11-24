@@ -87,6 +87,22 @@ RTTI chain walk, targeted decompile) are sandbox tooling, backed up
 with the toolbox; sessions 2+ (range arithmetic, queue-state writer)
 repeat this record per session.
 
+**S11 deep-dive record (session 2, 2026-11-24):** session 2 executed the
+remaining commissioned targets (worker range arithmetic, response
+invariants, site-login/refresh-link) under the same barriers, with the
+owner's round-3 directive (decision ledger round 3) adding REA 6.10.1 as
+an evidence layer. The pinned artifact was re-downloaded from the
+official URL and verified byte-exact (12,164,608 bytes, SHA-256 match)
+before any work; Ghidra 12.2 + Temurin JDK 25 were re-provisioned per
+RUNBOOK; REA ran locally (npm-distributed MIT client; no vendor calls
+beyond the pinned artifact URL) for structured PE/JS inspection and the
+Ghidra-provider stub overview. All decompiler output, string dumps, and
+REA evidence stayed in the throwaway directory (wiped at close). The repo
+receives only the functional descriptions in `RESEARCH-IDM-STUDY.md` §4c.
+Wave-3 adoptions (B17/B18/B19) re-spec from the public RFCs (9110 §8.4/
+§12.5.3/§13.1.5/§14) — the study pointed at our gaps; the implementation
+source is the public specification, per the standing barrier.
+
 ## License
 
 GPL-3.0-or-later for all first-party code in this repository.
