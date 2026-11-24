@@ -62,5 +62,5 @@ reconciled tree (2026-11-13, assessment 0002).
 
 ## Known limitations (documented, tracked as issues)
 
-No DHT (BEP-5); UDP trackers (BEP-15) detected then skipped; DASH
-detect-only; HLS SAMPLE-AES and fMP4 EXT-X-MAP unsupported.
+DHT (BEP-5, S4) and UDP trackers (BEP-15, S5) shipped; DASH
+detect-only; HLS SAMPLE-AES and fMP4 EXT-X-MAP unsupported (S7 in flight).

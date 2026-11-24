@@ -23,7 +23,7 @@ maps each idea to its origin and where it lives in our code.
 | --- | --- |
 | BitTorrent with per-file selection | `bt/pieces.rs` file priorities (skipped files only receive boundary-piece bytes) + `torrents.files` RPC for pre-add inspection + `--files 0,2` |
 | Magnet link support (fetch metadata, then pick files) | `bt/engine.rs::fetch_metadata` — BEP-10 extension handshake + BEP-9 `ut_metadata` exchange, then normal download |
-| Built-in tracker list management | `.torrent` announce-list preserved; magnets accept multiple `&tr=` entries; `create_torrent` emits `announce-list`; UDP trackers are reported and skipped (documented) |
+| Built-in tracker list management | `.torrent` announce-list preserved; magnets accept multiple `&tr=` entries; `create_torrent` emits `announce-list`; UDP trackers announced per BEP-15 (S5: connected-socket pinning, one retransmit, 32-tracker round cap) |
 | Seeding / sharing from the app | `velocitydm seed FILE` starts tracker + seeder and prints a ready-to-share magnet; `torrent-create` from files or directories |
 | Clean task UI with categories and progress | MD3-dark egui list (state chips, progress bars, peers/seeds) and the Compose app on Android |
 | Pause/resume that survives crashes | `.part` + `.vdmctl` interval state for HTTP; `.vdmctl` have-set for BitTorrent; both verified by integration tests |

@@ -66,8 +66,8 @@ connection reuse. A/B on 128 MiB / 8 connections with simulated WAN RTT:
 1. **macOS bundle not linked here** — cross-linking eframe needs Apple
    frameworks; script + Info.plist ready. Windows x64/x86 and Windows 7
    payloads ARE cross-built via cargo-zigbuild (mingw) and shipped.
-2. **UDP trackers / DHT not implemented** — HTTP trackers only; magnets need
-   `&tr=` entries. Documented in ALGORITHMS.md.
+2. **UDP trackers + DHT implemented** (S5 BEP-15 + S4 BEP-5): magnets resolve
+   via HTTP/UDP trackers and DHT. Documented in ALGORITHMS.md.
 3. **Live HLS (no `#EXT-X-ENDLIST`) rejected** — VOD playlists only.
 4. **SAMPLE-AES** and **fMP4 EXT-X-MAP** not supported in the HLS engine.
 5. **Android APK not built here** (SDK download size); source + instructions

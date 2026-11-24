@@ -167,7 +167,8 @@ connection design matters on real networks and costs nothing locally.
 
 ## Not implemented (documented limits)
 
-- UDP trackers (BEP-15) and DHT (BEP-5): magnets require `&tr=` HTTP
-  trackers; UDP/DHT is future work.
+- UDP trackers (BEP-15, S5) and DHT (BEP-5, S4) are implemented: magnets
+  resolve via HTTP/UDP trackers and DHT. Not implemented: UDP scrape
+  (BEP-15 action 2) and UDP-over-IPv6 (recorded S5 non-goals).
 - Live HLS playlists without `#EXT-X-ENDLIST` are rejected.
 - Endgame mode and super-seeding for BitTorrent.

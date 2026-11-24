@@ -1352,3 +1352,40 @@ session reads this file first, then `ROADMAP.md`.
   sub-stage, needs its own five-role gate + spec FIRST (a C++/Qt toolchain
   is a real provisioning question in this sandbox). The D5:A owner
   runtime-verification moment remains the owner's.
+
+## Session 20 (2026-11-24): S5 shipped + S6/S7/S12-lin3 activation + T1/T3 protocol
+
+- Owner directive (IM): "implement everything in the roadmap that doesn't
+  require my input within a single session, backing up after each stage is
+  complete. Parallelize the workflow across as many agents as possible."
+- Environment loss recovered FIRST: toolchains re-provisioned from dist
+  tarballs (stable 1.100.0 + clippy 1.100.0 + rustfmt; 1.75.0 witness) —
+  rustup-init dies silently in this sandbox; the dist-tarball merge recipe
+  (channel manifest URLs + component/ extraction) is the reliable path.
+  The old cargo registry cache was keyed to a stale index hash and broke
+  resolution ("failed to find X in path source") — moved aside, fresh fetch
+  (705 crates). Ghidra/JDK/Android SDK/jdk17 all gone this instance.
+- Fresh five-role gates run in ONE session (independent dispatch):
+  0014 S5 (5×PWC), 0015 S6 (5×PWC), 0016 S7 round 1 (4×PWC + **1× BLOCK
+  FALS** — the draft's SAMPLE-AES section inverted the [SampleEnc]
+  sub-sample layout and cited a nonexistent RFC section; revised), 0016b
+  S7 fresh re-run (5× PROCEED — consensus), 0017 S12-lin3 (5×PWC). All
+  conditions folded into the committed specs BEFORE any implementing
+  commit (spec-first held for all four stages).
+- S5 IMPLEMENTED + CLOSED: commit 9437e59 (C2 revert unit: bt/tracker.rs +
+  engine.rs + win7 mirrors). BEP-15 client with connected-socket source
+  pinning; 32-tracker round cap; bench parity; 219 tests green; doc truth
+  flips (REQUIREMENTS-COVERAGE/ALGORITHMS/IMPROVEMENTS/TEST-REPORT/README).
+  **1.75 witness truth:** `check --workspace --locked` green; the gate's
+  `--all-targets` shape is NOT runnable on 1.75 locally — the win7 lock DEV
+  graph pins getrandom 0.4.3 (edition2024 via tempfile), cargo 1.75 refuses
+  at download. lib+bins compile; test-code 1.75 compilation is CI-blind.
+- T1/T3 observation protocol PREPARED (D4:B):
+  docs/T1-T3-OBSERVATION-PROTOCOL.md — measurement plans, trace hygiene,
+  VM-boundary whitelist; execution still gated on the owner-provisioned VM.
+- Subagent budget lesson: implementation agents with repo-wide reading +
+  full batteries exceeded the context deadline TWICE; the reliable shape is
+  tight-scoped dispatch (or orchestrator-executed finishing) with compact
+  reports. Fresh-panel re-gate succeeded via one coordinator agent.
+- S6 (gate 0015), S7 (gates 0016/0016b), S12-lin3 (gate 0017) specs
+  committed and consensus-cleared; their implementation commits follow.
