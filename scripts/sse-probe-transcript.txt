@@ -1,0 +1,17 @@
+# file server on 127.0.0.1:8099 serving /tmp/sse-probe-28134.bin
+# daemon up at 127.0.0.1:36990 (pid 28136)
+# add reply: {'id': 1, 'jsonrpc': '2.0', 'result': {'id': 1}}
+# response head: 'HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close'
+--- frame 1 ---
+data: {"id":1,"state":"probing","type":"task-state"}
+--- frame 2 ---
+data: {"id":1,"state":"downloading","type":"task-state"}
+--- frame 3 ---
+data: {"id":1,"state":"completed","type":"task-state"}
+--- frame 4 ---
+data: {"id":1,"path":"/tmp/velocitydm/probe.bin","type":"task-completed"}
+--- frame 5 ---
+data: {"tasks":[{"checksumOk":null,"connections":0,"createdAt":1795495390501,"dir":"/tmp/velocitydm","done":6291456,"error":null,"etaSecs":0,"id":1,"kind":"http","name":"probe.bin","outPath":"/tmp/velocitydm/probe.bin","peers":0,"priority":0,"seeds":0,"size":6291456,"speed":0,"startAt":null,"state":"completed","url":"http://127.0.0.1:8099/probe.bin","userPaused":false}],"type":"tasks"}
+--- frame 6 ---
+data: {"type":"queue-drained"}
+# total frames: 6
