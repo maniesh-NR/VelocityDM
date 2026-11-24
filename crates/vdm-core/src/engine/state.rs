@@ -53,6 +53,15 @@ impl ResumeState {
         let _ = std::fs::remove_file(Self::part_path(out_path));
     }
 
+    /// S11-i B21a coherency rule (docs/SPECS/S11-ADOPTIONS-WAVE4.md): remove
+    /// ONLY the `.vdmctl` sidecar. Used when the single-stream path
+    /// truncates the `.part` it holds open — unlinking the `.part` itself
+    /// would orphan the in-flight write on POSIX, so only the (now
+    /// stale) progress description is invalidated.
+    pub fn remove_ctl(out_path: &Path) {
+        let _ = std::fs::remove_file(Self::ctl_path(out_path));
+    }
+
     /// Whether a saved state can be reused: same size and validator (etag or
     /// last-modified), or no validator at all.
     pub fn matches(

@@ -288,6 +288,35 @@ fn serve(
             write_simple(&mut stream, 403, "Forbidden", b"forbidden")?;
             continue;
         }
+        // S11-i B21a e2e: a server that NEVER supports ranges (no
+        // Accept-Ranges advertised; ranged GETs answered with a full 200).
+        if path.starts_with("/nores/") {
+            let body = files.lock().unwrap().get(path).cloned();
+            if let Some(body) = body {
+                let etag = format!("\"{}\"", hex_of(path));
+                if method == "HEAD" {
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nETag: {}\r\nContent-Type: application/octet-stream\r\nConnection: keep-alive\r\n\r\n",
+                        body.len(),
+                        etag
+                    );
+                    stream.write_all(resp.as_bytes())?;
+                    stream.flush()?;
+                    continue;
+                }
+                // ranged or not: a full 200 — the engine must classify this
+                // server as no-resume from the probe onward.
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nETag: {}\r\nContent-Type: application/octet-stream\r\nConnection: keep-alive\r\n\r\n",
+                    body.len(),
+                    etag
+                );
+                stream.write_all(resp.as_bytes())?;
+                stream.write_all(&body)?;
+                stream.flush()?;
+                continue;
+            }
+        }
         // flaky handling
         if path.starts_with("/flaky") {
             let prev = flaky.try_update(Ordering::SeqCst, Ordering::SeqCst, |v| {

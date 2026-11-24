@@ -462,6 +462,11 @@ const NOTICE_RECOVERY: &str =
 const NOTICE_SANITIZED: &str =
     "one or more request header values contained control characters and were sanitized before sending";
 
+/// S11-i B21a: the explicit no-resume state — generic by design (it never
+/// embeds the URL, query, or path; signed-URL tokens must not leak into the
+/// notice channel).
+const NOTICE_NO_RESUME: &str = "server does not support resume — the download restarts from zero; partial progress was discarded";
+
 /// B2: maximum optional (dynamically spawned) workers per task.
 const OPT_EXTRA_MAX: usize = 8;
 /// B2: minimum file size for optional connections.
@@ -1061,6 +1066,21 @@ pub fn run_http_task(
         return;
     }
     if probe.size == 0 || !probe.accepts_ranges {
+        // S11-i B21a (docs/SPECS/S11-ADOPTIONS-WAVE4.md; study §4d): a server
+        // that never advertised range support is classified no-resume at the
+        // PROBE (precedence over B18's changed-resource, which requires a
+        // range-capable probe followed by a 200 at offset). A restart from
+        // zero must be EXPLICIT when partial progress existed — never silent.
+        let had_partial = !opts.fresh
+            && (ResumeState::load(&out_path).is_some()
+                || std::fs::metadata(ResumeState::part_path(&out_path))
+                    .map(|m| m.len() > 0)
+                    .unwrap_or(false));
+        if had_partial {
+            shared.update(id, |s| {
+                s.notice = Some(NOTICE_NO_RESUME.to_string());
+            });
+        }
         run_single(id, shared, env, control, &url_parsed, &out_path);
         return;
     }
@@ -1574,8 +1594,11 @@ fn fail(shared: &Arc<EngineShared>, id: u64, msg: &str) {
         s.error = Some(msg.to_string());
         s.speed = 0;
         // S11-i B19: refreshable failures surface an actionable hint on the
-        // EXISTING note channel (every frontend renders notes; no new
-        // surface, no new permission, no RPC change).
+        // EXISTING note channel (rendering truth: the CLI prints notes; the
+        // desktop frontends render `error` — the notice field is additive
+        // and its frontend rendering is a recorded pre-existing gap, see
+        // S11-ADOPTIONS-WAVE4 §B21 rule 8. No new surface, no new
+        // permission, no RPC change).
         if msg.contains(REFRESHABLE_MARKER) {
             s.notice = Some(
                 "This link looks expired or forbidden — open the source page, re-grab the link (extension grab-links or the page context), then add the fresh address."
@@ -1679,6 +1702,11 @@ fn run_single(
             return;
         }
     };
+    // S11-i B21a coherency rule: the truncation just discarded the bytes the
+    // matching `.vdmctl` describes — invalidate the stale sidecar (ctl only;
+    // the open `.part` must not be unlinked) so a later resume against a
+    // range-capable server cannot skip truncated ranges.
+    ResumeState::remove_ctl(out_path);
     let done = AtomicU64::new(0);
     let mut buf = vec![0u8; 64 * 1024];
     let mut speed_ema = 0u64;

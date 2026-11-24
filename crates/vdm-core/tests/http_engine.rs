@@ -20,6 +20,76 @@ fn state_of(engine: &Engine, id: u64) -> TaskState {
     engine.get(id).map(|s| s.state).unwrap_or(TaskState::Failed)
 }
 
+/// S11-i B21a falsification (docs/SPECS/S11-ADOPTIONS-WAVE4.md §B21 rules
+/// 7-10): a task with pre-seeded partial state (`.part` + matching
+/// `.vdmctl`) landing on a server with NO range support must (a) complete
+/// single-stream with the final file byte-equal to the server content —
+/// the silent zero-holes class is closed; (b) invalidate the stale sidecar;
+/// (c) surface the explicit no-resume notice exactly because valid state
+/// was discarded.
+#[test]
+fn b21_no_resume_restart_is_explicit_and_coherent() {
+    use vdm_core::engine::state::ResumeState;
+    let server = TestServer::start();
+    let data: Vec<u8> = (0..512 * 1024u32).map(|i| (i * 13 + 1) as u8).collect();
+    server.set_file("/nores/f.bin", data.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let dl = dir.path().join("dl");
+    std::fs::create_dir_all(&dl).unwrap();
+    let engine = engine_in(&dl);
+    let out = dl.join("f.bin");
+    // pre-seed: a stale partial file + a matching sidecar describing
+    // progress that the upcoming truncation will discard
+    let st = ResumeState {
+        version: 1,
+        url: server.url("/nores/f.bin"),
+        mirrors: vec![],
+        size: data.len() as u64,
+        etag: None,
+        last_modified: None,
+        checksum_algo: None,
+        checksum_hex: None,
+        filename: "f.bin".into(),
+        remaining: vec![vdm_core::range_pool::Interval {
+            start: 4096,
+            end: data.len() as u64 - 1,
+        }],
+    };
+    st.save(&out).unwrap();
+    std::fs::write(ResumeState::part_path(&out), b"stale").unwrap();
+    let id = engine
+        .add_download(&server.url("/nores/f.bin"), HttpOptions::default())
+        .unwrap();
+    assert!(
+        wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed),
+        "state: {:?} err: {:?}",
+        engine.get(id).map(|s| s.state),
+        engine.get(id).and_then(|s| s.error)
+    );
+    // (a) the final file is the server content — no zero-holes
+    let got = std::fs::read(&out).unwrap();
+    assert_eq!(sha256_hex(&got), sha256_hex(&data));
+    // (b) the coherency rule invalidated the stale sidecar
+    assert!(
+        !ResumeState::ctl_path(&out).exists(),
+        "stale sidecar must be discarded on no-resume restart"
+    );
+    // (c) the restart was explicit, exactly when valid state was discarded
+    let notice = engine.get(id).and_then(|s| s.notice);
+    assert!(
+        notice
+            .as_deref()
+            .map(|n| n.contains("does not support resume"))
+            .unwrap_or(false),
+        "notice: {:?}",
+        notice
+    );
+    // no leftover part files
+    assert!(!ResumeState::part_path(&out).exists());
+    engine.shutdown();
+    server.stop();
+}
+
 #[test]
 fn segmented_download_completes_with_checksum() {
     let server = TestServer::start();
