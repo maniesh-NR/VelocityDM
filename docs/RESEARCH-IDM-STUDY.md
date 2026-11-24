@@ -506,6 +506,11 @@ as S11-i waves close (wave 1: B1/B2/B9 adopted 2026-11-21 under gate
 | B17 | Ranged-request coding discipline (`Accept-Encoding: identity` on range requests) + ranged-response invariants (reject compressed / multipart / Content-Range-mismatched responses before any byte is trusted) | `vdm-core/src/engine/task.rs` (+ win7) | eliminates the silent-corruption class on misbehaving servers | **ADOPTED (wave 3, gate 0009)** — public-spec source RFC 9110 §8.4/§12.5.3/§14; specs `docs/SPECS/S11-ADOPTIONS-WAVE3.md` |
 | B18 | If-Range validator on in-run ranged requests; 200-at-offset>0 classified definitively as "resource changed" (fast honest failure instead of retry churn) | `vdm-core/src/engine/task.rs` (+ win7) | stability + honest failure reasons on changed resources | **ADOPTED (wave 3, gate 0009)** — RFC 9110 §13.1.5; cross-restart validator persistence is a recorded non-goal (ResumeState untouched) |
 | B19 | Expired-link guidance: 403/410 classified as refreshable with actionable guidance in the extension popup | `vdm-core/src/engine/task.rs` + `extensions/chromium/popup.js` | UX recoverability | **ADOPTED (wave 3, gate 0009)** — honest minimum; the reference's full owner-page re-scrape (meta-refresh, Set-Cookie http-equiv, robots meta gating) is a recorded non-goal for any future re-scrape feature to honor |
+| B20 | Outbound header hygiene: value-level charset discipline layered on the emission boundary | `vdm-core/src/http.rs` (+ win7) | robustness: a malformed caller value degrades instead of aborting | **ADOPTED (wave 4, gate 0011)** — re-spec from RFC 9110 §5.5/§5.6.2; the panel narrowed the §4d "full whitelist": tchar name refusal (tightening), CR/LF/NUL value refusal unchanged, other controls + DEL replace-with-`_` surfaced by notice, obs-text passes (UTF-8 cookies keep working); specs `docs/SPECS/S11-ADOPTIONS-WAVE4.md` |
+| B21 | Resume honesty: explicit user-visible no-resume state instead of silent restart; Retry-After honored on retryable failures | `vdm-core/src/engine/task.rs` (+ win7) | honest failure reasons + data-loss-class fix (stale `.vdmctl` vs truncated `.part` coherency) | **ADOPTED (wave 4, gate 0011)** — RFC 9110 §10.2.3 delta-seconds only, 429/503, 60 s cap, stop-responsive; the panel upgraded the item with the `.vdmctl`/`.part` coherency rule (silent zero-holes risk found in our own engine) |
+| B22 | TLS protocol-version policy as a first-class externally configurable setting | `vdm-core/src/tls.rs` + settings (+ win7) | parity: min-version floor configurable (rustls floor = TLS 1.2, so the knob is floor-raising only) | **ADOPTED (wave 4, gate 0011)** — additive `tlsMin` settings knob (`default|tls12|tls13`, default = zero change), fail-closed at wrap; wire-level claim docs-only (no TLS test server in-sandbox) |
+| B23 | Keep-alive connection reuse across segment requests | `vdm-core/src/http.rs` + `engine/task.rs` | throughput (handshake amortization) | **ALREADY OURS — witnessed (wave 4, gate 0011)**: `Connection: keep-alive` default + worker conn recycling predate the study; `keepalive_reuse_across_leases` pins the count; recorded as parity confirmation, not adoption |
+| B24 | CocCoc browser NativeMessagingHosts registration in packaging | `packaging/nmh/install-nmh.sh` + `packaging/linux/install.sh` | browser-integration parity (regional market) | **DEFERRED (wave 4, gate 0011)** — the exact CocCoc per-OS config dir names could not be empirically verified in the sandbox (AUR bot-blocked, official deb endpoint 404); an unverified path in an existence-gated install loop is a silent no-op. Pre-condition: observe a real CocCoc install's NMH paths (Linux user dir + Windows registry hive); fix the linux uninstall-list asymmetry (vivaldi/brave missing) in the same commit |
 
 **Candidate (worth a spec + bench, decide at the gate):**
 
@@ -529,9 +534,17 @@ as S11-i waves close (wave 1: B1/B2/B9 adopted 2026-11-21 under gate
 | N4 | Direct XPI write into Firefox profile directories at install time | legacy-Firefox-only pattern; modern FF WebExtension + NMH JSON is the supported path we already ship |
 | N5 | COM `CIDMLinkTransmitter` link intake + typelib registration machinery | Windows-only legacy convenience; our JSON-RPC over loopback is already cross-platform and trust-bounded |
 | N6 | Dial-up/RAS era scheduling (dial processor classes, hangup) | dead feature class for our user base |
+| N7 | Configuration hot-reload via registry change notification + privileged helper launch via token inspection/duplication (`CreateProcessAsUserW`) | Windows-registry-era mechanics; N/A for a GPL cross-platform user-space product — our config loads from config.json at daemon start and the NMH is launched by the browser itself (§2 additions, gate 0011 recorded) |
+| N8 | Format-string request builder (~17 optional `%s` header slots, two builder families with different header ordering) | the slot machine is the reference's C-era shape; our typed `Request`/`ClientCfg` builder (http.rs) is the deliberate Rust shape — same capability (per-connection header state), no adoption (gate 0011 recorded) |
 
 The `idmindex.dll` SQLite embed is noted as a design reference for any
 future local index/search need (our state model does not need it today).
+The FTP PASV capability state machine (§4d) stays the recorded parity
+knowledge for a future FTP stage, spec-first at that stage's own gate —
+pre-condition recorded at gate 0011: any FTP adoption must constrain the
+server-supplied PASV data target (an SSRF/bounce/port-scan primitive):
+connect only to the control-connection host by default and refuse
+loopback/link-local targets.
 
 ## 6. Scope, limitations, and what this is not
 

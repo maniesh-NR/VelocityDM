@@ -103,6 +103,21 @@ Wave-3 adoptions (B17/B18/B19) re-spec from the public RFCs (9110 §8.4/
 §12.5.3/§13.1.5/§14) — the study pointed at our gaps; the implementation
 source is the public specification, per the standing barrier.
 
+**S11 record (session 16 re-derivation + wave 4, 2026-11-24):** an
+independent session re-derived the study end-to-end through the rea
+attach-mode pipeline (fail-closed re-pin verified byte-exact; evidence in
+the wiped throwaway dir; the repo received only the §4d functional
+descriptions). Wave 4 (gate 0011, ledger round 4) adopts B20/B21/B22 from
+those observations re-spec'd from PUBLIC sources only: B20 = RFC 9110 §5.5
+field-value + §5.6.2 token grammar (the study's "charset whitelist" was
+narrowed by the panel to injection-refusal + control-char replacement with
+obs-text passthrough), B21 = RFC 9110 §10.2.3 Retry-After (delta-seconds
+only) plus our own state-model coherency rule, B22 = the rustls public
+version-policy API. B23 is a parity witness (already ours), B24 deferred
+pending empirical path verification. No studied-binary artifact entered
+the repo at any point; T2 artifacts lived only in the wiped throwaway
+directory.
+
 ## License
 
 GPL-3.0-or-later for all first-party code in this repository.

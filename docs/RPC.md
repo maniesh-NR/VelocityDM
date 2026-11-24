@@ -104,9 +104,10 @@ rely on any per-field passthrough.
 `id`, `kind` (`http|hls|torrent|magnet`), `name`, `url`, `dir`, `outPath`,
 `state`, `size`, `done`, `speed`, `etaSecs`, `connections`, `peers`,
 `seeds`, `priority`, `startAt` (null or epoch), `error` (null or string),
-`checksumOk` (null/bool), `userPaused`, `createdAt`. States: `queued`,
-`probing`, `downloading`, `paused`, `verifying`, `completed`, `failed`,
-`seeding`.
+`notice` (null or string — additive engine hint, e.g. proxy warnings or
+recovery notes; may be absent on older snapshots), `checksumOk`
+(null/bool), `userPaused`, `createdAt`. States: `queued`, `probing`,
+`downloading`, `paused`, `verifying`, `completed`, `failed`, `seeding`.
 
 ## `GET /events` — server-sent events
 
