@@ -50,3 +50,21 @@ clean-room-bounded either way.
 Future rounds: the owner may answer by code ("D1:C, rest default");
 unanswered items keep the menu's marked defaults. This ledger is the
 source of truth after context loss; the chat menu is the interface.
+
+## Round 3 — answered in-chat 2026-11-24 (session 14): REA directive
+
+The owner directed, verbatim: "Use reverse engineer anything
+(https://github.com/morluto/rea) to decompile, reverse engineer and
+analyse IDM (https://download.internetdownloadmanager.com/idman643build18.exe)
+and incorporate any methods/techniques to improve performance and
+stability of the download engine and browser integration."
+
+| ID | Decision | Answer | Binding |
+| --- | --- | --- | --- |
+| D9 | Deep-dive session 2 tooling | **REA** | REA 6.10.1 (`rea-agents`, npm, MIT) joins the deep-dive toolchain as the structured evidence layer (PE import/resource/hardening inspection, JS application analysis of the shipped XPI, Ghidra-provider binding), alongside the established bounded Ghidra script pipeline — REA's native provider requires full auto-analysis, which still exceeds the sandbox budget on IDMan.exe, so the targeted decompile stays on the bounded scripts. Recorded honestly in the study Tools row. |
+| D10 | Incorporation mandate | **now** | The directive authorizes adoption wave 3 from the session-2 findings, under the standing five-role gate + spec-first barrier: **B17** (ranged-request coding discipline + ranged-response invariants), **B18** (If-Range stale-resource fast path), **B19** (expired-link guidance, honest minimum). Gate record: `ASSESSMENTS/0009-s11i-adoption-wave3.md`; specs `docs/SPECS/S11-ADOPTIONS-WAVE3.md`. Parked items B10–B15 stay parked; observed-not-recommended rows unchanged. |
+
+The round-3 directive also serves as the continued T2 clearance for the
+deep-dive session 2 (same standing barriers; the pinned artifact was
+re-verified byte-exact at session start per the fail-closed policy).
+

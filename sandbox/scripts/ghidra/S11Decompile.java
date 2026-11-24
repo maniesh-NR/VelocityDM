@@ -44,6 +44,24 @@ public class S11Decompile extends GhidraScript {
         { 0x4ed173L, "optconn_connecting" }, { 0x4ed488L, "queue_finished" },
         { 0x4ed5b4L, "queue_started" }, { 0x57d17cL, "need_optconn" },
         { 0x4ef7e3L, "corrupt_one_conn" }, { 0x49d67eL, "reg_Queue" },
+        // session-2 anchors (pass-1 evidence this session): worker-thread range
+        // arithmetic, queue-state/credential serialization, site-login, refresh-link
+        { 0x4296aaL, "r1_bytes_fmt" }, { 0x42970dL, "r1_bytes_fmt2" },
+        { 0x48ba5eL, "r2_bytes_fmt" }, { 0x48bac0L, "r2_bytes_fmt2" },
+        { 0x55c2eaL, "r3_bytes_fmt" }, { 0x55c217L, "r3_bytes0" },
+        { 0x570a20L, "r4_bytes0" }, { 0x570a5bL, "r4_bytes" },
+        { 0x5820baL, "content_range_parse" }, { 0x58290eL, "content_range_parse2" },
+        { 0x4db903L, "qauth_serialize" }, { 0x4db947L, "qauth_login" },
+        { 0x4dba77L, "qauth_manualurl" }, { 0x4e017eL, "qauth_reader" },
+        { 0x4d6d9eL, "manuallogin_page" },
+        { 0x4ef339L, "refresh_addr" }, { 0x4ef393L, "refresh_owner_page" },
+        { 0x4b52f6L, "refresh_param" },
+        // pass-3 anchors: the true header-based worker range builders + If-Range
+        { 0x58b79eL, "hr1_range_fmt" }, { 0x58b861L, "hr1_probe0" },
+        { 0x58baceL, "hr1_openended" },
+        { 0x5ae606L, "hr2_range_fmt" }, { 0x5ae625L, "hr2_probe0" },
+        { 0x5ae96fL, "hr2_openended" },
+        { 0x5db5c5L, "if_range" },
     };
     // RTTI classes whose vtables we walk (names inline at TD+8)
     static final String[] RTTI_CLASSES = {

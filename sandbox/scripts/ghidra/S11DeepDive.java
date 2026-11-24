@@ -32,9 +32,14 @@ public class S11DeepDive extends GhidraScript {
     // Functional needles distilled from the committed study (docs/RESEARCH-IDM-STUDY.md §4)
     static final String[] NEEDLES = {
         "Scheduler", "Queue", "QUEUEITEM", "SpeedLimiter", "SortSpeed",
-        "LimitMonitor", "DownloadLimits", "optional connection",
-        "one connection", "data corruption", "Segment", "If-Range",
-        "bytes=", "Grabber\\Projects"
+        "LimitMonitor", "DownloadLimits", "optional connection", "Segment",
+        // session-2 targets: worker-thread range arithmetic, queue-state writer,
+        // site-login / refresh-link (D7:B commissioned scope, session 2)
+        "one connection", "data corruption", "If-Range", "bytes=", "Range:",
+        "Content-Range", "Accept-Ranges", "Authorization", "NTLM", "Negotiate",
+        "Login", "Log in", "Password", "Cookie:", "Refresh", "Reconnect",
+        "connection lost", "resume", "Resume", ".Part", ".part",
+        "connection refused", "Keep-Alive", "keep-alive", "503", "502", "416"
     };
     // RTTI classes of interest (study RTTI distillation; contains-match)
     static final String[] RTTI_WANT = {
