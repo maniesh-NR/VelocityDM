@@ -55,6 +55,10 @@ pub struct TestServer {
     /// S11-i B19 e2e: when armed, HEAD and ranged requests to "/b19.bin"
     /// return 403 (the expired/forbidden-link simulation).
     pub b19_forbid: Arc<AtomicBool>,
+    /// S11-i B21b e2e: the first N requests to "/ra.bin" return 503 with
+    /// `Retry-After: 2` (the server-controlled-wait simulation); subsequent
+    /// requests serve the file normally.
+    pub retry_after_remaining: Arc<AtomicU32>,
     /// byte ranges (exclusive end) already served per path (for the
     /// inconsistent-edge flip)
     covered: Arc<Mutex<Coverage>>,
@@ -82,6 +86,8 @@ impl TestServer {
         let b18ret200 = Arc::new(AtomicBool::new(false));
         let b18seen = Arc::new(AtomicBool::new(false));
         let b19forbid = Arc::new(AtomicBool::new(false));
+        let ra_remaining = Arc::new(AtomicU32::new(0));
+        let raf_c = ra_remaining.clone();
         let covered: Arc<Mutex<Coverage>> = Arc::new(Mutex::new(HashMap::new()));
         let conns = Arc::new(AtomicU32::new(0));
         let reqs: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -121,6 +127,7 @@ impl TestServer {
                     let b18r = b18r.clone();
                     let b18s = b18s.clone();
                     let b19f = b19f.clone();
+                    let raf = raf_c.clone();
                     std::thread::spawn(move || {
                         let _ = serve(
                             stream,
@@ -137,6 +144,7 @@ impl TestServer {
                             b18r,
                             b18s,
                             b19f,
+                            raf,
                         );
                     });
                 }
@@ -162,6 +170,7 @@ impl TestServer {
             b18_return_200: b18ret200,
             b18_if_range_seen: b18seen,
             b19_forbid: b19forbid,
+            retry_after_remaining: ra_remaining,
             stop,
             handle: Some(handle),
         }
@@ -171,6 +180,12 @@ impl TestServer {
     /// carry a real zlib body announced as `Content-Encoding: deflate`.
     pub fn set_compressed_ranged(&self, n: u32) {
         self.compressed_ranged_remaining.store(n, Ordering::SeqCst);
+    }
+
+    /// Arm the S11-i B21b e2e: the first `n` requests to "/ra.bin" return
+    /// 503 with `Retry-After: 2` before the file is served normally.
+    pub fn set_retry_after_once(&self, n: u32) {
+        self.retry_after_remaining.store(n, Ordering::SeqCst);
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -239,6 +254,7 @@ fn serve(
     b18_return_200: Arc<AtomicBool>,
     b18_if_range_seen: Arc<AtomicBool>,
     b19_forbid: Arc<AtomicBool>,
+    ra_remaining: Arc<AtomicU32>,
 ) -> std::io::Result<()> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
@@ -287,6 +303,23 @@ fn serve(
         {
             write_simple(&mut stream, 403, "Forbidden", b"forbidden")?;
             continue;
+        }
+        // S11-i B21b e2e: a server-controlled throttle — the first N
+        // requests get 503 + `Retry-After: 2` (delta-seconds form).
+        if path == "/ra.bin" {
+            let prev = ra_remaining.try_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                if v > 0 {
+                    Some(v - 1)
+                } else {
+                    None
+                }
+            });
+            if prev.is_ok() {
+                let resp = "HTTP/1.1 503 Service Unavailable\r\nRetry-After: 2\r\nContent-Length: 9\r\nConnection: keep-alive\r\n\r\nthrottled";
+                stream.write_all(resp.as_bytes())?;
+                stream.flush()?;
+                continue;
+            }
         }
         // S11-i B21a e2e: a server that NEVER supports ranges (no
         // Accept-Ranges advertised; ranged GETs answered with a full 200).

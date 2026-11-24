@@ -164,9 +164,54 @@ pub(crate) fn resolve_task_proxy(
 
 /// HEAD (fallback ranged GET) probe with redirect resolution.
 pub fn probe(url: &Url, cfg: &ClientCfg) -> Result<ProbeResult> {
+    probe_with_meta(url, cfg).map_err(|pf| Error::Http(pf.msg))
+}
+
+/// Structured probe failure (S11-i B21b): carries the HTTP status and the
+/// parsed Retry-After so the retry ladders decide structurally, never by
+/// error-string matching.
+pub(crate) struct ProbeFailure {
+    pub msg: String,
+    pub status: Option<u16>,
+    pub retry_after: Option<Duration>,
+}
+
+impl ProbeFailure {
+    /// Transient-status classification first (B21b: 429/503/5xx are
+    /// structurally retryable); transport failures fall back to
+    /// `is_retryable` (connect/read strings — unchanged semantics).
+    pub(crate) fn retryable(&self) -> bool {
+        match self.status {
+            Some(s) => is_transient_status(s),
+            None => is_retryable(&Error::Http(self.msg.clone())),
+        }
+    }
+
+    /// The bounded server-controlled wait, when the status carries one.
+    pub(crate) fn throttle_wait(&self) -> Option<Duration> {
+        match self.status {
+            Some(s) => retry_after_delay(s, self.retry_after),
+            None => None,
+        }
+    }
+}
+
+pub(crate) fn probe_with_meta(
+    url: &Url,
+    cfg: &ClientCfg,
+) -> std::result::Result<ProbeResult, ProbeFailure> {
     let (final_url, mut resp) = match http::resolve_redirects(url, cfg, 5, "HEAD") {
         Ok(v) => v,
-        Err(_) => http::resolve_redirects(url, cfg, 5, "GET")?,
+        Err(_) => match http::resolve_redirects(url, cfg, 5, "GET") {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(ProbeFailure {
+                    msg: e.to_string(),
+                    status: None,
+                    retry_after: None,
+                })
+            }
+        },
     };
     let head_status = resp.status;
     let head_ok = head_status == 200;
@@ -180,8 +225,12 @@ pub fn probe(url: &Url, cfg: &ClientCfg) -> Result<ProbeResult> {
     let content_type = resp.header("content-type").map(|s| s.to_string());
     let disposition = resp.header("content-disposition").map(|s| s.to_string());
     let _ = resp.read_body(1024);
-    let mut fatal: Option<String> = if head_status >= 400 {
-        Some(status_failure_reason(head_status))
+    let mut fatal: Option<ProbeFailure> = if head_status >= 400 {
+        Some(ProbeFailure {
+            msg: status_failure_reason(head_status),
+            status: Some(head_status),
+            retry_after: parse_retry_after(resp.header("retry-after")),
+        })
     } else {
         None
     };
@@ -190,7 +239,11 @@ pub fn probe(url: &Url, cfg: &ClientCfg) -> Result<ProbeResult> {
             Ok(mut r2) => {
                 if r2.status >= 400 {
                     if fatal.is_none() {
-                        fatal = Some(status_failure_reason(r2.status));
+                        fatal = Some(ProbeFailure {
+                            msg: status_failure_reason(r2.status),
+                            status: Some(r2.status),
+                            retry_after: parse_retry_after(r2.header("retry-after")),
+                        });
                     }
                 } else {
                     fatal = None;
@@ -219,8 +272,8 @@ pub fn probe(url: &Url, cfg: &ClientCfg) -> Result<ProbeResult> {
             }
         }
     }
-    if let Some(msg) = fatal {
-        return Err(Error::Http(msg));
+    if let Some(pf) = fatal {
+        return Err(pf);
     }
     let filename = disposition
         .and_then(|d| filename_from_disposition(&d))
@@ -245,6 +298,65 @@ pub fn is_retryable(e: &Error) -> bool {
             msg.contains("HTTP 5") || msg.contains("connect") || msg.contains("read")
         }
         _ => false,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// S11-i B21b (docs/SPECS/S11-ADOPTIONS-WAVE4.md; RFC 9110 §10.2.3,
+// delta-seconds form only — no date-parsing dependency, lock parity both
+// trees). Status threading is structural: callers pass the response status
+// and header, never error strings.
+// ---------------------------------------------------------------------------
+
+/// Retry-After delta-seconds parse: exactly `\d{1,6}`. The HTTP-date form
+/// and anything invalid yield None (the caller's existing ladder applies).
+fn parse_retry_after(v: Option<&str>) -> Option<Duration> {
+    let v = v?.trim();
+    if v.is_empty() || v.len() > 6 || !v.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    v.parse::<u64>().ok().map(Duration::from_secs)
+}
+
+/// Server-controlled wait cap: bounds the worst case at 60 s × ≤32 workers.
+const RETRY_AFTER_CAP: Duration = Duration::from_secs(60);
+
+/// Statuses where the server explicitly throttles with a wait hint.
+fn is_throttled(status: u16) -> bool {
+    status == 429 || status == 503
+}
+
+/// Structural transient-status classification: 5xx plus the throttle
+/// statuses are worth retrying; other 4xx are not. (Closes the pre-wave
+/// inconsistency where run_single's formatted error never matched
+/// `is_retryable` and 5xx was never retried there.)
+fn is_transient_status(status: u16) -> bool {
+    is_throttled(status) || status >= 500
+}
+
+/// The bounded server-controlled wait: on 429/503 with a parsed delta,
+/// `min(delta, 60 s)`; otherwise None (the caller's existing ladder
+/// applies, byte-identical to the pre-wave behavior).
+fn retry_after_delay(status: u16, ra: Option<Duration>) -> Option<Duration> {
+    if !is_throttled(status) {
+        return None;
+    }
+    ra.map(|d| d.min(RETRY_AFTER_CAP))
+}
+
+/// Stop-aware sleep for Retry-After waits only: short ticks re-check the
+/// stop/pause flags so a 60 s server wait never delays a user stop. The
+/// existing short backoff sleeps stay as-is (bounded ≤ 4 s).
+fn stop_aware_sleep(control: &crate::engine::events::TaskControl, total: Duration) {
+    const TICK: Duration = Duration::from_millis(100);
+    let mut slept = Duration::ZERO;
+    while slept < total {
+        if control.is_stopped() || control.is_paused() {
+            return;
+        }
+        let step = TICK.min(total - slept);
+        std::thread::sleep(step);
+        slept += step;
     }
 }
 
@@ -981,18 +1093,26 @@ pub fn run_http_task(
                     continue 'probe;
                 }
             };
-            match crate::engine::task::probe(&parsed, &cfg) {
+            match crate::engine::task::probe_with_meta(&parsed, &cfg) {
                 Ok(p) => {
                     probed = Some(p);
                     break 'probe;
                 }
-                Err(e) => {
-                    let retry = is_retryable(&e);
-                    last_err = Some(e);
+                Err(pf) => {
+                    // S11-i B21b: structural retry decision + bounded
+                    // server-controlled wait (stop-responsive ticks).
+                    let retry = pf.retryable();
+                    let throttle = pf.throttle_wait();
+                    last_err = Some(Error::Http(pf.msg));
                     if !retry {
                         continue 'probe; // try the next mirror immediately
                     }
-                    std::thread::sleep(Duration::from_millis(400 * (attempt as u64 + 1)));
+                    match throttle {
+                        Some(w) => stop_aware_sleep(&control, w),
+                        None => {
+                            std::thread::sleep(Duration::from_millis(400 * (attempt as u64 + 1)))
+                        }
+                    }
                 }
             }
         }
@@ -1642,16 +1762,22 @@ fn run_single(
             let mut conn = Conn::connect(url, &cfg)?;
             conn.request(&Request::get(url), &cfg)
         })();
+        let mut throttle: Option<Duration> = None;
         match attempt_result {
             Ok(r) if r.status == 200 => {
                 resp = Some(r);
                 break;
             }
             Ok(r) => {
-                let e = Error::Http(format!("server returned {}", r.status));
-                let retry = is_retryable(&e);
-                last_err = Some(e);
-                if !retry {
+                let status = r.status;
+                // S11-i B21b: structural retry classification — 429/503/5xx
+                // are retried (with the bounded server-controlled wait when
+                // the server sent one). This resolves the pre-wave
+                // inconsistency where this ladder never retried 5xx because
+                // its formatted error string never matched `is_retryable`.
+                throttle = retry_after_delay(status, parse_retry_after(r.header("retry-after")));
+                last_err = Some(Error::Http(format!("server returned {}", status)));
+                if !is_transient_status(status) {
                     break;
                 }
             }
@@ -1663,7 +1789,10 @@ fn run_single(
                 }
             }
         }
-        std::thread::sleep(Duration::from_millis(400 * (attempt as u64 + 1)));
+        match throttle {
+            Some(w) => stop_aware_sleep(&control, w),
+            None => std::thread::sleep(Duration::from_millis(400 * (attempt as u64 + 1))),
+        }
     }
     let mut resp = match resp {
         Some(r) => r,
@@ -2093,6 +2222,11 @@ fn worker(
                 resp.status == 206 || (resp.status == 200 && pos == 0 && end + 1 == size);
             if !ok_status {
                 let code = resp.status;
+                // S11-i B21b: capture the server's wait hint before consuming
+                // the response; the bounded wait replaces the ladder only
+                // when the server explicitly throttled (429/503 + delta).
+                let throttle =
+                    retry_after_delay(code, parse_retry_after(resp.header("retry-after")));
                 let _ = resp.read_body(4096);
                 conn = resp.into_conn(); // drained error body may still recycle
                 retries += 1;
@@ -2108,7 +2242,18 @@ fn worker(
                     mirror_idx = next;
                     conn = None; // conn belongs to the failed mirror
                 }
-                std::thread::sleep(Duration::from_millis(backoff_ms(retries)));
+                match throttle {
+                    Some(w) => {
+                        // B21b: stop-responsive bounded wait + the existing
+                        // per-worker start stagger as jitter so a fleet of
+                        // workers does not reconnect in one synchronized burst.
+                        stop_aware_sleep(
+                            &control,
+                            w + Duration::from_millis(((wid as u64) * 15).min(300)),
+                        );
+                    }
+                    None => std::thread::sleep(Duration::from_millis(backoff_ms(retries))),
+                }
                 continue 'attempt;
             }
             // stream the lease
@@ -2767,5 +2912,59 @@ mod tests {
         assert_eq!(status_failure_reason(503), "HTTP 503");
         assert!(is_retryable(&Error::Http("HTTP 503".into())));
         assert!(!is_retryable(&Error::Http(status_failure_reason(403))));
+    }
+
+    // S11-i B21b: deterministic parse + delay matrices (no wall-clock CI).
+
+    #[test]
+    fn b21_retry_after_parse_and_delay() {
+        // delta-seconds only
+        assert_eq!(parse_retry_after(Some("2")), Some(Duration::from_secs(2)));
+        assert_eq!(parse_retry_after(Some("0")), Some(Duration::from_secs(0)));
+        assert_eq!(parse_retry_after(Some(" 3 ")), Some(Duration::from_secs(3)));
+        // HTTP-date form: None (no date-parsing dependency)
+        assert_eq!(
+            parse_retry_after(Some("Mon, 02 Jan 2006 15:04:05 GMT")),
+            None
+        );
+        // invalid shapes
+        assert_eq!(parse_retry_after(Some("abc")), None);
+        assert_eq!(parse_retry_after(Some("")), None);
+        assert_eq!(parse_retry_after(Some("-5")), None);
+        assert_eq!(parse_retry_after(Some("1234567")), None); // > 6 digits
+        assert_eq!(parse_retry_after(None), None);
+        // delay matrix: bounded server-controlled wait on 429/503 only
+        assert_eq!(
+            retry_after_delay(429, Some(Duration::from_secs(2))),
+            Some(Duration::from_secs(2))
+        );
+        assert_eq!(
+            retry_after_delay(503, Some(Duration::from_secs(120))),
+            Some(RETRY_AFTER_CAP)
+        );
+        assert_eq!(retry_after_delay(503, None), None);
+        assert_eq!(retry_after_delay(404, Some(Duration::from_secs(2))), None);
+        // structural transient classification
+        for s in [429u16, 500, 502, 503, 504] {
+            assert!(is_transient_status(s), "{}", s);
+        }
+        for s in [200u16, 206, 403, 404, 410] {
+            assert!(!is_transient_status(s), "{}", s);
+        }
+        // probe failure meta: status-bearing failures classify structurally
+        let pf = ProbeFailure {
+            msg: status_failure_reason(429),
+            status: Some(429),
+            retry_after: Some(Duration::from_secs(2)),
+        };
+        assert!(pf.retryable());
+        assert_eq!(pf.throttle_wait(), Some(Duration::from_secs(2)));
+        let pf403 = ProbeFailure {
+            msg: status_failure_reason(403),
+            status: Some(403),
+            retry_after: None,
+        };
+        assert!(!pf403.retryable());
+        assert_eq!(pf403.throttle_wait(), None);
     }
 }

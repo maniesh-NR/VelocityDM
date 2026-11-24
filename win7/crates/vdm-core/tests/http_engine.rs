@@ -90,6 +90,44 @@ fn b21_no_resume_restart_is_explicit_and_coherent() {
     server.stop();
 }
 
+/// S11-i B21b e2e (Linux-gated per the repo's runner-noise precedent): a
+/// 503 + `Retry-After: 2` throttle at the probe stage is honored — the
+/// engine waits the server-controlled interval (bounded) and completes.
+/// Asserts the retry happened (elapsed >= the requested wait), not exact
+/// wall-clock timing.
+#[test]
+#[cfg_attr(not(target_os = "linux"), ignore)]
+fn b21_retry_after_is_honored_at_probe() {
+    let server = TestServer::start();
+    // 2 hits: the probe's HEAD consumes the first 503 (+RA captured in the
+    // structured fatal), the ranged-GET fallback consumes the second — the
+    // probe ladder then honors the carried Retry-After before re-probing.
+    server.set_retry_after_once(2);
+    let data: Vec<u8> = (0..64 * 1024u32).map(|i| (i * 3) as u8).collect();
+    server.set_file("/ra.bin", data.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path());
+    let t0 = std::time::Instant::now();
+    let id = engine
+        .add_download(&server.url("/ra.bin"), HttpOptions::default())
+        .unwrap();
+    assert!(
+        wait_until_ms(30_000, || state_of(&engine, id) == TaskState::Completed),
+        "state: {:?} err: {:?}",
+        engine.get(id).map(|s| s.state),
+        engine.get(id).and_then(|s| s.error)
+    );
+    let elapsed = t0.elapsed();
+    assert!(
+        elapsed >= std::time::Duration::from_millis(1900),
+        "the Retry-After wait was skipped: {:?}",
+        elapsed
+    );
+    assert_eq!(std::fs::read(dir.path().join("ra.bin")).unwrap(), data);
+    engine.shutdown();
+    server.stop();
+}
+
 #[test]
 fn segmented_download_completes_with_checksum() {
     let server = TestServer::start();
