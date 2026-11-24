@@ -18,6 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Tear down the SSE stream so no orphaned URLSession task
+        // survives exit (spec §6.4).
+        controller?.stopLiveUpdates()
+    }
 }
 
 let app = NSApplication.shared

@@ -15,7 +15,11 @@ final class AppController: NSObject, NSTableViewDataSource, NSTableViewDelegate 
     private var prefsDark: Bool = true
     private var scheme: Md3Scheme = Md3Scheme.fromSeedHex(Md3DefaultSeed, dark: true)
     private var tasks: [TaskSnapshot] = []
-    private var refreshTimer: Timer?
+    private let sse = SseClient()
+    private var sseConnected = false
+    private var dirty = false
+    private var coalesceTimer: Timer?
+    private var fallbackTimer: Timer?
 
     // UI elements
     private let rootStack = NSStackView()
@@ -52,9 +56,7 @@ final class AppController: NSObject, NSTableViewDataSource, NSTableViewDelegate 
         applyTheme()
         window.center()
         refresh()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
+        startLiveUpdates()
     }
 
     // MARK: - UI construction
@@ -244,23 +246,138 @@ final class AppController: NSObject, NSTableViewDataSource, NSTableViewDelegate 
             guard let self = self else { return }
             switch result {
             case .failure(let e):
-                self.speedLabel.stringValue = "daemon unreachable (\(e))"
+                self.speedLabel.stringValue = "daemon unreachable (\(e)) — rows stale"
             case .success(let tasks):
                 self.tasks = tasks
-                let total = tasks.compactMap { $0.speed ?? 0 }.reduce(0, +)
-                self.speedLabel.stringValue = total > 0 ? "\(byteString(total))/s total" : "idle"
+                self.updateSpeedBanner()
                 self.tableView.reloadData()
+                if self.settingsStack.isHidden {
+                    // lazily pull settings once for the hidden panel
+                    self.rpc.getSettings { _ in }
+                }
             }
             self.emptyLabel.isHidden = !self.tasks.isEmpty
-            let reachable = { () -> Bool in
-                if case .success = result { return true }
-                return false
-            }()
-            if reachable, self.settingsStack.isHidden {
-                // lazily pull settings once for the hidden panel
-                self.rpc.getSettings { _ in }
+        }
+    }
+
+    private func updateSpeedBanner() {
+        let total = tasks.compactMap { $0.speed ?? 0 }.reduce(0, +)
+        speedLabel.stringValue = total > 0 ? "\(byteString(total))/s total" : "idle"
+    }
+
+    // MARK: - Live updates (SSE per docs/SPECS/S12-SSE-WIRING.md)
+
+    private func startLiveUpdates() {
+        sse.onEvent = { [weak self] event in
+            self?.handleSseEvent(event)
+        }
+        sse.onStateChange = { [weak self] up in
+            DispatchQueue.main.async { self?.setStream(up: up) }
+        }
+        sse.start()
+    }
+
+    /// Called from the app's termination path (AppDelegate).
+    func stopLiveUpdates() {
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
+        coalesceTimer?.invalidate()
+        coalesceTimer = nil
+        sse.stop()
+    }
+
+    /// Called on the main queue only (both caller paths dispatch here).
+    /// Both directions are idempotent: enterFallback re-runs safely when a
+    /// second terminal state arrives, and every (re)connect invalidates the
+    /// fallback probe and resyncs with a full re-list (spec §3.3, §5.1) —
+    /// including the launch-with-dead-daemon case, where the very first
+    /// connection failure must open the fallback (sseConnected starts
+    /// false and no transition fires).
+    private func setStream(up: Bool) {
+        if up {
+            sseConnected = true
+            fallbackTimer?.invalidate()
+            fallbackTimer = nil
+            refresh() // full resync before trusting merges (spec §3.3)
+        } else {
+            sseConnected = false
+            enterFallback()
+        }
+    }
+
+    /// Terminal stream state (daemon death/EOF): rows stay but are
+    /// explicitly frozen behind the stale banner; a 2 s list probe both
+    /// refreshes the banner reason and recovers when the daemon returns
+    /// (spec §4.1 + §5.1).
+    private func enterFallback() {
+        coalesceTimer?.invalidate()
+        coalesceTimer = nil
+        dirty = false
+        speedLabel.stringValue = "daemon unreachable — rows stale"
+        if fallbackTimer == nil {
+            fallbackTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                self.rpc.list { [weak self] result in
+                    guard let self = self else { return }
+                    if case .success = result {
+                        // Probe succeeded: re-open the stream; the
+                        // response head flips the state and resyncs.
+                        self.sse.start()
+                    }
+                }
             }
         }
+    }
+
+    private func handleSseEvent(_ event: SseClient.Event) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.sseConnected else { return }
+            if event.type == "tasks", let changed = event.tasks {
+                self.mergeSnapshots(changed)
+            } else {
+                self.markDirty() // coalesced full re-list (spec §3.2)
+            }
+        }
+    }
+
+    private func markDirty() {
+        dirty = true
+        if coalesceTimer == nil {
+            coalesceTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+                guard let self = self else { return }
+                self.coalesceTimer = nil
+                if self.dirty {
+                    self.dirty = false
+                    self.refresh()
+                }
+            }
+        }
+    }
+
+    private func mergeSnapshots(_ changed: [TaskSnapshot]) {
+        var metadataDrift = false
+        for c in changed {
+            if let i = tasks.firstIndex(where: { $0.id == c.id }) {
+                let old = tasks[i]
+                tasks[i] = c
+                // The tick only carries state/done/speed/error changes;
+                // if THIS merge moved none of those four but did move the
+                // row, converge via a coalesced re-list (spec §3.1).
+                if old.state == c.state && old.done == c.done
+                    && old.speed == c.speed && old.error == c.error {
+                    let metadataMoved = old.name != c.name
+                        || old.outPath != c.outPath || old.dir != c.dir
+                        || old.size != c.size || old.kind != c.kind
+                    if metadataMoved { metadataDrift = true }
+                }
+            } else {
+                tasks.append(c) // unknown id: append, never reorder ticks
+            }
+        }
+        updateSpeedBanner()
+        tableView.reloadData()
+        emptyLabel.isHidden = !tasks.isEmpty
+        if metadataDrift { markDirty() }
     }
 
     // MARK: - Actions

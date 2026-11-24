@@ -3,9 +3,11 @@
 // Speaks the documented daemon protocol (docs/RPC.md): JSON-RPC 2.0
 // over POST /rpc on 127.0.0.1:36990. URLSession sends no Origin/Referer
 // and the Host header names the loopback authority, so the loopback
-// trust boundary accepts this native client. The periodic `tasks` SSE
-// tick is optional for this client; it polls `downloads.list` at the
-// same cadence the other frontends refresh (200 ms).
+// trust boundary accepts this native client. Live progress rides the
+// daemon's GET /events stream (SseClient.swift, per
+// docs/SPECS/S12-SSE-WIRING.md); downloads.list is re-read on events
+// and during fallback probes — the old unconditional 200 ms poll is
+// gone.
 
 import Foundation
 
