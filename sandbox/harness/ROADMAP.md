@@ -20,7 +20,7 @@ Each stage transition is gated by the adversarial consensus protocol
 | S10 | Flathub submission | PENDING | — |
 | S11 | IDM competitive study: RE-assisted review of the reference product's download-management & browser-integration methods (performance / stability / resource use) | ACTIVE (T2 executed 2026-11-21: findings + backlog in `docs/RESEARCH-IDM-STUDY.md`; D7:B/D8:now deep-dive session 1 (§4b) + session 2 with REA (§4c, 2026-11-24) delivered; T1/T3 remain gated on an owner-provisioned Windows VM; adoption runs as S11-i) | — |
 | S11-i | S11 incorporation waves: adopt study-backlog techniques spec-first (wave 1 = B1 cross-connection content audit + single-connection recovery, B2 optional connections, B9 file-lock classification/retry → engine; wave 2 = B2-presets + B3 HLS BYTERANGE + B4 NMH resilience + B5 cookie forwarding + B6 takeover UX + B7 detector hardening + B8 MIME table + B13 persisted scheduler rules + B16 browser-proxy propagation → engine/extensions; B10/B11/B12/B14/B15 parked with observe-first; N1–N6 rejected) | ACTIVE (wave 1 DONE 2026-11-21: gate 0006 + specs + implementation + A/B + CI 11/11 at 73b98bd; wave 2 DONE 2026-11-23 under gate 0007 with owner D1:C scope — engine side 2026-11-22 (B3 BYTERANGE + B13 .vdmq + B2p presets + B8 MIME table + B16 proxy propagation, per-item commits c6514d5..f236c9b, A/B no-regression) + EXTENSION SIDE 2026-11-23 (B4 NM host resilience + B5 cookies on every add path + B6 takeover UX/taken.html + B7 detector hardening + B8-js UMD table consumption + B16 report wiring incl. the `proxy` permission, per-item commits 282ab74..1ac2c47, battery 76→240 assertions, CI 11/11 at 357a36f); both wave-2 sides closed); **wave 3 DONE 2026-11-24 under gate 0009 on the owner's round-3 REA directive** — B17 (ranged-request identity coding + response invariants), B18 (If-Range stale-resource fast path), B19 (expired-link guidance) landed (98e03de → 21dc5f2, CI 11/11 at 21dc5f2); **wave 4 DONE 2026-11-24 under the fresh gate 0011 on the owner's round-4 directive ("proceed down the remaining adoption backlog")** — B20 (header hygiene: tchar name refusal + controls/DEL replacement, obs-text passthrough, 0a88a56), B21 (no-resume honesty + `.vdmctl`/`.part` coherency a9a68fb + bounded delta-seconds Retry-After with structural status threading 920375c), B22 (additive `tlsMin` knob 3bd028a), B23 witness (12 conns/37 reqs parity), B24 CocCoc NMH deferred pending empirical path verification; B10–B15 stay parked; N7/N8 + FTP PASV pre-condition recorded; bench parity s11i4-pre/post (scripts/s11i4-bench-record.txt); CI 11/11 at cd5b4a4 after the evidence-then-fix macOS cycle; the §4d backlog is now fully adopted, witnessed, deferred-with-precondition, or recorded as a non-goal — nothing silently dropped | `ASSESSMENTS/0006-s11i-adoption-wave1.md`, `ASSESSMENTS/0007-s11i-adoption-wave2.md`, `ASSESSMENTS/0009-s11i-adoption-wave3.md`, `ASSESSMENTS/0011-s11i-adoption-wave4.md` |
-| S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept (Android leg runs on the Kotlin-port engine today; Rust-core unification is S8's) | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; S12-e Android Views+KMP built (preview) under gate 0005; S12-lin2 GTK3 built (preview) under gate 0012; S12-mac2 SwiftUI + S12-lin3 Qt remain gated sub-stages) | `ASSESSMENTS/0004-s12-native-frontends.md` + `ASSESSMENTS/0012-s12-lin2-gtk3.md` |
+| S12 | Native UI stacks per OS around the shared Rust core — Material You everywhere, OS-specific elements kept (Android leg runs on the Kotlin-port engine today; Rust-core unification is S8's) | ACTIVE (foundation + Win32/D2D + Slint + Swift/AppKit built; S12-e Android Views+KMP built (preview) under gate 0005; S12-lin2 GTK3 built (preview) under gate 0012; S12-mac2 SwiftUI built (preview) under gate 0013; S12-lin3 Qt remains a gated sub-stage) | `ASSESSMENTS/0004-s12-native-frontends.md` + `ASSESSMENTS/0012-s12-lin2-gtk3.md` + `ASSESSMENTS/0013-s12-mac2-swiftui.md` |
 
 ## Stage briefs
 
@@ -239,8 +239,19 @@ Each stage transition is gated by the adversarial consensus protocol
     0012: spec `docs/SPECS/S12-LIN2-GTK3.md` + standalone `gtk3/`
     tree, CI 12/12 green at 6c16845 incl. the new `Linux frontend
     (GTK3)` preview job; closes the filename-override gap with a real
-    Entry; renders error AND notice lines)**; next: S12-mac2
-    **SwiftUI**, S12-lin3 **Qt (cxx-qt)** —
+    Entry; renders error AND notice lines)**; **S12-mac2 SwiftUI DONE
+    (2026-11-24, gate 0013: spec `docs/SPECS/S12-MAC2-SWIFTUI.md` +
+    standalone `macos-swiftui/` tree — SwiftPM, macOS 12 floor, zero
+    deps; `VDMText` verbatim-only rendering closes the
+    LocalizedStringKey markdown/link-injection axis; the gate-0010 SSE
+    consumer contract restated incl. launch-with-dead-daemon
+    idempotency; CI 13/13 green at d11dd1a5 incl. the new `macOS
+    frontend (SwiftUI)` preview job, one evidence-then-fix cycle on
+    the golden table's memberwise-init `dark:` param; closes the
+    filename + torrentPath gaps in THAT tree — macos-app still carries
+    both, its promotion owns them; golden-literal tests 288 values vs
+    the Rust baseline via `scripts/gen-md3-golden-swift.py`)**; next:
+    S12-lin3 **Qt (cxx-qt)** —
     the owner's runtime verification moment is NOW UNBLOCKED (D5:A:
     verify a full surface — the Swift checklist rows incl. the SSE/
     stale-rows behavior) and precedes the per-surface promotions.

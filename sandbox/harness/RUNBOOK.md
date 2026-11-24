@@ -319,3 +319,33 @@ Two truths future sessions would burn time on:
   the frozen-asset refresh path. `git diff --exit-code gtk3/Cargo.lock`
   after any `generate-lockfile` run: the lock is committed and CI
   builds `--locked` (a drifted lock fails CI, not the fix-forward).
+
+## SwiftUI preview (S12-mac2)
+
+The `macos-swiftui/` tree is the S12-mac2 **preview** (gate 0013):
+standalone SwiftPM package (`swift-tools-version:5.9`, macOS 12 floor,
+zero third-party dependencies — no `Package.resolved` exists or is
+owed), SwiftUI `@main` App over the shared token-engine port, remote
+JSON-RPC + SSE client of the daemon on 127.0.0.1:36990. Ships in no
+release asset until its promotion gate; `release.yml` and the `v*`
+ruleset are untouched by the stage. Monterey users keep the AppKit app.
+
+Two truths future sessions would burn time on:
+
+- **Local work is source review ONLY.** The dev sandbox is Linux with
+  no Swift toolchain — no local `swift build`, `swift test`, or format
+  of this tree is possible, and no record may claim otherwise (spec
+  rule 11). The canonical build/test witness is the non-required
+  `macOS frontend (SwiftUI)` CI job (macos-latest, `swift build` +
+  `swift test`); `swift build` alone does NOT compile test targets, so
+  the golden-literal suite only runs under `swift test`.
+- **Failure policy:** a red `swiftui-frontend` job is evidence-then-fix
+  forward, but it does NOT block tag cuts or the release train (it
+  ships nothing) — same class as a red `gtk3-frontend`; a red
+  `android-frontend` remains the only CI failure that blocks the
+  frozen-asset refresh path. The golden table is GENERATED
+  (`scripts/gen-md3-golden-swift.py` from
+  `android/shared/src/jvmTest/resources/md3-tokens-baseline.json`) —
+  fix the generator, never hand-edit the test file; any color-math/seed
+  change patches Rust → Kotlin → BOTH Swift trees in the same commit
+  (rule 12).
