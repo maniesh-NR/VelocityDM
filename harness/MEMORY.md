@@ -982,3 +982,111 @@ session reads this file first, then `ROADMAP.md`.
     remaining frontends (S12-lin2/lin3/mac2).
 - ROADMAP S12 queue note updated (preparation DONE); issue #16
   commented with the preparation record.
+
+## 2026-11-24 (session 14) — deep-dive session 2 (with REA) + wave 3 (B17/B18/B19) delivered
+
+- Context refresh (the session-13 line continued after another loss).
+  **Fetch-first, eleven-times-proven:** origin/main was ahead again (S4 DHT
+  close + S12 promotion-gate prep + the S12-e tree); fast-forwarded to
+  9cc9734; the stale summary's todo list (d1–d8 recovery, T2, D8) was ALL
+  already done — `harness/DECISIONS.md` is the durable resolver.
+- **Owner round 3 directive (recorded, ledger D9/D10):** "Use reverse
+  engineer anything (morluto/rea) to decompile, reverse engineer and
+  analyse IDM … and incorporate any methods/techniques to improve
+  performance and stability of the download engine and browser
+  integration." Bound to: deep-dive session 2 with REA + adoption wave 3.
+- **Toolchain re-provisioned (recycle pattern, all per RUNBOOK):** Ghidra
+  12.2 (zip hash byte-exact vs the pin), Temurin JDK 25.0.5.1, AND rustup
+  shims + the 1.75.0 minimal toolchain (the 1.75 witness was mandatory
+  this session). Lessons: fresh `rustup-init` sets its default to the
+  FIRST installed toolchain — `rustup default stable` immediately; a
+  direct toolchain-bin cargo cannot honor `+toolchain` (shims required).
+- **Fail-closed honored:** fresh official-URL download, 12,164,608 bytes +
+  SHA-256 byte-exact vs the pin before any deep-dive work; no re-pin.
+- **REA 6.10.1 (`rea-agents`, npm, MIT) joined the toolchain** (ledger
+  D9): 204-command headless CLI; bound to Ghidra via `GHIDRA_INSTALL_DIR`
+  + JDK 25 on PATH; produced the installer-stub overview (Ghidra provider,
+  full auto-analysis — feasible on the stub, NOT on IDMan.exe's 2.97 MB
+  code image), structured PE import/resource/hardening evidence, and a JS
+  application-graph inventory of the shipped Firefox XPI (3 parsed
+  scripts, cross-checking the wave-1 §3 manual read). The targeted bounded
+  decompile stayed on the no-analysis Ghidra script pipeline (REA's native
+  provider requires full auto-analysis — recorded honestly in the study
+  Tools row).
+- **Deep-dive session 2 executed (bounded, clean-room):** unpack (188
+  entries) → no-analysis import → needle/RTTI evidence walk (19,578 raw
+  strings, 303 use-sites) → three anchored decompile passes (149+152 fns):
+  10/10 session-2 anchor functions + the header-range builders + the
+  If-Range site. New tooling joined the toolbox: S11DumpStrings.java +
+  s11_annotate.py (42,749-string map annotates no-analysis decompiled
+  sections with literal refs — makes them readable) + split_sections.py.
+  All output confined to the throwaway dir (wiped at close).
+- **Findings → `RESEARCH-IDM-STUDY.md` §4c** (functional descriptions
+  only): worker range-request ladder (bounded/open-ended/probe — parity
+  with our range pool), Accept-Encoding: identity forced on ranged
+  requests, ranged-response invariant validator (multipart/byteranges
+  family, chunked, the gzip/x-gzip/deflate/x-deflate/brotli coding family,
+  ETag/Content-Range 64-bit parsing), If-Range stale-resource detection,
+  the owner-page refresh flow (meta-refresh + Set-Cookie http-equiv +
+  robots none/nofollow gating — B19 adopts the honest minimum), the
+  grabber project persistence model, and compiled-in signed-URL CDN site
+  adapters (observed, NOT recommended — same posture as B15).
+- **Gate 0009 (five-role, 5× PROCEED-WITH-CONDITIONS, zero BLOCK, 8
+  conditions folded)** → wave-3 specs `docs/SPECS/S11-ADOPTIONS-WAVE3.md`
+  committed BEFORE implementation (commit 98e03de); implementation sources
+  are the public RFCs (9110 §8.4/§12.5.3/§13.1.5/§14) — the study pointed
+  at our gaps, per the standing clean-room barrier.
+- **Wave-3 implemented (per-item revertable commits):**
+  - **B17+B18 (5c61982):** ranged requests pin `Accept-Encoding: identity`
+    (user intent wins, case-insensitive check); `classify_ranged_response`
+    rejects compressed/multipart/Content-Range-mismatched responses with
+    per-path severity (worker = bounded retry with distinct reason, audit =
+    INCONCLUSIVE never a B1 conflict, probe = advisory); If-Range validator
+    (etag > last-modified, in-memory — ResumeState untouched, cross-restart
+    persistence a recorded non-goal) with the definitive
+    `ranged_200_is_changed` fast-fail (no mirror churn on changed
+    resources). Tests: parse/classify matrices, AE detection, validator
+    precedence, fast-fail decision + e2e witnesses (a REAL zlib
+    stored-block body announced as deflate — the discriminator — retried
+    and byte-identical completion; If-Range seen on the wire + fast-fail
+    with ≤4 requests).
+  - **B19 (21dc5f2):** 403/410 → stable marker prefix in the failure
+    string; the actionable hint rides the EXISTING snapshot notice channel
+    (`fail()` chokepoint) — every frontend renders it, so the popup needed
+    ZERO JS changes (dated spec note; the gate's INT condition anticipated
+    this: reuse the existing surface, no new DOM). Tests: classification
+    matrix (403/410 marker, 404/5xx historical strings byte-identical,
+    is_retryable preserved) + e2e (403 link → marker error + notice).
+- **Per-item commit split cost two helper scripts** (s11i3_b19_split.py +
+  s11i3_reapply_b19.py) — and one real lesson: inverting a
+  text-replacement with an EMPTY new-string inserts at position 0 in
+  Python (the first B19 re-apply corrupted file heads); non-empty anchors
+  only, verify with clippy before committing intermediates.
+- **Batteries all green:** fmt both trees; clippy `--workspace
+  --all-targets -D warnings` clean; vdm-core lib 143 (+6 new), http_engine
+  24 (+3), hls_e2e 7; extension battery 240 (unchanged — no JS deltas);
+  win7 `cargo +1.75.0 check --workspace --locked` green.
+- **Bench A/B (labels s11i3-pre/-post, warm-pair rule, record in
+  scripts/s11i3-bench-record.txt):** pre 0.81 s / 159.0 MBps vs post
+  0.80 s / 159.1 MBps, request shape identical (12 conns / 37 reqs both),
+  byte-identical — NO REGRESSION (the first post run's 91 MBps is the
+  documented post-build cold-cache artifact; compare warm to warm).
+- **CI: first run RED on `Test (windows-latest)`** — the pre-existing
+  `optional_connections_spawn_when_live_underperform` e2e failed with
+  "download ended with missing ranges" after the suite crawled 242 s
+  (locally 8.4 s). Evidence assembled before any engine surgery: same test
+  green at 98e03de on the same runner class the same day; 20/20 local
+  repetitions green; **rerun of the failed job PASSED** → recorded as a
+  slow-runner timing flake, a WATCH-ITEM (not attributed to wave-3
+  without a deterministic reproduction; if it recurs, instrument the
+  pool/release accounting under extreme runner slowness first). Final CI
+  witness: **11/11 GREEN at 21dc5f2**.
+- Pushed 98e03de → 5c61982 → 21dc5f2 to main (admin-bypass warnings are
+  the known pattern; CI runs post-hoc and was witnessed).
+- Environment notes: `~/.cargo` now hosts the rustup shims (default
+  stable); `tools/rustup` holds both toolchains; jdk17/gradle/android-sdk
+  remain UNPROVISIONED this session (no Android work attempted).
+- Next standing queue: D5:A owner runtime verification (after SSE wiring),
+  S5+ await owner activation; the deep-dive's commissioned scope is
+  COMPLETE (scheduler §4b + worker/response machinery §4c); further
+  function-level passes wait on demonstrated need or the T1/T3 VM.
