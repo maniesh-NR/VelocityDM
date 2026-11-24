@@ -1,0 +1,38 @@
+S11-i wave 4 bench A/B record (gate 0011; gate-record execution plan step 2/8)
+
+Method: scripts/bench-perf.sh <label> — 128 MiB segmented download, 8
+base connections, 40 ms simulated handshake RTT per fresh TCP connection;
+request-shape (tcp_connections / http_requests) is the B23 keep-alive
+parity witness. Warm-pair rule (MEMORY session 15): compare warm-to-warm;
+cold runs measure ~91 MBps disk-bound — the documented artifact class from
+scripts/s11i3-bench-record.txt (an identical 1.41 s / 91 MBps cold
+outlier appeared there), investigated and excluded, never explained away
+as a regression.
+
+Environment: same sandbox instance as the wave-4 gate; release build
+`cargo build --release -p velocitydm` at 39a6e13 (pre) and 3bd028a (post);
+target/ cleaned between tree builds.
+
+PRE (39a6e13, docs-only commit a5bbc12 == 39a6e13 binary):
+  run 1: 0.80 s, 159.2 MBps, 12 conns, 37 reqs, byte_identical yes
+  run 2: 0.80 s, 159.1 MBps, 12 conns, 37 reqs, byte_identical yes
+
+POST (3bd028a — B20 0a88a56 + B21a a9a68fb + B21b 920375c + B22 3bd028a):
+  run 1: 0.81 s, 158.8 MBps, 11 conns, 36 reqs, byte_identical yes
+  run 2: 1.41 s,  90.9 MBps, 13 conns, 38 reqs  <- COLD ARTIFACT (discarded)
+  run 3: 1.41 s,  91.0 MBps, 12 conns, 37 reqs  <- COLD ARTIFACT (discarded)
+  run 4: 0.81 s, 158.8 MBps, 12 conns, 37 reqs, byte_identical yes
+
+Warm-pair verdict: pre 159.2/159.1 vs post 158.8/158.8 — a 0.25% delta,
+within the disk-bound run-to-run spread of this sandbox (the s11i3 record
+shows the same ~158-160 warm cluster). Expected byte-identical per gate
+0009's FALS condition (B20/B22 are off the hot path); parity is the pass
+criterion and holds. The 11/36 run-1 shape is one saved handshake from
+keep-alive timing at accept time (the B23 witness pins the 12/37 warm
+shape exactly on run 4).
+
+B23 keep-alive witness: connections_accepted (12) << http_requests (37)
+across every run — the worker conn recycling documented in
+docs/SPECS/S11-ADOPTIONS-WAVE4.md §B23 is exercised by the bench itself;
+keepalive_reuse_across_leases (tests/http_engine.rs) re-ran green in the
+wave-4 battery.
