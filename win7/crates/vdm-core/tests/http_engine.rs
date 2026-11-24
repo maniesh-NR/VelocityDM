@@ -908,3 +908,35 @@ fn b18_if_range_changed_resource_fails_fast() {
     engine.shutdown();
     server.stop();
 }
+
+#[test]
+fn b19_expired_link_classifies_and_notices() {
+    let server = TestServer::start();
+    server.set_file("/b19.bin", b"payload".to_vec());
+    server
+        .b19_forbid
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_in(dir.path());
+    let id = engine
+        .add_download(&server.url("/b19.bin"), HttpOptions::default())
+        .unwrap();
+    assert!(wait_until_ms(15_000, || state_of(&engine, id) == TaskState::Failed));
+    let snap = engine.get(id).unwrap();
+    let err = snap.error.as_deref().unwrap_or_default();
+    assert!(err.contains("HTTP 403"), "error: {:?}", snap.error);
+    assert!(
+        err.contains("link may be expired or forbidden"),
+        "error: {:?}",
+        snap.error
+    );
+    // the actionable hint rides the EXISTING note channel
+    let notice = snap.notice.as_deref().unwrap_or_default();
+    assert!(
+        notice.contains("re-grab the link"),
+        "notice: {:?}",
+        snap.notice
+    );
+    engine.shutdown();
+    server.stop();
+}

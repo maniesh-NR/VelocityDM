@@ -52,6 +52,9 @@ pub struct TestServer {
     pub b18_return_200: Arc<AtomicBool>,
     /// S11-i B18 e2e: set once a ranged request carrying `If-Range` arrives.
     pub b18_if_range_seen: Arc<AtomicBool>,
+    /// S11-i B19 e2e: when armed, HEAD and ranged requests to "/b19.bin"
+    /// return 403 (the expired/forbidden-link simulation).
+    pub b19_forbid: Arc<AtomicBool>,
     /// byte ranges (exclusive end) already served per path (for the
     /// inconsistent-edge flip)
     covered: Arc<Mutex<Coverage>>,
@@ -78,6 +81,7 @@ impl TestServer {
         let b17compress = Arc::new(AtomicU32::new(0));
         let b18ret200 = Arc::new(AtomicBool::new(false));
         let b18seen = Arc::new(AtomicBool::new(false));
+        let b19forbid = Arc::new(AtomicBool::new(false));
         let covered: Arc<Mutex<Coverage>> = Arc::new(Mutex::new(HashMap::new()));
         let conns = Arc::new(AtomicU32::new(0));
         let reqs: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -95,6 +99,7 @@ impl TestServer {
         let b17c = b17compress.clone();
         let b18r = b18ret200.clone();
         let b18s = b18seen.clone();
+        let b19f = b19forbid.clone();
         listener.set_nonblocking(true).unwrap();
         let handle = std::thread::spawn(move || loop {
             if stop_c.load(Ordering::Relaxed) {
@@ -115,6 +120,7 @@ impl TestServer {
                     let b17c = b17c.clone();
                     let b18r = b18r.clone();
                     let b18s = b18s.clone();
+                    let b19f = b19f.clone();
                     std::thread::spawn(move || {
                         let _ = serve(
                             stream,
@@ -130,6 +136,7 @@ impl TestServer {
                             b17c,
                             b18r,
                             b18s,
+                            b19f,
                         );
                     });
                 }
@@ -154,6 +161,7 @@ impl TestServer {
             compressed_ranged_remaining: b17compress,
             b18_return_200: b18ret200,
             b18_if_range_seen: b18seen,
+            b19_forbid: b19forbid,
             stop,
             handle: Some(handle),
         }
@@ -230,6 +238,7 @@ fn serve(
     b17compress: Arc<AtomicU32>,
     b18_return_200: Arc<AtomicBool>,
     b18_if_range_seen: Arc<AtomicBool>,
+    b19_forbid: Arc<AtomicBool>,
 ) -> std::io::Result<()> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
@@ -270,6 +279,14 @@ fn serve(
         }
         if range.is_some() && if_range_req {
             b18_if_range_seen.store(true, Ordering::SeqCst);
+        }
+        // S11-i B19 e2e: expired/forbidden link simulation
+        if path == "/b19.bin"
+            && b19_forbid.load(Ordering::SeqCst)
+            && (method == "HEAD" || range.is_some())
+        {
+            write_simple(&mut stream, 403, "Forbidden", b"forbidden")?;
+            continue;
         }
         // flaky handling
         if path.starts_with("/flaky") {

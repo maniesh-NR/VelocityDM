@@ -181,7 +181,7 @@ pub fn probe(url: &Url, cfg: &ClientCfg) -> Result<ProbeResult> {
     let disposition = resp.header("content-disposition").map(|s| s.to_string());
     let _ = resp.read_body(1024);
     let mut fatal: Option<String> = if head_status >= 400 {
-        Some(format!("HTTP {}", head_status))
+        Some(status_failure_reason(head_status))
     } else {
         None
     };
@@ -190,7 +190,7 @@ pub fn probe(url: &Url, cfg: &ClientCfg) -> Result<ProbeResult> {
             Ok(mut r2) => {
                 if r2.status >= 400 {
                     if fatal.is_none() {
-                        fatal = Some(format!("HTTP {}", r2.status));
+                        fatal = Some(status_failure_reason(r2.status));
                     }
                 } else {
                     fatal = None;
@@ -360,6 +360,22 @@ fn if_range_validator(etag: Option<&str>, last_modified: Option<&str>) -> Option
 
 /// S11-i B18 fast-fail reason (distinct namespace from the B19 marker).
 const RESOURCE_CHANGED_MSG: &str = "resource changed since download started";
+
+/// S11-i B19: user-facing status classification. 403/410 carry a stable
+/// marker the frontends' note channel acts on; every other status keeps its
+/// historical exact string (tests and callers depend on them).
+const REFRESHABLE_MARKER: &str = "link may be expired or forbidden";
+
+fn status_failure_reason(status: u16) -> String {
+    if status == 403 || status == 410 {
+        format!(
+            "HTTP {} ({} — re-open the source page and re-grab the link)",
+            status, REFRESHABLE_MARKER
+        )
+    } else {
+        format!("HTTP {}", status)
+    }
+}
 
 fn filename_from_disposition(d: &str) -> Option<String> {
     for part in d.split(';') {
@@ -1535,6 +1551,15 @@ fn fail(shared: &Arc<EngineShared>, id: u64, msg: &str) {
         s.state = TaskState::Failed;
         s.error = Some(msg.to_string());
         s.speed = 0;
+        // S11-i B19: refreshable failures surface an actionable hint on the
+        // EXISTING note channel (every frontend renders notes; no new
+        // surface, no new permission, no RPC change).
+        if msg.contains(REFRESHABLE_MARKER) {
+            s.notice = Some(
+                "This link looks expired or forbidden — open the source page, re-grab the link (extension grab-links or the page context), then add the fresh address."
+                    .to_string(),
+            );
+        }
     });
     shared
         .bus
@@ -2017,7 +2042,10 @@ fn worker(
                 retries += 1;
                 mirror_stats[mirror_idx].record_fail();
                 if retries > MAX_RETRIES {
-                    return WorkerExit::Failed(format!("server returned {}", code));
+                    return WorkerExit::Failed(format!(
+                        "server returned {}",
+                        status_failure_reason(code)
+                    ));
                 }
                 let next = (mirror_idx + 1) % mirrors_n;
                 if next != mirror_idx {
@@ -2669,5 +2697,19 @@ mod tests {
         assert!(!ranged_200_is_changed(200, 0, true));
         assert!(!ranged_200_is_changed(200, 1, false));
         assert!(!ranged_200_is_changed(206, 1, true));
+    }
+    #[test]
+    fn refreshable_status_classification() {
+        for s in [403u16, 410] {
+            let msg = status_failure_reason(s);
+            assert!(msg.contains(REFRESHABLE_MARKER), "{}", msg);
+            assert!(msg.starts_with("HTTP "));
+        }
+        // other statuses keep their historical exact strings
+        assert_eq!(status_failure_reason(404), "HTTP 404");
+        assert_eq!(status_failure_reason(500), "HTTP 500");
+        assert_eq!(status_failure_reason(503), "HTTP 503");
+        assert!(is_retryable(&Error::Http("HTTP 503".into())));
+        assert!(!is_retryable(&Error::Http(status_failure_reason(403))));
     }
 }
