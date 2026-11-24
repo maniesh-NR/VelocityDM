@@ -163,9 +163,7 @@ pub fn download_blocking(
     };
     on_event(BtEvent::Metadata(meta.clone()));
     if trackers.is_empty() && dht.is_none() {
-        return Err(Error::Torrent(
-            "no HTTP trackers available (UDP/DHT not supported)".into(),
-        ));
+        return Err(Error::Torrent("no trackers configured".into()));
     }
 
     // 2) output layout

@@ -1,0 +1,34 @@
+# S5 bench A/B record — UDP trackers (BEP-15)
+# date: 2026-11-24 (UTC) | spec: docs/SPECS/S5-UDP-TRACKERS-BEP15.md | gate: ASSESSMENTS/0014
+# mechanism: scripts/bench-perf.sh <label> <outfile> — 128 MiB over 8 connections,
+# 40 ms simulated handshake RTT (the direct-HTTP segmented path; the announce paths
+# are witnessed by the loopback battery, stated honestly per the gate).
+# toolchain: stable 1.100.0, CARGO_INCREMENTAL=0, release build, --locked.
+
+label:            s5-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.80
+throughput_MBps:  159.1
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+label:            s5-post
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.81
+throughput_MBps:  159.0
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+# Verdict: NO REGRESSION — connections/requests identical (12/37), elapsed within
+# run-to-run noise (0.80 vs 0.81 s), byte-identical output both sides.
+# Battery: cargo test --workspace --locked green (219 tests, 0 failed);
+# clippy -p vdm-core -p vdm-rpc -p velocitydm --all-targets clean; fmt clean.
+# Win7 witness: direct 1.75 toolchain `cargo check --manifest-path win7/Cargo.toml
+# --workspace --locked` green in 12 s (RUNBOOK shape). NOTE recorded honestly: the
+# gate's `--all-targets` extension is not runnable on 1.75 locally — the win7 lock's
+# DEV graph pins getrandom 0.4.3, which requires the edition2024 cargo feature
+# (via tempfile); cargo 1.75 refuses the metadata read at download time. lib+bins
+# compile green; test-code compilation under 1.75 is CI-blind and review-enforced;
+# the required CI win7-payload job build-witnesses the bins at push time.
