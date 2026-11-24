@@ -85,8 +85,13 @@ private func rgbToOklch(r: UInt8, g: UInt8, b: UInt8) -> (Double, Double, Double
 
 // MARK: - Scheme (MD3 color roles)
 
-/// Full Material Design 3 color-role set generated from one seed
-/// color — the same roles and tone assignments as `vdm_md3::Scheme`.
+/// Material Design 3 color roles generated from one seed color — 18 of
+/// the 27 `vdm_md3::Scheme` roles (missing: onTertiaryContainer,
+/// tertiaryContainer, onError, errorContainer, onErrorContainer,
+/// inverseSurface, inverseOnSurface, inversePrimary, scrim). This is
+/// the honest subset this port carries — NOT full token parity (the
+/// falsified "full color-role set" claim was corrected by the S12-mac2
+/// header-truth commit, gate 0013 rule 1.2 exception).
 public struct Md3Scheme {
     public let dark: Bool
     public let primary: UInt32
