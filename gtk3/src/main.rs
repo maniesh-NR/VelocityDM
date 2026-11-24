@@ -506,7 +506,10 @@ fn build_ui(
         let empty_r = empty.clone();
         let make_r = make_row.clone();
         let list_t = list.clone();
-        let tick = glib::timeout_add_local(Duration::from_millis(REFRESH_MS), move || {
+        // glib 0.18's SourceId does NOT implement Drop (verified at
+        // glib-0.18.5/src/source.rs:21) — dropping it is a no-op, so the
+        // poll runs until process exit regardless of this binding.
+        let _tick = glib::timeout_add_local(Duration::from_millis(REFRESH_MS), move || {
             let snaps = engine_t.list();
             let total: u64 = snaps.iter().map(|s| s.speed).sum();
             speed_r.set_text(&if total > 0 {
@@ -548,9 +551,6 @@ fn build_ui(
             }
             glib::ControlFlow::Continue
         });
-        // The poll runs until process exit (the Slint frontend keeps its
-        // timer alive for the whole run the same way).
-        std::mem::forget(tick);
     }
 
     // ---- settings toggle + apply --------------------------------------

@@ -126,10 +126,11 @@ mod tests {
 
     #[test]
     fn config_tolerant_parse() {
-        assert_eq!(parse_config("garbage"), None);
+        // EngineConfig is not PartialEq — assert on Option presence.
+        assert!(parse_config("garbage").is_none());
         // Unknown keys are additive-tolerant on the core's serde, but a
         // structurally broken file yields None -> default config.
-        assert_eq!(parse_config("[]"), None);
+        assert!(parse_config("[]").is_none());
     }
 
     #[test]
