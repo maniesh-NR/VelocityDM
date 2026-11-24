@@ -1239,3 +1239,40 @@ session reads this file first, then `ROADMAP.md`.
   (and `--features tls -p vdm-core` for the TLS state).
 - Clean-room held: B20/B21/B22 re-spec'd from RFC 9110 §5.5/§5.6.2/§10.2.3 + the rustls public API
   only; CLEAN_ROOM.md disclosure row added; no studied-binary artifact anywhere near the repo.
+
+## 2026-11-24 (session 18) — S12-lin2 GTK3 close (gate 0012) + next-queue activation
+
+- Reconcile first (standing lesson, fourth proof): origin/main was 32+ commits ahead of the stale
+  local snapshot — the parallel sessions had already executed D8:now deep-dives 1+2, waves 1-4 of
+  S11-i, S4 DHT, S12 SSE wiring, promotion-gate prep, and the S12-lin2 activation + a 4-round
+  CI evidence-then-fix cycle. Fast-forwarded to 6c16845; the only local dirty file (a stale
+  BACKUPS.md line from the recycled session) was dropped in favor of the remote truth.
+- **CI verified live on the API: 12/12 GREEN at 6c16845** — 8 required + 4 preview, including
+  the new `Linux frontend (GTK3)` job (ubuntu-latest + libgtk-3-dev, fmt → clippy → build →
+  test, build/test `--locked`). The S12-lin2 evidence-then-fix cycle converged: 4 red runs
+  (3b49c44, 712fecd, 9710c0c, 528bd85 — clippy test lints, EngineConfig.user_agent String-not-
+  Option fixture, serde `parse_config("[]")` test truth, 1024-based parse_bytes expectation)
+  then green.
+- **Close executed (gate 0012 execution plan step 4, commit C3):** parity-matrix GTK3 columns
+  added to `docs/SPECS/S12-PROMOTION-GATES.md` §1.1-§1.5 grounded in `gtk3/src/` (filename
+  override = real Entry → `HttpOptions.filename` — CLOSES the registered Win32/Slint/Swift gap;
+  error AND notice lines rendered; `{}p/{}s` BT stats; SpinButton clamps; 19/27 token subset
+  hex-only CssProvider; 200 ms glib poll); the egui reference's own filename-override ✓ annotated
+  as a dead field (verified: `add_filename` is consumed in add logic but NO TextEdit binds it —
+  grep shows declaration/init/consume/clear only); gap register + §5 gate order updated
+  (S12-lin2 DONE, next S12-mac2 SwiftUI then S12-lin3 Qt); DESIGN-MATERIAL-YOU stack-matrix
+  flip; ROADMAP S12 row + brief flip; RUNBOOK §"GTK3 preview" (local = fmt + generate-lockfile
+  ONLY; red gtk3-frontend does NOT block tag cuts); issue #16 close comment.
+- Honest boundaries held: zero local compile claims for gtk3 (no GTK in sandbox — CI is the
+  only compile witness, exactly per the gate record); no engine deltas → no bench A/B owed;
+  no S11/T2 linkage → no CLEAN_ROOM row owed (explicit in the gate record).
+- **Dependabot note:** `dependabot/cargo/gtk3/glib-0.20.0` branch exists (glib 0.20 bump in the
+  gtk3 workspace). Gate 0012 pinned `gtk = "0.18.2"` + `glib = "0.18"` with the 0.18-vs-0.19
+  rationale; gtk-rs 0.18 requires glib 0.18 (minor-version pairing is enforced by the crates
+  themselves) — the bump would break the pairing and the committed-lock discipline. To be
+  dispositioned (close as not-planned with rationale, or defer to a deliberate gtk3 0.19/0.20
+  upgrade stage) — NOT merged silently.
+- Next standing queue: **S12-mac2 SwiftUI sub-stage** (next in the D3:D order after gtk3) —
+  fresh five-role gate, spec-first; S12-lin3 Qt after it. The D5:A owner runtime-verification
+  moment remains the owner's (protocol prepared in `S12-PROMOTION-GATES.md` §3; the agent
+  cannot substitute — no displays, no devices here).

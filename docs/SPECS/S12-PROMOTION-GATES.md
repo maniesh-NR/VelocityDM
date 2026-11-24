@@ -11,43 +11,44 @@ the same stage. Promotion criteria baseline: `docs/DESIGN-MATERIAL-YOU.md`
 §"Promotion criteria" (five points); gate records: 0004/0005; tracker:
 issue #16.
 
-## 1. Parity matrices (grounded in the current sources, 2026-11-23)
+## 1. Parity matrices (grounded in the current sources, 2026-11-23; GTK3
+column added at the S12-lin2 close, 2026-11-24, grounded in `gtk3/src/`)
 
 Legend: ✓ = present in code today; ✗ = absent; ~ = partial/recorded gap.
 Reference surface = the shipped egui GUI (`crates/velocitydm/src/gui.rs`).
 
 ### 1.1 Add path
 
-| Capability | egui (ref) | Win32/D2D | Slint | Swift/AppKit | Android Views |
-| --- | --- | --- | --- | --- | --- |
-| URL entry | ✓ | ✓ (EDIT) | ✓ (LineEdit) | ✓ (NSTextField) | ✓ (AddDialog) |
-| Filename override | ✓ `add_filename` | ✗ (gap) | ✗ (gap) | ✗ (gap) | ✓ (name field) |
-| Quality preset | ✓ ("best"…) | ✓ | ✓ | ✓ | ✗ (not applicable — Kotlin-port engine has no quality presets) |
-| Speed limit | ✓ | ✓ | ✓ | ✓ | ✓ (limitBps) |
-| magnet: URL | ✓ | ✓ | ✓ | ✓ | ✗ (http/https only by design; S8 owns engine unification) |
-| Local .torrent path | ✓ | ✓ | ✓ | ✗ (gap: magnet works, local paths do not) | ✗ (by design, as above) |
-| VIEW intent auto-add | n/a | n/a | n/a | n/a | ✓ |
+| Capability | egui (ref) | Win32/D2D | Slint | Swift/AppKit | GTK3 | Android Views |
+| --- | --- | --- | --- | --- | --- | --- |
+| URL entry | ✓ | ✓ (EDIT) | ✓ (LineEdit) | ✓ (NSTextField) | ✓ (Entry, Enter-to-add) | ✓ (AddDialog) |
+| Filename override | ✓ `add_filename` (dead field — no TextEdit binds it) | ✗ (gap) | ✗ (gap) | ✗ (gap) | ✓ (real Entry → `HttpOptions.filename`; closes the gap) | ✓ (name field) |
+| Quality preset | ✓ ("best"…) | ✓ | ✓ | ✓ | ✓ (Entry, default "best") | ✗ (not applicable — Kotlin-port engine has no quality presets) |
+| Speed limit | ✓ | ✓ | ✓ | ✓ | ✓ (Entry, `parse_bytes`) | ✓ (limitBps) |
+| magnet: URL | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ (http/https only by design; S8 owns engine unification) |
+| Local .torrent path | ✓ | ✓ | ✓ | ✗ (gap: magnet works, local paths do not) | ✓ (read → `TorrentBytes`) | ✗ (by design, as above) |
+| VIEW intent auto-add | n/a | n/a | n/a | n/a | n/a | ✓ |
 
 ### 1.2 Task list + actions
 
-| Capability | egui | Win32 | Slint | Swift | Android |
-| --- | --- | --- | --- | --- | --- |
-| Pause / resume / remove | ✓ | ✓ (hit-tested drawn buttons) | ✓ | ✓ | ✓ (row buttons) |
-| Progress + speed + ETA | ✓ | ✓ | ✓ | ✓ | ✓ (LinearProgressIndicator + stats line) |
-| Per-task error display | ✓ | ✓ | ✓ | ✓ | ✓ (per-task error text) |
-| BT peers/seeds line | ✓ | ✓ | ✓ | ✓ | n/a (no BT engine yet) |
-| Stale rows on daemon death | handles engine stop | in-process (shares core) | in-process | ~ (recorded gap) | in-process (shares engine) |
+| Capability | egui | Win32 | Slint | Swift | GTK3 | Android |
+| --- | --- | --- | --- | --- | --- | --- |
+| Pause / resume / remove | ✓ | ✓ (hit-tested drawn buttons) | ✓ | ✓ | ✓ (per-row buttons) | ✓ (row buttons) |
+| Progress + speed + ETA | ✓ | ✓ | ✓ | ✓ | ✓ (ProgressBar + stats line; header total-speed banner) | ✓ (LinearProgressIndicator + stats line) |
+| Per-task error display | ✓ | ✓ | ✓ | ✓ | ✓ (error AND notice lines, visibility-toggled) | ✓ (per-task error text) |
+| BT peers/seeds line | ✓ | ✓ | ✓ | ✓ | ✓ (`{}p/{}s` when peers > 0) | n/a (no BT engine yet) |
+| Stale rows on daemon death | handles engine stop | in-process (shares core) | in-process | ~ (recorded gap) | in-process (shares core; engine-removed tasks drop their rows in-place) | in-process (shares engine) |
 
 ### 1.3 Settings
 
-| Setting | egui | Win32 | Slint | Swift | Android |
-| --- | --- | --- | --- | --- | --- |
-| Download dir | ✓ | ✓ | ✓ | ✓ | ✓ (system picker via dialog) |
-| Global speed limit | ✓ | ✓ | ✓ | ✓ | ✗ |
-| Proxy (parse + display) | ✓ | ✓ | ✓ | ✓ (structured round-trip, gate 0004 fix) | ✗ |
-| Scheduler stop window | ✓ | ✓ | ✓ | ✓ | ✗ |
-| Shutdown-when-done | ✓ | ✓ | ✓ | ✓ | ✗ |
-| Max active / connections | ✓ | ✓ | ✓ | ✓ | ~ (connections fixed 1..8 in engine) |
+| Setting | egui | Win32 | Slint | Swift | GTK3 | Android |
+| --- | --- | --- | --- | --- | --- | --- |
+| Download dir | ✓ | ✓ | ✓ | ✓ | ✓ (Entry) | ✓ (system picker via dialog) |
+| Global speed limit | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| Proxy (parse + display) | ✓ | ✓ | ✓ | ✓ (structured round-trip, gate 0004 fix) | ✓ (Entry, `proxy_display` push-back) | ✗ |
+| Scheduler stop window | ✓ | ✓ | ✓ | ✓ | ✓ (start/end Entries) | ✗ |
+| Shutdown-when-done | ✓ | ✓ | ✓ | ✓ | ✓ (CheckButton) | ✗ |
+| Max active / connections | ✓ | ✓ | ✓ | ✓ | ✓ (SpinButtons 1..32 / 1..16, clamped on Apply) | ~ (connections fixed 1..8 in engine) |
 
 Android settings gaps are NOT promotion blockers for the Android gate:
 the shipped surface contract for Android v1.0.0 (Compose) never had them;
@@ -56,18 +57,18 @@ replaces (gate 0005 wording), not against the desktop settings surface.
 
 ### 1.4 Material You
 
-| Capability | egui | Win32 | Slint | Swift | Android |
-| --- | --- | --- | --- | --- | --- |
-| Token source | vdm-md3 in-process | vdm-md3 in-process | vdm-md3 in-process | Md3.swift port (constants-identical) | OS dynamic color 12+; Kotlin Md3 port below (golden-drift tripwire vs Rust baseline) |
-| Seed picker | ✓ (SEEDS list) | ✓ | ✓ | ✓ | ✓ (12+ wallpaper; pre-12 seed list) |
-| Light/dark toggle | ✓ | ✓ | ✓ | ✓ | OS-follows (12+) / toggle pre-12 |
+| Capability | egui | Win32 | Slint | Swift | GTK3 | Android |
+| --- | --- | --- | --- | --- | --- | --- |
+| Token source | vdm-md3 in-process | vdm-md3 in-process | vdm-md3 in-process | Md3.swift port (constants-identical) | vdm-md3 in-process → static hex-only `GtkCssProvider` (19/27 role subset, same as Slint; zero `String` interpolation, token-only test pinned) | OS dynamic color 12+; Kotlin Md3 port below (golden-drift tripwire vs Rust baseline) |
+| Seed picker | ✓ (SEEDS list) | ✓ | ✓ | ✓ | ✓ (SEEDS cycle button + name label) | ✓ (12+ wallpaper; pre-12 seed list) |
+| Light/dark toggle | ✓ | ✓ | ✓ | ✓ | ✓ (provider reload in place — registered once, no stacking) | OS-follows (12+) / toggle pre-12 |
 
 ### 1.5 Engine integration
 
-| Aspect | egui | Win32 | Slint | Swift | Android |
-| --- | --- | --- | --- | --- | --- |
-| Core binding | in-process | in-process | in-process | remote JSON-RPC (loopback, trust-boundary compliant) | in-process Kotlin-port engine (S8 owns unification) |
-| Progress refresh | repaint loop | `SetTimer` 200 ms | Timer | 200 ms polling (SSE wiring owed, sub-stage) | ViewModel flow |
+| Aspect | egui | Win32 | Slint | Swift | GTK3 | Android |
+| --- | --- | --- | --- | --- | --- | --- |
+| Core binding | in-process | in-process | in-process | remote JSON-RPC (loopback, trust-boundary compliant) | in-process | in-process Kotlin-port engine (S8 owns unification) |
+| Progress refresh | repaint loop | `SetTimer` 200 ms | Timer | SSE stream (gate 0010) + stream-state recovery | glib timeout 200 ms poll (in-process; SSE change is Swift-only) | ViewModel flow |
 
 ## 2. Packaging plan (what changes, per surface, at promotion)
 
@@ -150,7 +151,7 @@ these steps (honest boundary: no displays, no devices here).
 
 | Gap | Surface | Status at preparation | Owning step |
 | --- | --- | --- | --- |
-| Filename override in add dialog | Win32, Slint, Swift | still absent (verified: no filename edit/property/field) | fix BEFORE each surface's gate (parity criterion 3) |
+| Filename override in add dialog | Win32, Slint, Swift | **CLOSED by GTK3** 2026-11-24 (real Entry → `HttpOptions.filename`, `gtk3/src/main.rs`); Win32/Slint/Swift still absent (verified: no filename edit/property/field) — and the egui reference's ✓ is a dead field (no TextEdit binds `add_filename`) | fix BEFORE each remaining surface's gate (parity criterion 3) |
 | Local .torrent path add | Swift | still absent (magnet works) | fix before the Swift gate |
 | Enter-to-add + TAB traversal | Win32 | still absent | fix before the Win32 gate |
 | Per-paint brush/text-format churn | Win32 | still present | cache on retheme; fix before the Win32 gate |
@@ -166,8 +167,12 @@ these steps (honest boundary: no displays, no devices here).
 3. Per-surface promotions, each a five-role gate + §2 packaging change in
    the same stage: Win32 → Slint → Swift → Android (any order the owner
    prefers once the checklists pass; each cites its §3 evidence).
-4. Remaining frontends (S12-lin2 gtk3-rs, S12-lin3 Qt, S12-mac2 SwiftUI)
-   each open with their own five-role gate, per D3:D's queue order.
+4. Remaining frontends, each with its own five-role gate, per D3:D's
+   queue order: ~~S12-lin2 gtk3-rs~~ **DONE (preview) 2026-11-24 under
+   gate 0012** (`ASSESSMENTS/0012-s12-lin2-gtk3.md`, CI 12/12 green at
+   6c16845 — 8 required + 4 preview incl. `Linux frontend (GTK3)`;
+   promotion still owes its own gate + the §3 checklist); next:
+   S12-mac2 SwiftUI, then S12-lin3 Qt.
 
 Prepared by session 13 (2026-11-23) as the D3:D preparation deliverable;
 committed before any of the steps above (no implementation rides along).

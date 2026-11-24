@@ -14,7 +14,7 @@ frontends (CI-built) until each passes its promotion gate.
 | macOS (older) | Swift + AppKit | `macos-app/` — SwiftPM package; CI-built (macos-latest); client of the shared core over the loopback JSON-RPC protocol |
 | macOS (newer) | SwiftUI variant | sub-stage (S12-mac2); AppKit covers the older systems first |
 | Linux (modern) | Rust + Slint | `crates/velocitydm-slint/` — workspace member, covered by the required fmt/clippy/test checks on all three CI OSes; in-process shared core |
-| Linux (older) | Rust + gtk-rs / gtk3-rs | sub-stage (S12-lin2): needs GTK3 dev libs on CI (absent in the dev sandbox); Slint with the software renderer covers older hardware in the meantime |
+| Linux (older) | Rust + gtk-rs / gtk3-rs | `gtk3/` — built (S12-lin2, preview, gate 0012): standalone tree, in-process shared core, static hex-only GtkCssProvider (19/27 role subset); CI-built (ubuntu-latest + libgtk-3-dev); ships in no release asset until its promotion gate |
 | Linux (Qt alternative) | Qt (cxx-qt) | sub-stage (S12-lin3): requires a C++/Qt toolchain; tracked, not built |
 | Android | Android Views + Kotlin Multiplatform | built (S12-e, preview): the frozen v1.0.0-family release ASSETS keep the Compose APK; the tree now carries the Views+KMP app, which ships only after the promotion gate (tags are rule-protected until then) |
 | Browser extensions | MV3 + JS (`extensions/shared/md3.js`) | shipped since S1 |
