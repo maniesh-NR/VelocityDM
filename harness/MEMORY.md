@@ -1269,9 +1269,14 @@ session reads this file first, then `ROADMAP.md`.
 - **Dependabot note:** `dependabot/cargo/gtk3/glib-0.20.0` branch exists (glib 0.20 bump in the
   gtk3 workspace). Gate 0012 pinned `gtk = "0.18.2"` + `glib = "0.18"` with the 0.18-vs-0.19
   rationale; gtk-rs 0.18 requires glib 0.18 (minor-version pairing is enforced by the crates
-  themselves) — the bump would break the pairing and the committed-lock discipline. To be
-  dispositioned (close as not-planned with rationale, or defer to a deliberate gtk3 0.19/0.20
-  upgrade stage) — NOT merged silently.
+  themselves) — the bump would break the pairing and the committed-lock discipline. Disposition
+  EXECUTED this session: PR #17 closed not-planned with rationale comment; dependabot alert #8
+  (glib `VariantStrIter` unsoundness, vulnerable >=0.15 <0.20, fix 0.20.0) **dismissed as
+  not_used** with justification — gtk3/src uses no Variant API (grep: only CSS role-name
+  matches), and glib 0.20 is unreachable for the tree because gtk 0.18.2 itself depends on
+  glib 0.18, so even the direct-dep bump would leave gtk-owned glib 0.18 in the lock. A gtk4
+  migration is a different platform-matrix row (drops the older-distro support that motivated
+  S12-lin2) and would need its own gate.
 - Next standing queue: **S12-mac2 SwiftUI sub-stage** (next in the D3:D order after gtk3) —
   fresh five-role gate, spec-first; S12-lin3 Qt after it. The D5:A owner runtime-verification
   moment remains the owner's (protocol prepared in `S12-PROMOTION-GATES.md` §3; the agent
