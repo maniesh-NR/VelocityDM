@@ -295,3 +295,27 @@ wrapper is committed — setup-gradle 8.9 in CI is the canonical build
 mechanism. The `md3-tokens-baseline.json` drift tripwire regenerates
 via `python3 scripts/gen-md3-baseline.py` (needs the Rust toolchain
 above).
+
+## GTK3 preview (S12-lin2)
+
+The `gtk3/` tree is the S12-lin2 **preview** (gate 0012): standalone
+win32-shaped workspace, in-process core on 127.0.0.1:36990, static
+hex-only `GtkCssProvider` from `vdm-md3` (19/27 role subset). Ships in
+no release asset until its promotion gate; `release.yml` and the `v*`
+ruleset are untouched by the stage.
+
+Two truths future sessions would burn time on:
+
+- **Local work is fmt + generate-lockfile ONLY.** The dev sandbox has
+  no sudo and no `libgtk-3-dev` (apt is unusable here), so `cargo
+  build/check/clippy/test` against `gtk3/Cargo.toml` cannot compile
+  locally — pkg-config/system-deps stop at the first sys probe. The
+  canonical compile/test witness is the non-required `Linux frontend
+  (GTK3)` CI job (ubuntu-latest + `libgtk-3-dev pkg-config`, fmt →
+  clippy → build → test, build/test `--locked`).
+- **Failure policy:** a red `gtk3-frontend` job is evidence-then-fix
+  forward, but it does NOT block tag cuts or the release train (it
+  ships nothing) — unlike a red `android-frontend` job, which blocks
+  the frozen-asset refresh path. `git diff --exit-code gtk3/Cargo.lock`
+  after any `generate-lockfile` run: the lock is committed and CI
+  builds `--locked` (a drifted lock fails CI, not the fix-forward).

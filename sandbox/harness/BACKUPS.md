@@ -27,4 +27,5 @@ execution plan / every output that changed something), never fixed-interval
   throwaway dir /tmp/s11-dd2 wiped; dirty files at manifest time: 0.
 | 2026-11-24T05:16:33Z | S12 SSE wiring close (gate 0010): spec+implementation a0f801f, CI 11/11 green incl. swift-frontend compile witness, issue #16 commented | sandbox-backup | 96aaf49 | scripts+harness+manifest |
 | 2026-11-15T02:30:13Z | S12 close final: backup-log commit pushed, debug artifacts cleaned (disk 7.1G free) | sandbox-backup | a274d96 | scripts+harness+manifest |
-| 2026-11-24T08:29:04Z | agent execution plan | sandbox-backup | — | scripts+harness+manifest |
+| 2026-11-24T08:29:04Z | agent execution plan | sandbox-backup | 76c2983 | scripts+harness+manifest |
+| 2026-11-24T10:54:01Z | S12-lin2 GTK3 close (gate 0012): parity-matrix GTK3 columns + egui dead-field annotation + gap register + gate order (next S12-mac2 SwiftUI), DESIGN/ROADMAP/RUNBOOK flips, MEMORY session-18, issue #16 closed, dependabot glib-0.20 PR #17 closed not-planned; CI 12/12 green at 6c16845, close commit 3f579ad | sandbox-backup | — | scripts+harness+manifest |
