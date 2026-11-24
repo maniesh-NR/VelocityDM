@@ -214,6 +214,30 @@ Reclaim disk when the toolchain is idle: `rm -rf
 /home/z/my-project/tools/{ghidra,jdk}` (≈1.23 GB; the runbook above
 restores it).
 
+## Rust toolchain in this sandbox (re-verified session 17, 2026-11-24)
+
+The shims are per-instance: `~/.cargo/bin` is rebuilt as symlinks into
+`tools/rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/{cargo,rustc,rustfmt,cargo-fmt}`,
+with `RUSTUP_HOME=/home/z/my-project/tools/rustup` and
+`CARGO_HOME=/home/z/my-project/tools/cargo` (registry cache is wiped with
+the sandbox — the first build re-fetches crates, ~5 min).
+
+- **There is NO rustup proxy**: `cargo +1.75.0` errors ("no such command").
+  The win7 witness is the direct toolchain on PATH:
+  `PATH=/home/z/my-project/tools/rustup/toolchains/1.75.0-x86_64-unknown-linux-gnu/bin:$PATH
+  cargo check --workspace --locked` inside `win7/` (add `--features tls -p
+  vdm-core` for the TLS-feature state). MEMORY entries saying `+1.75.0`
+  predate this discovery.
+- **clippy is absent from the minimal-profile toolchains.** If missing
+  again: fetch `https://static.rust-lang.org/dist/channel-rust-stable.toml`,
+  find `clippy-preview.target.x86_64-unknown-linux-gnu` for the installed
+  rustc version, sha256-verify the tarball, copy `clippy-preview/bin/*`
+  into the toolchain's `bin/` and `share/*` into its `share/`. `cargo
+  clippy` finds the subcommand only when the toolchain bin dir is on PATH.
+- Workspace-wide `cargo clippy --all-targets` trips a pre-existing
+  `zbus_macros` compile issue — run clippy scoped to the touched crates
+  (`-p vdm-core -p vdm-rpc -p velocitydm`), as every wave has.
+
 ## Android preview (S12-e — Views + KMP restructure)
 
 The in-tree Android app is the S12-e **preview** (View-based Material 3

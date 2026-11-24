@@ -1187,3 +1187,55 @@ session reads this file first, then `ROADMAP.md`.
   the session reply with §4d attached.
 - Throwaway discipline held: /tmp/vdm-t2 wiped, binary never stored;
   no code changes in this session — docs/harness only.
+
+## 2026-11-24 (session 17) — S11-i wave 4 delivered under the fresh gate 0011 (adoption backlog closed)
+
+- Owner directive round 4 (ledger D11): "proceed down the remaining adoption backlog with a fresh
+  gate". Fresh five-role panel (ATKR/FALS/REQ/INT/REL, independent dispatch, identical evidence
+  packs): 5× PROCEED-WITH-CONDITIONS, zero BLOCK; record `ASSESSMENTS/0011-s11i-adoption-wave4.md`;
+  conditions folded spec-first into `docs/SPECS/S11-ADOPTIONS-WAVE4.md` (committed a5bbc12 BEFORE any
+  implementing commit).
+- Panel upgrades that changed the wave: FALS found a real silent-data-loss class in OUR engine (a
+  validator-matching `.vdmctl` surviving run_single's `.part` truncation — a later resume against a
+  range-capable probe would skip truncated ranges → zero-holes file); ATKR found header NAMES were
+  not token-validated (only space/colon/CR/LF/NUL) and both Proxy-Auth emission paths bypassed the
+  hygiene; REQ falsified "all frontends render notice" (only the CLI does; win32/slint render error,
+  macos decode drops the field, popup renders neither) and demanded the honest rendering matrix;
+  INT reproduced the working win7 witness shape (no rustup proxy this instance — direct toolchain
+  PATH, 16 s green) and required delta-seconds-only RA (no date crate, lock parity); REL pinned the
+  bench pair as mandatory, the B21 commit split, the CLEAN_ROOM row and the docs/RPC.md notice gap.
+- Scope adopted: B20 (tchar name refusal + controls/DEL value replacement with obs-text passthrough
+  + notice; Proxy-Auth paths routed through the helper) 0a88a56; B21a (no-resume classification +
+  `.vdmctl`/`.part` coherency via additive `ResumeState::remove_ctl`) a9a68fb; B21b (bounded
+  Retry-After: delta-seconds only, 429/503, min(delta,60s), stop-responsive ticks, worker jitter,
+  structural `probe_with_meta`/`ProbeFailure` threading; run_single now retries 429/503/5xx —
+  pre-wave it never retried 5xx because its formatted error never matched `is_retryable`) 920375c;
+  B22 (additive `tlsMin` knob, feature-free enum so the win7 headless default build compiles —
+  win7 lib.rs tls module un-gated, connector stays cfg-gated; tolerant load, validated settings.set)
+  3bd028a; B23 witness-only (12 conns / 37 reqs shape); B24 CocCoc NMH DEFERRED pending empirical
+  path verification (AUR bot-blocked, deb 404 — an unverified path is a silent no-op honesty bug);
+  parked items stay parked; §4d leftovers recorded as N7/N8 + the FTP PASV-target pre-condition.
+- Bench A/B (scripts/s11i4-bench-record.txt, warm-pair rule): pre 159.2/159.1 vs post 158.8/158.8
+  MBps — parity; request shape 12 conns / 37 reqs identical; the 1.41 s / 91 MBps cold outliers are
+  the documented artifact class (identical in the s11i3 record), investigated and discarded.
+- Battery: fmt both trees, clippy -D warnings (scoped to the touched crates — workspace-wide clippy
+  trips a pre-existing zbus_macros issue), lib 149 + http_engine 26 + hls_e2e 7 + bt/dht green,
+  extension battery 240 assertions (unaffected, run anyway), win7 direct-1.75 check green in BOTH
+  feature states (tls on/off).
+- CI evidence-then-fix cycle: Test (macos-latest) FAILED on the new b21 e2e ("read: body shorter
+  than content-length"). Root cause: the probe's ranged-GET fallback abandoned the 512 KiB full-body
+  response mid-read (read_body(1024) discard), and the close-with-unread-data RST raced the NEXT
+  connection's body write on the macOS runner (sequential ephemeral-port reuse) — head arrived, body
+  EOF'd. Fix cd5b4a4: the e2e serves 48 KiB so the probe drains the response fully in ONE read_body
+  pull (behavior shape unchanged; Linux 60× green; classification/coherency/SHA-256 assertions
+  intact). CI 11/11 GREEN at cd5b4a4 (8 required + 3 preview).
+- Standing toolchain truths for future sessions: cargo shims are rebuilt per instance
+  (`~/.cargo/bin` → toolchain bins, RUSTUP_HOME=tools/rustup, CARGO_HOME=tools/cargo — registry
+  re-fetches, ~5 min); clippy was MISSING from both toolchains (minimal profile) and was installed
+  from the dist channel manifest (clippy-1.100.0 tarball, sha256-verified, copied into
+  toolchains/stable…/bin+share; PATH must include the toolchain bin for `cargo clippy` to find the
+  subcommand); `cargo +1.75.0` DOES NOT WORK here — use
+  `PATH=tools/rustup/toolchains/1.75.0-…/bin:$PATH cargo check --workspace --locked` inside win7/
+  (and `--features tls -p vdm-core` for the TLS state).
+- Clean-room held: B20/B21/B22 re-spec'd from RFC 9110 §5.5/§5.6.2/§10.2.3 + the rustls public API
+  only; CLEAN_ROOM.md disclosure row added; no studied-binary artifact anywhere near the repo.
