@@ -286,7 +286,10 @@ mod tests {
 
     #[test]
     fn settings_apply_clamps_and_parses() {
-        let mut cfg = EngineConfig::default();
+        let mut cfg = EngineConfig {
+            user_agent: Some("VelocityDM/1.0".to_string()),
+            ..Default::default()
+        };
         let user_agent = cfg.user_agent.clone();
         apply_settings_fields(
             &mut cfg,

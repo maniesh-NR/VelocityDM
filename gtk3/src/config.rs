@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(parse_prefs("not json"), None);
         assert_eq!(parse_prefs("{\"seed\": \"x\"}"), None);
         assert_eq!(parse_prefs("null"), None);
-        let fallback = parse_prefs("garbage").unwrap_or_else(UiPrefs::default);
+        let fallback = parse_prefs("garbage").unwrap_or_default();
         assert_eq!(fallback, UiPrefs::default());
         assert_eq!(fallback.seed, vdm_md3::DEFAULT_SEED);
     }
@@ -135,9 +135,11 @@ mod tests {
 
     #[test]
     fn config_round_trip_keeps_engine_fields() {
-        let mut cfg = EngineConfig::default();
-        cfg.global_limit_bps = 250_000;
-        cfg.default_connections = 9;
+        let cfg = EngineConfig {
+            global_limit_bps: 250_000,
+            default_connections: 9,
+            ..Default::default()
+        };
         let text = serde_json::to_string(&cfg).unwrap();
         let parsed = parse_config(&text).unwrap();
         assert_eq!(parsed.global_limit_bps, 250_000);
