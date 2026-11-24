@@ -108,6 +108,33 @@ cargo build --release -p velocitydm -p velocitydm-nmh
 ./packaging/macos/bundle-macos.sh
 ```
 
+### macOS SwiftUI frontend (S12-mac2, preview)
+
+`macos-swiftui/` is a standalone SwiftPM package (zero third-party
+dependencies, deployment floor macOS 12) implementing the SwiftUI
+variant of the macOS frontend: a remote client of the same loopback
+daemon, Material You tokens via the shared engine's Swift port, and the
+gate-0010 SSE consumer contract. It does NOT replace the AppKit app
+(`macos-app/`, floor macOS 10.15) — Monterey users keep the AppKit app;
+macOS 12 users of the SwiftUI variant get compile-time availability
+checking only (runtime verification rides the owner's promotion-gate
+moment).
+
+```sh
+cd macos-swiftui
+swift build          # the app (VelocityDMSwiftUIApp)
+swift test           # golden-literal + frame-split + parse + sanitize suites
+swift run VelocityDMSwiftUIApp   # after starting the daemon:
+#   velocitydm daemon --addr 127.0.0.1:36990
+```
+
+`swift build` alone does not compile test targets — run `swift test` or
+the golden tests are dead code. CI witnesses both steps in the
+non-required `swiftui-frontend` job; a red `swiftui-frontend` does NOT
+block tag cuts (it ships nothing). The tree README documents the
+canonical-copy rule (the AppKit `Md3.swift` math is canonical for Swift
+ports) and the duplication-drift risk of the three copied files.
+
 ## Packaging
 
 - Linux: `./packaging/linux/install.sh [--user|--system|--prefix DIR]`

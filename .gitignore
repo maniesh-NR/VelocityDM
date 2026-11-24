@@ -27,6 +27,11 @@ android/.idea/
 *.flatpak
 *.AppImage
 
+# SwiftPM build outputs (S12-mac2: the AppKit line is additive with the
+# SwiftUI one — neither tree's .build was previously ignored)
+/macos-app/.build/
+/macos-swiftui/.build/
+
 # OS / editor
 .DS_Store
 Thumbs.db

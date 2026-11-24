@@ -142,6 +142,25 @@ jobs:
           cd macos-app
           swift build
 
+  swiftui-frontend:
+    name: macOS frontend (SwiftUI)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      # S12-mac2: the ONLY witness for the SwiftUI tree — the dev sandbox
+      # is Linux with no Swift toolchain, so local verification is source
+      # review only (spec rule 11). swift build alone does NOT compile
+      # test targets — swift test must ride the job or the golden tests
+      # are dead code (spec rule 10).
+      - name: swift build
+        run: |
+          cd macos-swiftui
+          swift build
+      - name: swift test
+        run: |
+          cd macos-swiftui
+          swift test
+
   android-frontend:
     name: Android frontend (Views + KMP)
     runs-on: ubuntu-22.04
