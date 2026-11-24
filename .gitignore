@@ -2,6 +2,7 @@
 /target
 /win7/target
 /frontend/win32/target
+/gtk3/target
 **/*.rs.bk
 
 # Extension build outputs

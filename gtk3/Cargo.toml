@@ -1,0 +1,30 @@
+[package]
+name = "velocitydm-gtk3"
+version = "1.0.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "VelocityDM Linux desktop frontend — GTK3 (older-distro stack), Material You themed, in-process shared Rust core"
+
+[[bin]]
+name = "velocitydm-gtk3"
+path = "src/main.rs"
+
+[dependencies]
+vdm-core = { path = "../crates/vdm-core" }
+vdm-rpc = { path = "../crates/vdm-rpc" }
+vdm-md3 = { path = "../crates/vdm-md3" }
+gtk = "0.18.2"
+glib = "0.18"
+serde = "1"
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+
+# Standalone workspace: GTK3 dependencies must not be resolved by the root
+# workspace (the Windows/macOS CI jobs have no gtk-sys dev libraries).
+# Precedent: frontend/win32/Cargo.toml (explicit package fields, trailing
+# [workspace] detach marker, committed Cargo.lock, --locked CI builds).
+[workspace]

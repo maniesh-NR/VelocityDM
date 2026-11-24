@@ -161,3 +161,23 @@ jobs:
         run: gradle -p android :shared:jvmTest --no-daemon
       - name: app builds (debug + minified release/R8)
         run: gradle -p android :app:assembleDebug :app:assembleRelease --no-daemon
+
+  gtk3-frontend:
+    name: Linux frontend (GTK3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - run: rustup default stable
+      # S12-lin2: the ONLY compile/test witness for the gtk3 tree — the dev
+      # sandbox has no libgtk-3-dev and no sudo (gate 0012). pkg-config is
+      # listed explicitly: the gtk-sys build scripts hard-require it.
+      - run: sudo apt-get update -y && sudo apt-get install -y libgtk-3-dev pkg-config
+      - name: cargo fmt (frontend)
+        run: cargo fmt --manifest-path gtk3/Cargo.toml --all -- --check
+      - name: cargo clippy (frontend)
+        run: cargo clippy --manifest-path gtk3/Cargo.toml --all-targets -- -D warnings
+      - name: cargo build (frontend)
+        run: cargo build --manifest-path gtk3/Cargo.toml --locked
+      - name: cargo test (frontend, headless-safe)
+        run: cargo test --manifest-path gtk3/Cargo.toml --locked

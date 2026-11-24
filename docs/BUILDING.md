@@ -134,3 +134,21 @@ Gradle 8.9 + JDK 17 + the Android SDK (`platforms;android-34`,
 :app:assembleDebug` (or `assembleRelease` for the minified build).
 One universal APK per release — no per-ABI splits. CI runs the same
 commands on the non-required `android-frontend` job.
+
+## GTK3 frontend (preview, S12-lin2)
+
+The `gtk3/` tree is a standalone workspace (own `Cargo.lock`; NOT a root
+workspace member — the win32/ precedent). Requires GTK3 dev libraries:
+
+```sh
+sudo apt-get install -y libgtk-3-dev pkg-config
+cargo build --manifest-path gtk3/Cargo.toml --locked
+cargo test  --manifest-path gtk3/Cargo.toml --locked   # headless-safe (no gtk::init)
+```
+
+CI is the canonical compile witness (non-required `gtk3-frontend` job,
+ubuntu-latest + `libgtk-3-dev`): the dev sandbox has no GTK3 and no
+sudo, so locally only `cargo generate-lockfile` (inside `gtk3/`) and
+`cargo fmt --manifest-path gtk3/Cargo.toml --all -- --check` are
+possible. The binary ships in no release asset — the egui GUI stays the
+shipped Linux surface until the gtk3 promotion gate.
