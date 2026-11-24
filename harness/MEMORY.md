@@ -1090,3 +1090,56 @@ session reads this file first, then `ROADMAP.md`.
   S5+ await owner activation; the deep-dive's commissioned scope is
   COMPLETE (scheduler §4b + worker/response machinery §4c); further
   function-level passes wait on demonstrated need or the T1/T3 VM.
+
+## 2026-11-24 (session 15) — S12 SSE wiring delivered (gate 0010)
+
+- Fetch-first: origin/main == local (4abd281, no drift this time — the
+  wave-3 close commit was already pushed).
+- Next standing queue item executed: the D3:D/D5:A S12 sub-stage — SSE
+  wiring for the Swift frontend (gap-register rows 157/158 of
+  docs/SPECS/S12-PROMOTION-GATES.md §4; §5 step 1), replacing the
+  unconditional 200 ms downloads.list poll with consumption of the
+  documented GET /events stream, plus the stale-rows-on-daemon-death fix.
+- **Gate 0010 (five-role, 5× PROCEED-WITH-CONDITIONS, zero BLOCK,
+  conditions folded pre-commit)**: ATKR (1 MiB buffer cap + lenient
+  parse + no payload logging + native-client posture preserved), FALS
+  (wire truth vs sse_loop: no heartbeats; tick omits removals →
+  task-removed→re-list; metadata-only drift must mark dirty), REQ
+  (RpcClient header comment updated; gap-register flip honest wording;
+  spec-first split), INT (CI swift-frontend job = compile witness;
+  macOS 10.15 API floor; whole-Data buffer ops; stop() wired into
+  applicationWillTerminate), REL (commit split; CI witness incl.
+  swift-frontend before close; backup last). Spec:
+  docs/SPECS/S12-SSE-WIRING.md (constants chosen independently:
+  150 ms coalesce, 2 s probe, 24 h stream timeouts, 1 MiB cap).
+- **Wire witness before implementation:** daemon rebuilt in-sandbox
+  (cargo build -p velocitydm --bin velocitydm, 1m57s; shims in
+  ~/.cargo/bin + RUSTUP_HOME=tools/rustup; the direct toolchain cargo
+  cannot resolve the registry) and scripts/sse_probe.py captured the
+  live frames (task-state probing→downloading→completed,
+  task-completed, one tasks tick with the full camelCase snapshot,
+  queue-drained; every frame exactly `data: <json>\n\n`, no
+  heartbeats) — transcript at scripts/sse-probe-transcript.txt; spec
+  §0 verified against the running server. Probe lessons: urllib's
+  buffered read deadlocks on silent SSE streams (raw socket + 0.5 s
+  recv timeout instead); the engine aborts extra ranged connections
+  mid-body (BrokenPipe server-side is normal).
+- **Implementation a0f801f:** SseClient.swift (URLSessionDataDelegate,
+  serial-queue buffer, macOS 10.15 APIs only) + AppController event
+  routing (tasks tick = in-place merge; other events = 150 ms coalesced
+  re-list; terminal state = reachable(false) → stale banner + frozen
+  rows + 2 s recovery probe that reopens the stream) + RpcClient header
+  comment + main.swift teardown wiring. Self-review caught and fixed a
+  launch-with-dead-daemon edge: the initial false→false "transition"
+  must still open the fallback (setStream made idempotent both ways).
+- **CI 11/11 GREEN at a0f801f** (poll-checks.sh; macOS frontend =
+  Swift compile witness; the session-14 windows-latest flake passed
+  clean this run). No engine deltas → no bench A/B, no win7 port owed.
+- Honest boundaries recorded: no Swift toolchain in the sandbox
+  (source review + CI compile witness only); AppKit runtime rows ride
+  the owner's D5:A verification moment (next in the queue).
+- Environment: cargo via ~/.cargo/bin shims (tools/cargo/bin absent
+  this instance); disk ~2.2G free — clean target/ before heavy builds.
+- Next standing queue: owner runtime verification (D5:A) of the full
+  Swift surface — SSE wiring was its last prerequisite; then per-surface
+  promotions (§5 steps 3–4), each under its own gate.

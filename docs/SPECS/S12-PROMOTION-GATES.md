@@ -154,8 +154,8 @@ these steps (honest boundary: no displays, no devices here).
 | Local .torrent path add | Swift | still absent (magnet works) | fix before the Swift gate |
 | Enter-to-add + TAB traversal | Win32 | still absent | fix before the Win32 gate |
 | Per-paint brush/text-format churn | Win32 | still present | cache on retheme; fix before the Win32 gate |
-| Stale rows on daemon death | Swift | still present | fix before the Swift gate |
-| SSE wiring (replace 200 ms poll) | Swift | sub-stage, queued next per D3:D/D5:A | its own gate + implementation; precedes the owner-verification moment |
+| Stale rows on daemon death | Swift | fixed in source 2026-11-24 (banner "daemon unreachable — rows stale" + frozen rows + 2 s recovery probe; compile witness CI swift-frontend) | runtime rows at the D5:A verification moment |
+| SSE wiring (replace 200 ms poll) | Swift | DONE 2026-11-24 (gate 0010: spec `S12-SSE-WIRING.md` + implementation a0f801f, CI 11/11 green incl. swift-frontend) | runtime verification rides the D5:A moment; precedes the per-surface promotions |
 | Release-mode APK size delta | Android | record at gate (debug was 6.6 MB vs 10.5 MB Compose) | measurement at the Android gate |
 
 ## 5. Gate order (the queue this preparation leaves behind)
