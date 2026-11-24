@@ -457,6 +457,11 @@ const AUDIT_RECOVERIES_MAX: u32 = 2;
 const NOTICE_RECOVERY: &str =
     "cross-connection data mismatch detected; restarting the file over a single connection";
 
+/// S11-i B20: surfaced when a caller-supplied header value carried control
+/// characters and was sanitized before emission (never the value content).
+const NOTICE_SANITIZED: &str =
+    "one or more request header values contained control characters and were sanitized before sending";
+
 /// B2: maximum optional (dynamically spawned) workers per task.
 const OPT_EXTRA_MAX: usize = 8;
 /// B2: minimum file size for optional connections.
@@ -1249,6 +1254,8 @@ fn run_segmented(
         let ledger = ledger.clone();
         let reset_flag = reset_flag.clone();
         let workers = connections;
+        let shared_for_worker = shared.clone();
+        let task_id = id;
         let retire = if optional {
             let flag = Arc::new(AtomicBool::new(false));
             retire_flags.lock().unwrap().insert(wid, flag.clone());
@@ -1277,6 +1284,8 @@ fn run_segmented(
                 ledger,
                 reset_flag,
                 retire,
+                &shared_for_worker,
+                task_id,
             );
             let _ = tx.send((wid, exit));
         })
@@ -1546,6 +1555,19 @@ fn run_segmented(
         });
 }
 
+/// S11-i B20: first-write-wins notice when a response reports that a
+/// request header value was sanitized (never clobbers an existing notice).
+fn note_sanitized(shared: &Arc<EngineShared>, id: u64, resp: &http::Response) {
+    if !resp.sanitized_headers {
+        return;
+    }
+    shared.update(id, |s| {
+        if s.notice.is_none() {
+            s.notice = Some(NOTICE_SANITIZED.to_string());
+        }
+    });
+}
+
 fn fail(shared: &Arc<EngineShared>, id: u64, msg: &str) {
     shared.update(id, |s| {
         s.state = TaskState::Failed;
@@ -1633,6 +1655,8 @@ fn run_single(
             return;
         }
     };
+    // S11-i B20: surface header-value sanitization once per task.
+    note_sanitized(&shared, id, &resp);
     let size = resp.content_length().unwrap_or(0);
     shared.update(id, |s| {
         s.size = size;
@@ -1878,6 +1902,8 @@ fn worker(
     ledger: Arc<AuditLedger>,
     reset_flag: Arc<AtomicBool>,
     retire: Option<Arc<AtomicBool>>,
+    shared: &Arc<EngineShared>,
+    id: u64,
 ) -> WorkerExit {
     let mirrors_n = mirrors.len();
     let mut mirror_idx = wid % mirrors_n.max(1); // round-robin spread (Rodriguez et al.)
@@ -2005,6 +2031,8 @@ fn worker(
                 }
             };
             conn_recycled = false;
+            // S11-i B20: surface header-value sanitization once per task.
+            note_sanitized(shared, id, &resp);
             // S11-i B18: definitive changed-resource verdict — with a
             // validator sent, a 200 at pos>0 cannot heal; fail fast with an
             // honest reason instead of churning MAX_RETRIES across mirrors.

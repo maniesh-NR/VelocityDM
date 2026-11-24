@@ -147,7 +147,11 @@ impl ProxyStream {
     ) -> Result<ProxyStream> {
         let mut req = format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n");
         if let Some(auth) = cfg.basic_auth() {
-            req.push_str(&format!("Proxy-Authorization: {}\r\n", auth));
+            // S11-i B20: the CONNECT auth line routes through the same value
+            // hygiene as every other emission path (base64 payloads are
+            // unaffected in practice; the point is no bypass).
+            let (emitted, _) = crate::http::sanitize_header_value(&auth)?;
+            req.push_str(&format!("Proxy-Authorization: {}\r\n", emitted));
         }
         req.push_str("\r\n");
         stream

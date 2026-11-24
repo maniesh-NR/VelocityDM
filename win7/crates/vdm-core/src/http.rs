@@ -188,6 +188,66 @@ impl Request {
     }
 }
 
+// ---------------------------------------------------------------------------
+// S11-i B20 header hygiene (docs/SPECS/S11-ADOPTIONS-WAVE4.md; public-spec
+// sources: RFC 9110 §5.5 field-value grammar, §5.6.2 token grammar —
+// behavior re-spec'd from the committed wave-4 spec, not from any binary).
+// ---------------------------------------------------------------------------
+
+/// Header names must be tokens (RFC 9110 §5.6.2 tchar set) — a hard
+/// refusal, a TIGHTENING over the previous space/colon-only check: names
+/// that passed before (control chars, DEL, non-ASCII) now fail fast.
+pub(crate) fn validate_header_name(name: &str) -> Result<()> {
+    if name.is_empty() || !name.bytes().all(is_tchar) {
+        return Err(Error::Http(format!(
+            "illegal header name: {:?}",
+            name
+        )));
+    }
+    Ok(())
+}
+
+fn is_tchar(b: u8) -> bool {
+    matches!(b,
+        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.'
+        | b'^' | b'_' | b'`' | b'|' | b'~'
+        | b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z')
+}
+
+/// B20 value hygiene: CR/LF/NUL keep the hard refusal (the injection
+/// boundary does not move — the request-splitting byte sequence never
+/// reaches the wire); other C0 controls except HTAB, plus DEL, are
+/// replaced with `_` so a malformed caller value degrades instead of
+/// aborting the download; obs-text (>= 0x80) passes through unchanged
+/// (RFC 9110 permits it; UTF-8 cookie/referer values keep working).
+/// Returns the emitted value plus whether any substitution happened.
+pub(crate) fn sanitize_header_value(v: &str) -> Result<(std::borrow::Cow<'_, str>, bool)> {
+    let mut bad = false;
+    for &b in v.as_bytes() {
+        if b == b'\r' || b == b'\n' || b == 0 {
+            return Err(Error::Http("illegal header value (CR/LF/NUL)".into()));
+        }
+        if (b < 0x20 && b != b'\t') || b == 0x7f {
+            bad = true;
+        }
+    }
+    if !bad {
+        return Ok((std::borrow::Cow::Borrowed(v), false));
+    }
+    let replaced: String = v
+        .chars()
+        .map(|c| {
+            let b = c as u32;
+            if (b < 0x20 && b != 0x09) || b == 0x7f {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    Ok((std::borrow::Cow::Owned(replaced), true))
+}
+
 enum Transport {
     Plain(TcpStream),
     #[cfg(feature = "tls")]
@@ -342,11 +402,20 @@ impl Conn {
         if bad_char(&target) || bad_char(&req.url.host_header()) {
             return Err(Error::Http("illegal request target or host".into()));
         }
+        // S11-i B20: set by any emission path that sanitizes a value.
+        let mut sanitized = false;
         head.push_str(&format!("{} {} HTTP/1.1\r\n", req.method, target));
         if !self.absolute_form {
             head.push_str(&format!("Host: {}\r\n", req.url.host_header()));
         } else if let Some(auth) = &self.proxy_auth {
-            head.push_str(&format!("Proxy-Authorization: {}\r\n", auth));
+            // B20: the absolute-form proxy-auth line routes through the same
+            // hygiene (base64 payloads are unaffected in practice; the point
+            // is no emission-path bypass).
+            let (emitted, substituted) = sanitize_header_value(auth)?;
+            if substituted {
+                sanitized = true;
+            }
+            head.push_str(&format!("Proxy-Authorization: {}\r\n", emitted));
         }
         let ua = if cfg.user_agent.is_empty() {
             "VelocityDM/1.0".to_string()
@@ -355,17 +424,22 @@ impl Conn {
         };
         // Header values come from RPC callers (downloads.add options.headers,
         // referer/cookies forwarded from the browser, settings user-agent).
-        // Refuse anything that could split the request: CR/LF/NUL in names
-        // or values, and non-token header names.
-        let push_header = |head: &mut String, k: &str, v: &str| -> Result<()> {
-            let bad_char = |s: &str| s.contains('\r') || s.contains('\n') || s.contains('\0');
-            if k.is_empty() || bad_char(k) || bad_char(v) || k.contains(' ') || k.contains(':') {
-                return Err(Error::Http(format!(
-                    "illegal header name/value: {:?}: {:?}",
-                    k, v
-                )));
+        // B20: names are token-validated (hard refusal); values hard-refuse
+        // CR/LF/NUL and replace other control chars with `_` (surfaced via
+        // the sanitized flag on the response) — see validate_header_name /
+        // sanitize_header_value above.
+        let mut push_header = |head: &mut String, k: &str, v: &str| -> Result<()> {
+            validate_header_name(k)?;
+            let (emitted, substituted) = sanitize_header_value(v)?;
+            if substituted {
+                sanitized = true;
+                // Value content never logged (B5 cookie contract).
+                eprintln!(
+                    "vdm-http: header '{}' value contained control characters; sanitized",
+                    k
+                );
             }
-            head.push_str(&format!("{}: {}\r\n", k, v));
+            head.push_str(&format!("{}: {}\r\n", k, emitted));
             Ok(())
         };
         push_header(&mut head, "User-Agent", &ua)?;
@@ -446,6 +520,7 @@ impl Conn {
             tr: Some(tr),
             absolute_form: self.absolute_form,
             proxy_auth: self.proxy_auth.clone(),
+            sanitized_headers: sanitized,
         })
     }
 }
@@ -507,6 +582,9 @@ pub struct Response {
     pub status: u16,
     pub reason: String,
     pub headers: Vec<(String, String)>,
+    /// S11-i B20: true when any request header value needed control-char
+    /// sanitization before emission (surfaced as a task snapshot notice).
+    pub sanitized_headers: bool,
     body: BodyState,
     keep_alive: bool,
     tr: Option<Transport>,
@@ -927,5 +1005,41 @@ mod tests {
         assert_eq!(find_terminator(b"abc\r\n\r\nbody", 0), Some(3));
         assert_eq!(find_terminator(b"abcdef", 0), None);
         assert_eq!(find_terminator(b"\r\n\r\n", 0), Some(0));
+    }
+
+    // S11-i B20 hygiene matrix (docs/SPECS/S11-ADOPTIONS-WAVE4.md §B20).
+    // Root tree carries the full wire-emission test; this tree pins the
+    // pure grammar/behavior matrix (1.75-compat, no sockets in check runs).
+
+    #[test]
+    fn b20_name_grammar() {
+        for n in ["X-Foo", "accept-encoding", "If-Range", "X_1~.!$%&'*+^`|"] {
+            assert!(validate_header_name(n).is_ok(), "{}", n);
+        }
+        assert!(validate_header_name("").is_err());
+        assert!(validate_header_name("Bad Name").is_err());
+        assert!(validate_header_name("Bad:Name").is_err());
+        assert!(validate_header_name("X\tFoo").is_err());
+        assert!(validate_header_name("X\x01Foo").is_err());
+        assert!(validate_header_name("X\u{7f}").is_err());
+    }
+
+    #[test]
+    fn b20_value_matrix() {
+        for v in ["a\rb", "a\nb", "a\0b", "\r\nX-Injected: 1"] {
+            assert!(sanitize_header_value(v).is_err(), "{:?}", v);
+        }
+        let (out, sub) = sanitize_header_value("a\x01b").unwrap();
+        assert_eq!(&out, "a_b");
+        assert!(sub);
+        let (out, sub) = sanitize_header_value("a\x7fb").unwrap();
+        assert_eq!(&out, "a_b");
+        assert!(sub);
+        let (out, sub) = sanitize_header_value("a\tb c").unwrap();
+        assert_eq!(&out, "a\tb c");
+        assert!(!sub);
+        let (out, sub) = sanitize_header_value("café").unwrap();
+        assert_eq!(&out, "café");
+        assert!(!sub);
     }
 }
