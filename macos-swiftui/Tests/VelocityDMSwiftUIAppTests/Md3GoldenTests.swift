@@ -24,7 +24,7 @@ final class Md3GoldenTests: XCTestCase {
     }
 
     private static let golden: [Golden] = [
-        Golden(seed: 0x4156A4, name: "Brand blue", dark: false, roles: Md3Scheme(
+        Golden(seed: 0x4156A4, name: "Brand blue", dark: false, roles: Md3Scheme(dark: false,
             primary: 0x2D748D,
             onPrimary: 0xFFFFFF,
             primaryContainer: 0xDEFFDE,
@@ -44,7 +44,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x60816C,
             outlineVariant: 0xBAF2C7
         )),
-        Golden(seed: 0x4156A4, name: "Brand blue", dark: true, roles: Md3Scheme(
+        Golden(seed: 0x4156A4, name: "Brand blue", dark: true, roles: Md3Scheme(dark: true,
             primary: 0xAAFFF0,
             onPrimary: 0x07334E,
             primaryContainer: 0x17526C,
@@ -64,7 +64,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x7DA589,
             outlineVariant: 0x2B3E35
         )),
-        Golden(seed: 0x6750A4, name: "Baseline purple", dark: false, roles: Md3Scheme(
+        Golden(seed: 0x6750A4, name: "Baseline purple", dark: false, roles: Md3Scheme(dark: false,
             primary: 0x4D6B86,
             onPrimary: 0xFFFFFF,
             primaryContainer: 0xDEFFDE,
@@ -84,7 +84,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x63806B,
             outlineVariant: 0xBEF0C6
         )),
-        Golden(seed: 0x6750A4, name: "Baseline purple", dark: true, roles: Md3Scheme(
+        Golden(seed: 0x6750A4, name: "Baseline purple", dark: true, roles: Md3Scheme(dark: true,
             primary: 0xC1FDFF,
             onPrimary: 0x1E2D49,
             primaryContainer: 0x344B67,
@@ -104,7 +104,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x80A488,
             outlineVariant: 0x2E3D34
         )),
-        Golden(seed: 0x00639B, name: "Ocean", dark: false, roles: Md3Scheme(
+        Golden(seed: 0x00639B, name: "Ocean", dark: false, roles: Md3Scheme(dark: false,
             primary: 0x007178,
             onPrimary: 0xFFFFFF,
             primaryContainer: 0xDEFFDE,
@@ -124,7 +124,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x5D826B,
             outlineVariant: 0xB6F3C6
         )),
-        Golden(seed: 0x00639B, name: "Ocean", dark: true, roles: Md3Scheme(
+        Golden(seed: 0x00639B, name: "Ocean", dark: true, roles: Md3Scheme(dark: true,
             primary: 0x9CFFE3,
             onPrimary: 0x00282B,
             primaryContainer: 0x004B50,
@@ -144,7 +144,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x79A688,
             outlineVariant: 0x283F34
         )),
-        Golden(seed: 0x006A6A, name: "Teal", dark: false, roles: Md3Scheme(
+        Golden(seed: 0x006A6A, name: "Teal", dark: false, roles: Md3Scheme(dark: false,
             primary: 0x006953,
             onPrimary: 0xFFFFFF,
             primaryContainer: 0xDEFFDE,
@@ -164,7 +164,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x5A8166,
             outlineVariant: 0xB4F2C0
         )),
-        Golden(seed: 0x006A6A, name: "Teal", dark: true, roles: Md3Scheme(
+        Golden(seed: 0x006A6A, name: "Teal", dark: true, roles: Md3Scheme(dark: true,
             primary: 0x84FFCC,
             onPrimary: 0x00241B,
             primaryContainer: 0x004536,
@@ -184,7 +184,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x77A583,
             outlineVariant: 0x263F30
         )),
-        Golden(seed: 0x386A33, name: "Forest", dark: false, roles: Md3Scheme(
+        Golden(seed: 0x386A33, name: "Forest", dark: false, roles: Md3Scheme(dark: false,
             primary: 0x0C6005,
             onPrimary: 0xFFFFFF,
             primaryContainer: 0xDEFFDE,
@@ -204,7 +204,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x5F7F5E,
             outlineVariant: 0xB9EFB8
         )),
-        Golden(seed: 0x386A33, name: "Forest", dark: true, roles: Md3Scheme(
+        Golden(seed: 0x386A33, name: "Forest", dark: true, roles: Md3Scheme(dark: true,
             primary: 0x92F28B,
             onPrimary: 0x002000,
             primaryContainer: 0x023F00,
@@ -224,7 +224,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x7CA37B,
             outlineVariant: 0x2A3C29
         )),
-        Golden(seed: 0x8F4C00, name: "Sunset", dark: false, roles: Md3Scheme(
+        Golden(seed: 0x8F4C00, name: "Sunset", dark: false, roles: Md3Scheme(dark: false,
             primary: 0x6C4300,
             onPrimary: 0xFFFFFF,
             primaryContainer: 0xDEFFDE,
@@ -244,7 +244,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x6A7B5C,
             outlineVariant: 0xC5EBB5
         )),
-        Golden(seed: 0x8F4C00, name: "Sunset", dark: true, roles: Md3Scheme(
+        Golden(seed: 0x8F4C00, name: "Sunset", dark: true, roles: Md3Scheme(dark: true,
             primary: 0xF6CD6F,
             onPrimary: 0x261400,
             primaryContainer: 0x482B00,
@@ -264,7 +264,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x879F78,
             outlineVariant: 0x333927
         )),
-        Golden(seed: 0x984061, name: "Rose", dark: false, roles: Md3Scheme(
+        Golden(seed: 0x984061, name: "Rose", dark: false, roles: Md3Scheme(dark: false,
             primary: 0x7B4246,
             onPrimary: 0xFFFFFF,
             primaryContainer: 0xDEFFDE,
@@ -284,7 +284,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x6A7C63,
             outlineVariant: 0xC6ECBD
         )),
-        Golden(seed: 0x984061, name: "Rose", dark: true, roles: Md3Scheme(
+        Golden(seed: 0x984061, name: "Rose", dark: true, roles: Md3Scheme(dark: true,
             primary: 0xFED5BC,
             onPrimary: 0x3A0015,
             primaryContainer: 0x59232C,
@@ -304,7 +304,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x88A080,
             outlineVariant: 0x343A2E
         )),
-        Golden(seed: 0x56606F, name: "Slate", dark: false, roles: Md3Scheme(
+        Golden(seed: 0x56606F, name: "Slate", dark: false, roles: Md3Scheme(dark: false,
             primary: 0x12778C,
             onPrimary: 0xFFFFFF,
             primaryContainer: 0xDEFFDE,
@@ -324,7 +324,7 @@ final class Md3GoldenTests: XCTestCase {
             outline: 0x5E816B,
             outlineVariant: 0xB8F2C7
         )),
-        Golden(seed: 0x56606F, name: "Slate", dark: true, roles: Md3Scheme(
+        Golden(seed: 0x56606F, name: "Slate", dark: true, roles: Md3Scheme(dark: true,
             primary: 0xA3FFEA,
             onPrimary: 0x002C38,
             primaryContainer: 0x005265,
