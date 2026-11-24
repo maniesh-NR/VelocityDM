@@ -47,6 +47,15 @@ link class — a ceiling, never a raise (`high`=8, `medium`=4, `low`=2).
 Honest warning: high connection counts can antagonize servers (the
 reference product itself warns about this) — presets default to `auto`.
 
+**TLS minimum-version note (S11-i B22):** the `tlsMin` setting
+(`default|tls12|tls13`, default `default`) raises the TLS floor for engine
+HTTP(S) downloads — `default` keeps rustls's safe defaults (TLS 1.2+1.3,
+zero change); rustls+ring supports nothing below TLS 1.2, so the knob is
+floor-raising by construction. Torrent tracker announces keep the default
+policy this wave. The wire-level refusal claim (a TLS-1.1-only server is
+refused at `tls12`) is documented-not-executed: the sandbox has no TLS
+test server.
+
 ## Cross-compiling
 
 ### Linux musl (static, old-distro baseline)

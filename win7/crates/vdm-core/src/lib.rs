@@ -20,7 +20,9 @@ pub mod range_pool;
 pub mod token_bucket;
 pub mod util;
 
-#[cfg(feature = "tls")]
+// S11-i B22: the module is feature-safe (TlsMin carries no TLS types; only
+// the connector is cfg-gated inside), so the settings surface exists in the
+// headless default build too.
 pub mod tls;
 
 pub use error::{Error, Result};

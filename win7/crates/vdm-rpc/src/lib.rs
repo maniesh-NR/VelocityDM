@@ -621,6 +621,8 @@ pub fn dispatch(engine: &Arc<Engine>, body: &[u8], stop: &AtomicBool) -> Value {
                     "userAgent": cfg.user_agent,
                     "globalLimitBps": cfg.global_limit_bps,
                     "proxy": cfg.proxy,
+                    // S11-i B22: TLS minimum-version policy (default|tls12|tls13)
+                    "tlsMin": cfg.tls_min,
                     "scheduler": cfg.scheduler,
                 }),
             )
@@ -644,6 +646,21 @@ pub fn dispatch(engine: &Arc<Engine>, body: &[u8], stop: &AtomicBool) -> Value {
             } else if let Some(v) = params.get("proxy") {
                 if let Ok(p) = serde_json::from_value::<ProxyConfig>(v.clone()) {
                     cfg.proxy = Some(p);
+                }
+            }
+            // S11-i B22: validated set path — unknown tlsMin values are
+            // rejected here (the tolerant load path is only for config.json
+            // files written by older/other builds).
+            if let Some(v) = params.get("tlsMin") {
+                match v.as_str().and_then(vdm_core::tls::TlsMin::parse) {
+                    Some(t) => cfg.tls_min = t.as_str().to_string(),
+                    None => {
+                        return error_response(
+                            id,
+                            -32602,
+                            "tlsMin must be one of: default, tls12, tls13",
+                        )
+                    }
                 }
             }
             engine.set_config(cfg);

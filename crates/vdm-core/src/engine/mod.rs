@@ -56,6 +56,11 @@ pub struct EngineConfig {
     /// Global speed limit in bytes/s (0 = unlimited).
     #[serde(default)]
     pub global_limit_bps: u64,
+    /// S11-i B22: TLS minimum-version policy knob (`default|tls12|tls13`);
+    /// an unknown value follows the tolerant-load pattern (default + warn,
+    /// never fails startup) at the TaskEnv boundary.
+    #[serde(default)]
+    pub tls_min: String,
     #[serde(default)]
     pub scheduler: SchedulerRules,
 }
@@ -76,6 +81,7 @@ impl Default for EngineConfig {
             user_agent: String::new(),
             proxy: None,
             global_limit_bps: 0,
+            tls_min: String::new(),
             scheduler: SchedulerRules::default(),
         }
     }
@@ -218,6 +224,7 @@ impl Engine {
             c.default_connections = cfg.default_connections;
             c.user_agent = cfg.user_agent.clone();
             c.proxy = cfg.proxy.clone();
+            c.tls_min = cfg.tls_min.clone();
             c.scheduler = cfg.scheduler.clone();
             let rate = cfg.global_limit_bps;
             c.global_limit_bps = rate;
@@ -244,6 +251,15 @@ impl Engine {
 
     fn env(&self) -> TaskEnv {
         let cfg = self.cfg.lock().unwrap();
+        // S11-i B22: tolerant knob parse — unknown values warn + keep the
+        // rustls safe defaults (never fail startup, never weaker than now).
+        let tls_min = crate::tls::TlsMin::parse(&cfg.tls_min).unwrap_or_else(|| {
+            eprintln!(
+                "engine: unknown tlsMin value {:?} — using the default policy",
+                cfg.tls_min
+            );
+            crate::tls::TlsMin::Default
+        });
         TaskEnv {
             download_dir: cfg.download_dir.clone(),
             default_connections: cfg.default_connections,
@@ -253,6 +269,7 @@ impl Engine {
                 cfg.user_agent.clone()
             },
             proxy: cfg.proxy.clone(),
+            tls_min,
             global_bucket: self.shared.global_bucket.clone(),
         }
     }
@@ -743,6 +760,7 @@ fn self_cfg_snapshot(env: &TaskEnv) -> EngineConfig {
         user_agent: env.user_agent.clone(),
         proxy: env.proxy.clone(),
         global_limit_bps: 0,
+        tls_min: env.tls_min.as_str().to_string(),
         scheduler: SchedulerRules::default(),
     }
 }

@@ -155,6 +155,9 @@ pub struct ClientCfg {
     pub proxy: Option<ProxyConfig>,
     pub connect_timeout: Option<Duration>,
     pub io_timeout: Option<Duration>,
+    /// S11-i B22: the TLS minimum-version policy (Default = rustls safe
+    /// defaults, zero behavior change).
+    pub tls_min: crate::tls::TlsMin,
 }
 
 #[derive(Debug, Clone)]
@@ -301,7 +304,13 @@ impl Conn {
                 let stream = ProxyStream::connect_tcp(p, ct)?;
                 if url.is_tls() {
                     let tunnel = ProxyStream::http_connect(p, stream, &url.host, url.port, ct)?;
-                    return Ok(Conn::tls_conn(tunnel.into_tcp(), &url.host, false, None));
+                    return Ok(Conn::tls_conn(
+                        tunnel.into_tcp(),
+                        &url.host,
+                        false,
+                        None,
+                        cfg.tls_min,
+                    ));
                 }
                 absolute_form = true;
                 proxy_auth = p.basic_auth();
@@ -310,13 +319,25 @@ impl Conn {
             Some(p) => {
                 let stream = ProxyStream::socks_connect(p, &url.host, url.port, ct)?;
                 if url.is_tls() {
-                    return Ok(Conn::tls_conn(stream.into_tcp(), &url.host, false, None));
+                    return Ok(Conn::tls_conn(
+                        stream.into_tcp(),
+                        &url.host,
+                        false,
+                        None,
+                        cfg.tls_min,
+                    ));
                 }
                 stream.into_tcp()
             }
         };
         if url.is_tls() {
-            Ok(Conn::tls_conn(tcp, &url.host, absolute_form, proxy_auth))
+            Ok(Conn::tls_conn(
+                tcp,
+                &url.host,
+                absolute_form,
+                proxy_auth,
+                cfg.tls_min,
+            ))
         } else {
             Self::apply_timeout(&tcp, cfg);
             Ok(Conn {
@@ -334,8 +355,9 @@ impl Conn {
         host: &str,
         absolute_form: bool,
         proxy_auth: Option<String>,
+        tls_min: crate::tls::TlsMin,
     ) -> Conn {
-        match crate::tls::wrap(tcp, host) {
+        match crate::tls::wrap_with_policy(tcp, host, tls_min) {
             Ok(t) => Conn {
                 tr: Some(Transport::Tls(Box::new(t))),
                 absolute_form,
@@ -353,7 +375,13 @@ impl Conn {
     }
 
     #[cfg(not(feature = "tls"))]
-    fn tls_conn(_tcp: TcpStream, _host: &str, _af: bool, _pa: Option<String>) -> Conn {
+    fn tls_conn(
+        _tcp: TcpStream,
+        _host: &str,
+        _af: bool,
+        _pa: Option<String>,
+        _tls_min: crate::tls::TlsMin,
+    ) -> Conn {
         Conn {
             tr: None,
             absolute_form: false,
@@ -1087,6 +1115,7 @@ mod tests {
             proxy: None,
             connect_timeout: Some(Duration::from_secs(5)),
             io_timeout: Some(Duration::from_secs(5)),
+            tls_min: Default::default(),
         };
         let mut conn = Conn::connect(&url, &cfg).unwrap();
         let mut resp = conn
@@ -1102,6 +1131,7 @@ mod tests {
             proxy: None,
             connect_timeout: Some(Duration::from_secs(5)),
             io_timeout: Some(Duration::from_secs(5)),
+            tls_min: Default::default(),
         };
         let resp2 = conn.request(&Request::get(&url), &clean_cfg).unwrap();
         assert!(!resp2.sanitized_headers, "clean run must not flag");

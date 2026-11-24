@@ -519,6 +519,9 @@ pub struct TaskEnv {
     pub default_connections: usize,
     pub user_agent: String,
     pub proxy: Option<crate::proxy::ProxyConfig>,
+    /// S11-i B22: the TLS minimum-version policy for this task's
+    /// connections (Default = rustls safe defaults).
+    pub tls_min: crate::tls::TlsMin,
     pub global_bucket: Arc<TokenBucket>,
 }
 
@@ -1064,6 +1067,7 @@ pub fn run_http_task(
         proxy: opts.proxy.clone().or_else(|| env.proxy.clone()),
         connect_timeout: Some(Duration::from_secs(15)),
         io_timeout: Some(Duration::from_secs(30)),
+        tls_min: env.tls_min,
     };
     let url_parsed = match Url::parse(&url) {
         Ok(u) => u,
@@ -1350,6 +1354,7 @@ fn run_segmented(
         proxy: opts.proxy.clone().or_else(|| env.proxy.clone()),
         connect_timeout: Some(Duration::from_secs(15)),
         io_timeout: Some(Duration::from_secs(30)),
+        tls_min: env.tls_min,
     };
 
     // S11-i shared machinery (specs: docs/SPECS/S11-ADOPTIONS.md).
@@ -1749,6 +1754,7 @@ fn run_single(
         proxy: env.proxy.clone(),
         connect_timeout: Some(Duration::from_secs(15)),
         io_timeout: Some(Duration::from_secs(30)),
+        tls_min: env.tls_min,
     };
     let part = ResumeState::part_path(out_path);
     let mut resp = None;
@@ -1926,6 +1932,7 @@ fn run_hls(
         proxy: opts.proxy.clone().or_else(|| env.proxy.clone()),
         connect_timeout: Some(Duration::from_secs(15)),
         io_timeout: Some(Duration::from_secs(30)),
+        tls_min: env.tls_min,
     };
     let task_bucket = if opts.rate_limit_bps > 0 {
         Some(Arc::new(TokenBucket::new(opts.rate_limit_bps, 256 * 1024)))
