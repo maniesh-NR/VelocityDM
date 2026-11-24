@@ -68,3 +68,13 @@ The round-3 directive also serves as the continued T2 clearance for the
 deep-dive session 2 (same standing barriers; the pinned artifact was
 re-verified byte-exact at session start per the fail-closed policy).
 
+## Round 4 — answered in-chat 2026-11-24 (session 17): "proceed down the remaining adoption backlog with a fresh gate"
+
+| ID | Decision | Answer | Binding |
+| --- | --- | --- | --- |
+| D11 | Wave-4 scope + gating | **fresh-gate adoption** | The remaining study backlog (§4d observations + parked candidates) proceeds through a NEW five-role gate (assessment 0011) — scope: B20 (header hygiene, narrowed by the panel), B21 (no-resume honesty + partial-state coherency + bounded Retry-After), B22 (TLS min-version knob), B23 (witness only), B24 (CocCoc NMH — deferred pending empirical path verification); B10–B15 stay parked; §4d leftovers recorded as N7/N8 + the FTP pre-condition. Spec-first barrier unchanged. |
+
+Future rounds: the owner may answer by code ("D1:C, rest default");
+unanswered items keep the menu's marked defaults. This ledger is the
+source of truth after context loss; the chat menu is the interface.
+

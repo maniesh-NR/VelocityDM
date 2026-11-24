@@ -26,3 +26,5 @@ execution plan / every output that changed something), never fixed-interval
   (after one windows flake rerun); bench record scripts/s11i3-bench-record.txt;
   throwaway dir /tmp/s11-dd2 wiped; dirty files at manifest time: 0.
 | 2026-11-24T05:16:33Z | S12 SSE wiring close (gate 0010): spec+implementation a0f801f, CI 11/11 green incl. swift-frontend compile witness, issue #16 commented | sandbox-backup | 96aaf49 | scripts+harness+manifest |
+| 2026-11-15T02:30:13Z | S12 close final: backup-log commit pushed, debug artifacts cleaned (disk 7.1G free) | sandbox-backup | a274d96 | scripts+harness+manifest |
+| 2026-11-24T08:29:04Z | agent execution plan | sandbox-backup | — | scripts+harness+manifest |

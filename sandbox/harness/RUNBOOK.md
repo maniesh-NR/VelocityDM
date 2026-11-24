@@ -174,9 +174,69 @@ Session-1 result: 184 functions decompiled in ~36 s of script time
 after a ~40 s project reopen. Keep the Ghidra project inside the
 throwaway dir (wiped at close); helper scripts stay in the toolbox.
 
+### rea attach mode (verified session 16, 2026-11-24 — the resource-safe provider lane)
+
+rea (`npm i -g rea-agents`; v6.10.1) orchestrates native analysis through
+provider engines; on Linux the provider is our Ghidra 12.2 install
+(`rea doctor --provider ghidra --json` must be healthy). **Do NOT let rea
+import a large binary itself** — its in-session bridge (2 GB heap) was
+SIGKILLed by the 4 GB cgroup on the 6.5 MB engine image. The safe shape is
+a caller-prepared project + rea attach mode:
+
+```sh
+# 1. caller-prepared project with bounded resources (248 s for 6.5 MB x86)
+mkdir -p /tmp/vdm-t2/ghproj
+GHIDRA_HEADLESS_MAXMEM=1536M JAVA_TOOL_OPTIONS="-XX:ActiveProcessorCount=2" \
+  tools/ghidra/support/analyzeHeadless /tmp/vdm-t2/ghproj idman-study \
+  -import /tmp/vdm-t2/IDMan.exe -analysisTimeoutPerFile 420 -max-cpu 2
+
+# 2. attach rea (project marker = the .gpr file; program name WITHOUT path)
+export GHIDRA_INSTALL_DIR=/home/z/my-project/tools/ghidra \
+       JAVA_HOME=/home/z/my-project/tools/jdk \
+       REA_GHIDRA_PROJECT_PATH=/tmp/vdm-t2/ghproj/idman-study.gpr \
+       REA_GHIDRA_PROGRAM_NAME=IDMan.exe
+rea search    /tmp/vdm-t2/IDMan.exe "Range:" --provider ghidra --json
+rea xrefs     /tmp/vdm-t2/IDMan.exe 0x712a18 --provider ghidra --json
+rea decompile /tmp/vdm-t2/IDMan.exe 0x58b79d --provider ghidra --json
+```
+
+Gotchas: pass `--provider ghidra` on every query; the attach env vars
+must point at an EXPANDED `.gpr` (not the directory) and a bare program
+name (no path, no wildcards) or rea refuses with `configuration_invalid`.
+The attach lane reads a private copy of the project — original analysis
+completeness is reported as unknown, so pair it with the bounded
+deep-dive pattern above when completeness matters. Cross-check extractor:
+`scripts/extract_idm_payload.py` (generic zlib/zip stream-carve over any
+container) independently re-derived `unpack_idm.py`'s payload set.
+T2 evidence lives ONLY in the throwaway dir — wipe at close.
+
 Reclaim disk when the toolchain is idle: `rm -rf
 /home/z/my-project/tools/{ghidra,jdk}` (≈1.23 GB; the runbook above
 restores it).
+
+## Rust toolchain in this sandbox (re-verified session 17, 2026-11-24)
+
+The shims are per-instance: `~/.cargo/bin` is rebuilt as symlinks into
+`tools/rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/{cargo,rustc,rustfmt,cargo-fmt}`,
+with `RUSTUP_HOME=/home/z/my-project/tools/rustup` and
+`CARGO_HOME=/home/z/my-project/tools/cargo` (registry cache is wiped with
+the sandbox — the first build re-fetches crates, ~5 min).
+
+- **There is NO rustup proxy**: `cargo +1.75.0` errors ("no such command").
+  The win7 witness is the direct toolchain on PATH:
+  `PATH=/home/z/my-project/tools/rustup/toolchains/1.75.0-x86_64-unknown-linux-gnu/bin:$PATH
+  cargo check --workspace --locked` inside `win7/` (add `--features tls -p
+  vdm-core` for the TLS-feature state). MEMORY entries saying `+1.75.0`
+  predate this discovery.
+- **clippy is absent from the minimal-profile toolchains.** If missing
+  again: fetch `https://static.rust-lang.org/dist/channel-rust-stable.toml`,
+  find `clippy-preview.target.x86_64-unknown-linux-gnu` for the installed
+  rustc version, sha256-verify the tarball, copy `clippy-preview/bin/*`
+  into the toolchain's `bin/` and `share/*` into its `share/`. `cargo
+  clippy` finds the subcommand only when the toolchain bin dir is on PATH.
+- Workspace-wide `cargo clippy --all-targets` trips a pre-existing
+  `zbus_macros` compile issue — run clippy scoped to the touched crates
+  (`-p vdm-core -p vdm-rpc -p velocitydm`), as every wave has.
 
 ## Android preview (S12-e — Views + KMP restructure)
 

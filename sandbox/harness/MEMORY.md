@@ -1143,3 +1143,99 @@ session reads this file first, then `ROADMAP.md`.
 - Next standing queue: owner runtime verification (D5:A) of the full
   Swift surface — SSE wiring was its last prerequisite; then per-surface
   promotions (§5 steps 3–4), each under its own gate.
+
+## 2026-11-24 (session 16) — S11 T2 independent re-derivation via the rea attach pipeline
+
+- Owner's "next step" resumed the rea directive. Toolchain had been half-lost
+  again (tools/ghidra gutted to 484 KB, tools/jdk gone): Ghidra 12.2 reinstalled
+  from the official release (zip SHA-256 re-verified), Temurin JDK 25.0.5.1
+  restored, `JAVA_HOME_OVERRIDE` re-patched. rea 6.10.1 via `npm i -g
+  rea-agents`; `rea doctor --provider ghidra` all green. `7zip-bin` (npm)
+  supplied the missing 7za binary — this sandbox has no sudo and apt is
+  unusable; npm ships prebuilt binaries that work.
+- Fail-closed gate PASSED again: fresh official-URL download matched the
+  pinned SHA-256 + 12,164,608 bytes + PE32 i386; Authenticode chain
+  observed (DigiCert G4 → Tonec Inc.).
+- Pipeline: generic zlib/zip stream-carve recovered ~50 binaries + CHMs +
+  language INIs + 2 CRX bundles from the installer (cross-check of
+  `unpack_idm.py`'s container parse; script kept in the toolbox as
+  `scripts/extract_idm_payload.py`), engine image identified, Ghidra project
+  prepared with bounded resources (248 s), rea attach mode for
+  search/xrefs/decompile.
+- **OOM lesson:** rea's own in-session Ghidra import was SIGKILLed (2 GB
+  bridge heap vs 4 GB cgroup). Caller-prepared project + `REA_GHIDRA_
+  PROJECT_PATH=<...>.gpr` + bare `REA_GHIDRA_PROGRAM_NAME` = the safe lane;
+  recipe + gotchas in RUNBOOK ("rea attach mode").
+- **Reconcile (standing lesson, third proof):** fetch-before-push revealed
+  origin 25+ commits ahead — sessions 10/14/15 had ALREADY executed D8:now
+  (deep-dive sessions 1+2), waves 1–3 of S11-i, S4 DHT, S12 SSE, and a T2
+  disclosure in CLEAN_ROOM.md. Stash → ff → re-apply; conflicts resolved by
+  taking the CI-proven remote state and layering only unique work.
+- **Unique value landed:** RESEARCH-IDM-STUDY.md §4d — parity confirmations
+  (range ladder, If-Range/ETag validators, chunked/gzip, CONNECT, NMH shape)
+  + NEW observations: Schannel TLS with explicit TLS 1.3 client enablement
+  (WININET confined to URL/cookie/cache utilities, never transport), outbound
+  header charset-whitelist hygiene, Accept-Ranges/Content-Range probing with
+  an explicit user-visible no-resume state, Retry-After honored, Keep-Alive
+  default + reuse, ~17-slot request builder with two header-order families,
+  FTP PASV capability state machine, legacy RTMP/RTMPT/RTMPE + Flash fcs
+  family (recorded non-goal), registry hot-reload + token-duplicated helper
+  launch, CocCoc NativeMessagingHosts coverage.
+- D-series: menus were conversation-local (unrecoverable from repo files);
+  remote history shows D1:C, D3:D, D5:A, D7:B, D8:now already executed by
+  their parallel sessions; D6 (depended on T2) re-presented to the owner in
+  the session reply with §4d attached.
+- Throwaway discipline held: /tmp/vdm-t2 wiped, binary never stored;
+  no code changes in this session — docs/harness only.
+
+## 2026-11-24 (session 17) — S11-i wave 4 delivered under the fresh gate 0011 (adoption backlog closed)
+
+- Owner directive round 4 (ledger D11): "proceed down the remaining adoption backlog with a fresh
+  gate". Fresh five-role panel (ATKR/FALS/REQ/INT/REL, independent dispatch, identical evidence
+  packs): 5× PROCEED-WITH-CONDITIONS, zero BLOCK; record `ASSESSMENTS/0011-s11i-adoption-wave4.md`;
+  conditions folded spec-first into `docs/SPECS/S11-ADOPTIONS-WAVE4.md` (committed a5bbc12 BEFORE any
+  implementing commit).
+- Panel upgrades that changed the wave: FALS found a real silent-data-loss class in OUR engine (a
+  validator-matching `.vdmctl` surviving run_single's `.part` truncation — a later resume against a
+  range-capable probe would skip truncated ranges → zero-holes file); ATKR found header NAMES were
+  not token-validated (only space/colon/CR/LF/NUL) and both Proxy-Auth emission paths bypassed the
+  hygiene; REQ falsified "all frontends render notice" (only the CLI does; win32/slint render error,
+  macos decode drops the field, popup renders neither) and demanded the honest rendering matrix;
+  INT reproduced the working win7 witness shape (no rustup proxy this instance — direct toolchain
+  PATH, 16 s green) and required delta-seconds-only RA (no date crate, lock parity); REL pinned the
+  bench pair as mandatory, the B21 commit split, the CLEAN_ROOM row and the docs/RPC.md notice gap.
+- Scope adopted: B20 (tchar name refusal + controls/DEL value replacement with obs-text passthrough
+  + notice; Proxy-Auth paths routed through the helper) 0a88a56; B21a (no-resume classification +
+  `.vdmctl`/`.part` coherency via additive `ResumeState::remove_ctl`) a9a68fb; B21b (bounded
+  Retry-After: delta-seconds only, 429/503, min(delta,60s), stop-responsive ticks, worker jitter,
+  structural `probe_with_meta`/`ProbeFailure` threading; run_single now retries 429/503/5xx —
+  pre-wave it never retried 5xx because its formatted error never matched `is_retryable`) 920375c;
+  B22 (additive `tlsMin` knob, feature-free enum so the win7 headless default build compiles —
+  win7 lib.rs tls module un-gated, connector stays cfg-gated; tolerant load, validated settings.set)
+  3bd028a; B23 witness-only (12 conns / 37 reqs shape); B24 CocCoc NMH DEFERRED pending empirical
+  path verification (AUR bot-blocked, deb 404 — an unverified path is a silent no-op honesty bug);
+  parked items stay parked; §4d leftovers recorded as N7/N8 + the FTP PASV-target pre-condition.
+- Bench A/B (scripts/s11i4-bench-record.txt, warm-pair rule): pre 159.2/159.1 vs post 158.8/158.8
+  MBps — parity; request shape 12 conns / 37 reqs identical; the 1.41 s / 91 MBps cold outliers are
+  the documented artifact class (identical in the s11i3 record), investigated and discarded.
+- Battery: fmt both trees, clippy -D warnings (scoped to the touched crates — workspace-wide clippy
+  trips a pre-existing zbus_macros issue), lib 149 + http_engine 26 + hls_e2e 7 + bt/dht green,
+  extension battery 240 assertions (unaffected, run anyway), win7 direct-1.75 check green in BOTH
+  feature states (tls on/off).
+- CI evidence-then-fix cycle: Test (macos-latest) FAILED on the new b21 e2e ("read: body shorter
+  than content-length"). Root cause: the probe's ranged-GET fallback abandoned the 512 KiB full-body
+  response mid-read (read_body(1024) discard), and the close-with-unread-data RST raced the NEXT
+  connection's body write on the macOS runner (sequential ephemeral-port reuse) — head arrived, body
+  EOF'd. Fix cd5b4a4: the e2e serves 48 KiB so the probe drains the response fully in ONE read_body
+  pull (behavior shape unchanged; Linux 60× green; classification/coherency/SHA-256 assertions
+  intact). CI 11/11 GREEN at cd5b4a4 (8 required + 3 preview).
+- Standing toolchain truths for future sessions: cargo shims are rebuilt per instance
+  (`~/.cargo/bin` → toolchain bins, RUSTUP_HOME=tools/rustup, CARGO_HOME=tools/cargo — registry
+  re-fetches, ~5 min); clippy was MISSING from both toolchains (minimal profile) and was installed
+  from the dist channel manifest (clippy-1.100.0 tarball, sha256-verified, copied into
+  toolchains/stable…/bin+share; PATH must include the toolchain bin for `cargo clippy` to find the
+  subcommand); `cargo +1.75.0` DOES NOT WORK here — use
+  `PATH=tools/rustup/toolchains/1.75.0-…/bin:$PATH cargo check --workspace --locked` inside win7/
+  (and `--features tls -p vdm-core` for the TLS state).
+- Clean-room held: B20/B21/B22 re-spec'd from RFC 9110 §5.5/§5.6.2/§10.2.3 + the rustls public API
+  only; CLEAN_ROOM.md disclosure row added; no studied-binary artifact anywhere near the repo.
