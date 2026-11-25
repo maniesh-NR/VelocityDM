@@ -11,7 +11,10 @@
 
 /// The MD3 roles this frontend's QML actually consumes. `Scheme` carries
 /// 27 roles; everything outside this list is deliberately not shipped to
-/// the QML layer (honest subset, named here).
+/// the QML layer (honest subset, named here). Referenced by the test
+/// module as the README-honesty tripwire; a bin crate has no external
+/// API surface, hence the explicit allow for the non-test build.
+#[allow(dead_code)]
 pub const ROLE_SUBSET: usize = 16;
 
 /// A color role value as a `#rrggbb` hex string.
