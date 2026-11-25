@@ -19,7 +19,10 @@ use std::pin::Pin;
 
 use cxx_qt_lib::{QModelIndex, QString, QVariant, QVector};
 
-#[cxx_qt::bridge(namespace = "io::velocitydm::qt")]
+// no bridge namespace: cxx-qt-lib types and the QAbstractListModel base
+// live in the C++ global namespace; a bridge namespace would wrongly
+// re-declare them inside it (CI evidence-then-fix round 1).
+#[cxx_qt::bridge]
 mod qobject {
     unsafe extern "C++Qt" {
         include!(<QtCore/QAbstractListModel>);
@@ -225,7 +228,7 @@ pub struct AppModelRust {
 }
 
 use cxx_qt::CxxQtType;
-use qobject::Roles as QRoles;
+use qobject::*;
 
 impl qobject::AppModel {
     fn row_count(&self, _parent: &QModelIndex) -> i32 {
@@ -233,37 +236,37 @@ impl qobject::AppModel {
     }
 
     fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        let role = QRoles { repr: role };
+        let role = Roles { repr: role };
         let Some(row) = self.rust().rows.get(index.row() as usize) else {
             return QVariant::default();
         };
         match role {
-            QRoles::Id => QVariant::from(&row.id),
-            QRoles::Name => QVariant::from(&QString::from(row.name.as_str())),
-            QRoles::StateLabel => QVariant::from(&QString::from(row.state_label)),
-            QRoles::StateKind => QVariant::from(&QString::from(row.state_kind)),
-            QRoles::Progress => QVariant::from(&row.progress_permille),
-            QRoles::Stats => QVariant::from(&QString::from(row.stats.as_str())),
-            QRoles::ErrorText => QVariant::from(&QString::from(row.error_text.as_str())),
-            QRoles::NoticeText => QVariant::from(&QString::from(row.notice_text.as_str())),
-            QRoles::CanPause => QVariant::from(&row.can_pause),
-            QRoles::CanResume => QVariant::from(&row.can_resume),
+            Roles::Id => QVariant::from(&row.id),
+            Roles::Name => QVariant::from(&QString::from(row.name.as_str())),
+            Roles::StateLabel => QVariant::from(&QString::from(row.state_label)),
+            Roles::StateKind => QVariant::from(&QString::from(row.state_kind)),
+            Roles::Progress => QVariant::from(&row.progress_permille),
+            Roles::Stats => QVariant::from(&QString::from(row.stats.as_str())),
+            Roles::ErrorText => QVariant::from(&QString::from(row.error_text.as_str())),
+            Roles::NoticeText => QVariant::from(&QString::from(row.notice_text.as_str())),
+            Roles::CanPause => QVariant::from(&row.can_pause),
+            Roles::CanResume => QVariant::from(&row.can_resume),
             _ => QVariant::default(),
         }
     }
 
     fn role_names(&self) -> QHash_i32_QByteArray {
         let mut hash = QHash_i32_QByteArray::default();
-        hash.insert(QRoles::Id.repr, "id".into());
-        hash.insert(QRoles::Name.repr, "name".into());
-        hash.insert(QRoles::StateLabel.repr, "stateLabel".into());
-        hash.insert(QRoles::StateKind.repr, "stateKind".into());
-        hash.insert(QRoles::Progress.repr, "progress".into());
-        hash.insert(QRoles::Stats.repr, "stats".into());
-        hash.insert(QRoles::ErrorText.repr, "errorText".into());
-        hash.insert(QRoles::NoticeText.repr, "noticeText".into());
-        hash.insert(QRoles::CanPause.repr, "canPause".into());
-        hash.insert(QRoles::CanResume.repr, "canResume".into());
+        hash.insert(Roles::Id.repr, "id".into());
+        hash.insert(Roles::Name.repr, "name".into());
+        hash.insert(Roles::StateLabel.repr, "stateLabel".into());
+        hash.insert(Roles::StateKind.repr, "stateKind".into());
+        hash.insert(Roles::Progress.repr, "progress".into());
+        hash.insert(Roles::Stats.repr, "stats".into());
+        hash.insert(Roles::ErrorText.repr, "errorText".into());
+        hash.insert(Roles::NoticeText.repr, "noticeText".into());
+        hash.insert(Roles::CanPause.repr, "canPause".into());
+        hash.insert(Roles::CanResume.repr, "canResume".into());
         hash
     }
 
@@ -292,16 +295,16 @@ impl qobject::AppModel {
                 self.as_mut().rust_mut().rows[i] = row;
                 let idx = self.index(i, 0, &QModelIndex::default());
                 let mut roles = QVector::<i32>::default();
-                roles.append(QRoles::Id.repr);
-                roles.append(QRoles::Name.repr);
-                roles.append(QRoles::StateLabel.repr);
-                roles.append(QRoles::StateKind.repr);
-                roles.append(QRoles::Progress.repr);
-                roles.append(QRoles::Stats.repr);
-                roles.append(QRoles::ErrorText.repr);
-                roles.append(QRoles::NoticeText.repr);
-                roles.append(QRoles::CanPause.repr);
-                roles.append(QRoles::CanResume.repr);
+                roles.append(Roles::Id.repr);
+                roles.append(Roles::Name.repr);
+                roles.append(Roles::StateLabel.repr);
+                roles.append(Roles::StateKind.repr);
+                roles.append(Roles::Progress.repr);
+                roles.append(Roles::Stats.repr);
+                roles.append(Roles::ErrorText.repr);
+                roles.append(Roles::NoticeText.repr);
+                roles.append(Roles::CanPause.repr);
+                roles.append(Roles::CanResume.repr);
                 self.as_mut().data_changed(&idx, &idx, &roles);
             }
         }
