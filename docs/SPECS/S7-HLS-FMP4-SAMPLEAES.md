@@ -7,13 +7,16 @@ the standing spec-first + gate discipline does). Gates:
 PROCEED-WITH-CONDITIONS + **1× BLOCK (FALS)** — no consensus; the
 BLOCK's findings and every condition are folded into this revision)
 and `harness/ASSESSMENTS/0016b-s7-fresh-panel.md` (the required fresh
-re-run on this revised text). Primary public sources, read during
+re-run on this revised text: **4× PROCEED-WITH-CONDITIONS + 1×
+PROCEED, zero BLOCK — consensus**; its eight conditions R2-1…R2-8 are
+folded into this text, marked `[R2-n]`). Primary public sources, read during
 implementation and followed verbatim as behavior: **IETF RFC 8216**
 (HTTP Live Streaming, Aug 2017 — single edition; no "2nd edition"
 exists) and, for the SAMPLE-AES sub-sample grammar, **[SampleEnc] —
-Apple's "MPEG-2 Stream Encryption Format for HLS"**, which RFC 8216
-§4.3.2.4 names as the normative reference (RFC 8216 itself defines NO
-sub-sample byte layouts). TS container grammar: ITU-T H.222.0
+Apple's "MPEG-2 Stream Encryption Format for HLS"** — named at RFC 8216
+§4.3.2.4 for the sub-sample grammar and listed in RFC 8216 §11.2
+Informative References [R2-3] (RFC 8216 itself defines NO sub-sample
+byte layouts). TS container grammar: ITU-T H.222.0
 (ISO/IEC 13818-1), public. Target:
 `crates/vdm-core/src/engine/hls.rs` (+ mirror
 `win7/crates/vdm-core/src/engine/hls.rs`, MSRV-1.75-compatible
@@ -56,9 +59,11 @@ explicit reason, never a corrupt output.
 - **Fetch + compose:** the init segment is fetched in a **pre-pass**
   (before workers spawn — required for ordering and accounting),
   with its BYTERANGE applied; it rides the same fetch invariants as
-  media segments (512 MiB body cap, exact-length check, and
-  `Accept-Encoding: identity` on ranged init fetches — the wave-3
-  B17 identity discipline, which the HLS path gains here for init).
+  media segments (512 MiB body cap, exact-length check) plus an
+  INIT-ONLY `Accept-Encoding: identity` discipline on ranged init
+  fetches — the wave-3 B17 identity discipline, which the HLS path
+  gains here for init; media-segment fetch behavior is UNCHANGED (no
+  Accept-Encoding is added to media fetches in this stage) [R2-5].
   An init declaring a BYTERANGE length > 512 MiB fails at parse
   time (defense in depth).
 - **Encryption composition:** an init section encrypted with
@@ -101,8 +106,9 @@ it verbatim. The correct sub-sample layout for AAC in ADTS is:
   ZERO for a short frame (treated as fully clear, no error).
 - **CBC discipline:** AES-CBC decryption runs within each frame's
   encrypted section, and the **IV is reset to the segment IV at the
-  start of every frame** ([SampleEnc] §2.1 — per-block IV reset;
-  there is NO cross-frame chaining). The segment IV is the explicit
+  start of every frame** ([SampleEnc] §2.1 — per-frame IV reset:
+  blocks within a frame chain normally; there is NO cross-frame
+  chaining) [R2-2]. The segment IV is the explicit
   `IV` attribute when present, otherwise the media sequence number
   IV (RFC 8216 §5.2 — the existing `seq_iv` helper is correct for
   this). **An IV that is present but invalid** (empty, > 16 bytes,
@@ -116,10 +122,17 @@ it verbatim. The correct sub-sample layout for AAC in ADTS is:
   NOT reused for sub-sample regions (its padding check would fail
   on arbitrary audio bytes). Only the AES-128 init-segment path
   (§1) keeps the whole-buffer PKCS7 primitive.
-- **Anti-corruption gate:** after decryption, every frame's ADTS
+- **Frame-geometry gate:** after decryption, every frame's ADTS
   sync word (0xFFF) is validated — a mismatch ⇒ classified
-  loud-fail `"decrypted stream failed the ADTS sync check"`. This
-  gate is the correctness witness for the whole §2 slice.
+  loud-fail `"decrypted stream failed the ADTS sync check"`.
+  Scope honesty (recorded): the gate witnesses FRAME GEOMETRY (a
+  misframed demux — wrong 7/9-byte header length, wrong leader
+  arithmetic → shifted headers → sync failure), NOT key correctness;
+  the ADTS header, 16-byte clear leader, and 0–15-byte trailer are
+  clear bytes untouched by decryption, so a wrong key corrupts only
+  the encrypted section and leaves every sync word intact. Identity
+  SAMPLE-AES has no integrity channel; no key-correctness loud-fail
+  is claimed [R2-1].
 
 ### 2a. Minimal TS demux (required for §2 — declared scope)
 
@@ -128,7 +141,11 @@ bounded TS/PES walk (ITU-T H.222.0):
 
 - 188-byte packet walk with sync-byte validation; malformed or
   unrecoverable packet streams ⇒ classified error.
-- PAT parse → PMT selection → **stream-type classification**:
+- PAT parse → PMT selection → **stream-type classification** —
+  selection is DETERMINISTIC, pinned so the mirror cannot diverge
+  [R2-6]: the FIRST program announced by the PAT, its PMT, and the
+  FIRST audio-type PID carrying stream type `0x0F`; ambiguity is
+  resolved by document order, never by loud-fail:
   `0x0F` (AAC, ADTS) = the supported slice; **everything else
   loud-fails with a named reason**: `0x1b`/`0x24` (AVC/HEVC video)
   ⇒ `"SAMPLE-AES video sub-sample decryption is not supported"`,
@@ -159,7 +176,11 @@ with a `METHOD=SAMPLE-AES` key ⇒ parse-time loud-fail
 `parse_media` enforces the METHOD set **{NONE, AES-128, SAMPLE-AES}**
 (case-insensitive). Any other value (e.g. `SAMPLE-AES-CTR`,
 `AES-256`) ⇒ parse-time classified error — today unknown METHODs
-silently pass ciphertext through as a "successful" download. A
+silently pass ciphertext through as a "successful" download. An
+`EXT-X-KEY` with a non-NONE METHOD and a missing/empty `URI`
+attribute is a parse-time classified error (RFC 8216 §4.3.2.4: URI
+is REQUIRED unless METHOD is NONE — pinned parse-time, consistent
+with the other §2d parse-time hardening) [R2-8]. A
 missing key at decrypt time ⇒ classified error (the
 `unwrap_or([0u8;16])` zero-key fallback is removed); the key
 prefetch loop extends to MAP-captured keys and SAMPLE-AES keys (same
@@ -206,8 +227,10 @@ classified error (never fetch the playlist itself).
   `#[cfg(test)]`); decrypt via the new per-frame path; assert byte
   equality with clear frames; zero-encrypted-block frames (short
   payload) treated clear; explicit-IV and seq-IV default both
-  covered; invalid-IV loud-fail; sync-word gate (corrupt key ⇒
-  loud-fail, not garbage output).
+  covered; invalid-IV loud-fail; frame-geometry gate (a misframed
+  demux fixture ⇒ sync-word loud-fail; a WRONG KEY ⇒ decrypted
+  output differs byte-wise from the clear frames — NO loud-fail is
+  claimed, per §2's recorded gate scope) [R2-1].
 - TS demux: crafted minimal TS fixtures (PAT/PMT/audio-PES with
   0x0F; a video-PMT 0x1b fixture; AC-3 and LATM fixtures) —
   each loud-fail exercised with its named reason string.
@@ -217,7 +240,13 @@ classified error (never fetch the playlist itself).
   decrypt ⇒ classified error (zero-key fallback gone).
 - Mirror discipline: the ONLY permitted win7 hls.rs diffs remain the
   two existing divergence lines (`is_multiple_of` ↔ `% 16 != 0`,
-  GenericArray `Copy` ↔ `.clone()`); new code uses no post-1.75 APIs
+  GenericArray `Copy` ↔ `.clone()`) PLUS ONE additional test-only
+  divergence line authorized by gate 0016b [R2-4]: the win7 mirror's
+  existing `cbc_decrypt_roundtrip_against_reference` test helper
+  replaces `std::iter::repeat_n` (1.82 API) with a 1.75-compatible
+  equivalent (`std::iter::repeat(pad as u8).take(pad)`), executed in
+  C2 — required so the mandated 1.75 `--all-targets` witness is green
+  on arrival; new code uses no post-1.75 APIs
   (`repeat_n`/`LazyLock`/`trim_ascii` banned in the mirror); the
   mirror's test list is updated identically (parity review-enforced
   — the CI win7 job is build-only, stated honestly). MSRV witness:
@@ -255,6 +284,6 @@ classified error (never fetch the playlist itself).
 
 AVC/HEVC video SAMPLE-AES sub-sample decryption; AC-3/E-AC-3 and
 LATM SAMPLE-AES; every non-identity KEYFORMAT (FairPlay/FPS family
-and others); SAMPLE-AES over fMP4 (sample-table sub-sample boxes);
-UDP-of-nothing else HLS-related that silently passes: none — every
-unsupported shape above loud-fails with a named reason.
+and others); SAMPLE-AES over fMP4 (sample-table sub-sample boxes).
+Nothing else HLS-related silently passes — every unsupported shape
+above loud-fails with a named reason [R2-7].
