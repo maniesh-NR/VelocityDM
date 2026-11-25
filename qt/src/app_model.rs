@@ -183,6 +183,13 @@ mod qobject {
         #[cxx_name = "endResetModel"]
         unsafe fn end_reset_model(self: Pin<&mut AppModel>);
     }
+
+    // Declare the default constructor for the QML instantiation path —
+    // the Initialize shorthand (cxx-qt Constructor docs): this empty
+    // bridge-internal impl generates ConstructorDeclared<()>; the real
+    // Initialize hook (initial property wiring + first refresh) is the
+    // impl outside the bridge below.
+    impl cxx_qt::Initialize for AppModel {}
 }
 
 #[derive(Default)]
@@ -293,7 +300,7 @@ impl qobject::AppModel {
             for i in changed {
                 let row = new_rows[i].clone();
                 self.as_mut().rust_mut().rows[i] = row;
-                let idx = self.index(i, 0, &QModelIndex::default());
+                let idx = self.index(i as i32, 0, &QModelIndex::default());
                 let mut roles = QVector::<i32>::default();
                 roles.append(Roles::Id.repr);
                 roles.append(Roles::Name.repr);
@@ -464,7 +471,7 @@ impl qobject::AppModel {
         self.as_mut().set_addError(QString::from(""));
     }
 
-    fn apply_theme(self: Pin<&mut Self>, seed: u32, dark: bool) {
+    fn apply_theme(mut self: Pin<&mut Self>, seed: u32, dark: bool) {
         let t = crate::tokens::tokens_for(seed, dark);
         self.as_mut()
             .set_colorPrimary(QString::from(t.primary.as_str()));

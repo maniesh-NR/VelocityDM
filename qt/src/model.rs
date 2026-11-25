@@ -4,8 +4,8 @@
 
 #![deny(unsafe_code)]
 
-use vdm_core::engine::events::TaskState;
-use vdm_core::engine::{EngineConfig, TaskSnapshot};
+use vdm_core::engine::events::{TaskSnapshot, TaskState};
+use vdm_core::engine::EngineConfig;
 use vdm_core::util::{format_bytes, parse_bytes};
 
 /// Control characters (C0 + DEL + C1) map to spaces; the result is
@@ -385,7 +385,10 @@ mod tests {
             Some(vdm_core::proxy::ProxyConfig::Socks5 { port, .. }) if *port == 1080
         ));
         assert_eq!(
-            cfg.scheduler.stop_window.as_deref(),
+            cfg.scheduler
+                .stop_window
+                .as_ref()
+                .map(|(a, b)| (a.as_str(), b.as_str())),
             Some(("09:30", "17:45"))
         );
         assert!(cfg.scheduler.shutdown_when_done);
