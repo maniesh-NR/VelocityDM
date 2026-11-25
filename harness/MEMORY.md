@@ -1463,3 +1463,53 @@ session reads this file first, then `ROADMAP.md`.
 - S7 C3 close: ROADMAP row, REQUIREMENTS-COVERAGE (limitation 4 flip +
   video row), ALGORITHMS HLS section (MAP + SAMPLE-AES assembly rules),
   TEST-REPORT, the wave-2 B3 supersession note; issue #4 commented.
+
+## Session 21 (final) — S12-lin3 Qt delivered (gate 0017) under the single-session directive
+
+- S12-lin3 C2 pushed at 0832088 after grounding the ENTIRE cxx-qt 0.10.0
+  API against the real sources (cargo-fetch of cxx-qt/cxx-qt-lib/
+  cxx-qt-gen + the upstream cargo_without_cmake / todo_app /
+  custom_base_class examples — no API was written from memory), then
+  converged through SIX evidence-then-fix rounds (the Qt tree's CI job
+  is its only compile witness; the sandbox recycle mid-cycle cost the
+  local scripts/toolchain/registry — all recovered from origin by
+  fast-forward + re-provision, the RUNBOOK recipe held):
+  R1 bridge namespace wrongly wrapped the cxx-qt-lib aliases + the
+  QAbstractListModel base (dropped — the QML module URI is the real
+  namespacing); R2 the QML header comment tripped the dynamic-QML
+  tripwire (comment reworded; the tripwire greps comments); R3 the spec
+  Enter-to-add row was missing (onAccepted wired) + list-height
+  arithmetic; R3b Rust-side: TaskSnapshot private re-export (public
+  path events::TaskSnapshot), the default constructor DECLARED in the
+  bridge (impl cxx_qt::Initialize for AppModel {} inside the bridge =
+  the ConstructorDeclared shorthand), index() usize->i32, stop_window
+  test as_deref on a tuple, apply_theme mut self; R4 two test
+  expectations (Paused/Queued share the queued chip by design — 7
+  distinct chips over 8 states; display_text trims trailing controls) —
+  caught by the NEW scratch-crate probe (config/model/tokens in a lib
+  crate with path deps: local cargo test + clippy for the pure-logic
+  half); R5 clippy field_reassign_with_default in a test fixture; R6
+  ROLE_SUBSET dead_code (bin crates have no external API surface — the
+  lib-shaped probe cannot see that class, noted in the RUNBOOK).
+  **CI 14/14 ALL-GREEN at 8358182** (8 required + 6 preview incl.
+  `Linux frontend (Qt)`; 15/15 headless tests on the runner).
+- Platform quirk recorded in the RUNBOOK: push-triggered CI runs
+  silently failed to start twice (2db01cb, 8358182) — the dispatch API
+  is the reliable fallback (ci.yml has workflow_dispatch; the release.yml
+  dispatch prohibition is untouched).
+- C3 close: parity-matrix Qt columns §1.1–§1.5 grounded in qt/src, gap
+  register (filename override closed in the Qt tree), §5 gate-order flip
+  (the S12 sub-stage queue is EMPTY — the D5:A owner runtime
+  verification precedes the per-surface promotions), DESIGN stack-matrix
+  row, RUNBOOK §"Qt preview" (the four truths), README test-count
+  truth, issue #16 comment.
+- Honest standing queue for the NEXT session: S8 (LAN daemon + Android
+  engine unification — needs its own five-role gate; the LAN half
+  re-architects the documented loopback trust boundary, the Android half
+  needs SDK/NDK re-provisioning that this instance no longer carries),
+  S9 (Safari app extension — Xcode-conversion gate), S10 (Flathub —
+  owner account REQUIRED, out of single-session scope), T1/T3 (owner
+  Windows VM), and the D5:A promotions + D6 milestone shape (owner).
+  Nothing was silently dropped: S5/S6/S7/S12-lin3 all closed this
+  session; S8/S9 gates were NOT run (session budget went to the
+  evidence-then-fix convergence + the recycle recovery).

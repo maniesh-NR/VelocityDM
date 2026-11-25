@@ -22,36 +22,36 @@ Reference surface = the shipped egui GUI (`crates/velocitydm/src/gui.rs`).
 
 ### 1.1 Add path
 
-| Capability | egui (ref) | Win32/D2D | Slint | Swift/AppKit | GTK3 | SwiftUI | Android Views |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| URL entry | ✓ | ✓ (EDIT) | ✓ (LineEdit) | ✓ (NSTextField) | ✓ (Entry, Enter-to-add) | ✓ (TextField, Enter-to-add via `.onSubmit`) | ✓ (AddDialog) |
-| Filename override | ✓ `add_filename` (dead field — no TextEdit binds it) | ✗ (gap) | ✗ (gap) | ✗ (gap) | ✓ (real Entry → `HttpOptions.filename`; closes the gap) | ✓ (real bound field → `options.filename`; closes the gap in this tree) | ✓ (name field) |
-| Quality preset | ✓ ("best"…) | ✓ | ✓ | ✓ | ✓ (Entry, default "best") | ✓ (Entry, default "best") | ✗ (not applicable — Kotlin-port engine has no quality presets) |
-| Speed limit | ✓ | ✓ | ✓ | ✓ | ✓ (Entry, `parse_bytes`) | ✓ (Entry, `parseBytes`) | ✓ (limitBps) |
-| magnet: URL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (→ top-level `magnet` param) | ✗ (http/https only by design; S8 owns engine unification) |
-| Local .torrent path | ✓ | ✓ | ✓ | ✗ (gap: magnet works, local paths do not) | ✓ (read → `TorrentBytes`) | ✓ (typed path field → top-level `torrentPath`; closes the gap in this tree) | ✗ (by design, as above) |
-| VIEW intent auto-add | n/a | n/a | n/a | n/a | n/a | n/a | ✓ |
+| Capability | egui (ref) | Win32/D2D | Slint | Swift/AppKit | GTK3 | SwiftUI | Qt Quick | Android Views |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| URL entry | ✓ | ✓ (EDIT) | ✓ (LineEdit) | ✓ (NSTextField) | ✓ (Entry, Enter-to-add) | ✓ (TextField, Enter-to-add via `.onSubmit`) | ✓ (TextInput, Enter-to-add via `onAccepted`) | ✓ (AddDialog) |
+| Filename override | ✓ `add_filename` (dead field — no TextEdit binds it) | ✗ (gap) | ✗ (gap) | ✗ (gap) | ✓ (real Entry → `HttpOptions.filename`; closes the gap) | ✓ (real bound field → `options.filename`; closes the gap in this tree) | ✓ (real TextInput → `HttpOptions.filename`; closes the gap in this tree) | ✓ (name field) |
+| Quality preset | ✓ ("best"…) | ✓ | ✓ | ✓ | ✓ (Entry, default "best") | ✓ (Entry, default "best") | ✓ (TextInput, default "best") | ✗ (not applicable — Kotlin-port engine has no quality presets) |
+| Speed limit | ✓ | ✓ | ✓ | ✓ | ✓ (Entry, `parse_bytes`) | ✓ (Entry, `parseBytes`) | ✓ (TextInput, `parse_bytes`) | ✓ (limitBps) |
+| magnet: URL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (→ top-level `magnet` param) | ✓ (→ `BtSpec::Magnet` in-process) | ✗ (http/https only by design; S8 owns engine unification) |
+| Local .torrent path | ✓ | ✓ | ✓ | ✗ (gap: magnet works, local paths do not) | ✓ (read → `TorrentBytes`) | ✓ (typed path field → top-level `torrentPath`; closes the gap in this tree) | ✓ (path/existing-file → `TorrentBytes` in-process) | ✗ (by design, as above) |
+| VIEW intent auto-add | n/a | n/a | n/a | n/a | n/a | n/a | n/a | ✓ |
 
 ### 1.2 Task list + actions
 
-| Capability | egui | Win32 | Slint | Swift (AppKit) | GTK3 | SwiftUI | Android |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Pause / resume / remove | ✓ | ✓ (hit-tested drawn buttons) | ✓ | ✓ | ✓ (per-row buttons) | ✓ (per-row buttons) | ✓ (row buttons) |
-| Progress + speed + ETA | ✓ | ✓ | ✓ | ✓ | ✓ (ProgressBar + stats line; header total-speed banner) | ✓ (linear `ProgressView` clamped 0…1 + stats line; header total-speed banner) | ✓ (LinearProgressIndicator + stats line) |
-| Per-task error display | ✓ | ✓ | ✓ | ✓ | ✓ (error AND notice lines, visibility-toggled) | ✓ (error AND notice lines, visibility-toggled) | ✓ (per-task error text) |
-| BT peers/seeds line | ✓ | ✓ | ✓ | ✓ | ✓ (`{}p/{}s` when peers > 0) | ✓ (`Xp/Ys` when peers > 0) | n/a (no BT engine yet) |
-| Stale rows on daemon death | handles engine stop | in-process (shares core) | in-process | ✓ fixed in source 2026-11-24 (stale banner + frozen rows + 2 s probe; compile witness `swift-frontend`) | in-process (shares core; engine-removed tasks drop their rows in-place) | ✓ (stale banner + frozen rows + 2 s probe; the gate-0010 consumer contract restated — SSE consumer) | in-process (shares engine) |
+| Capability | egui | Win32 | Slint | Swift (AppKit) | GTK3 | SwiftUI | Qt Quick | Android |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Pause / resume / remove | ✓ | ✓ (hit-tested drawn buttons) | ✓ | ✓ | ✓ (per-row buttons) | ✓ (per-row buttons) | ✓ (per-row MouseArea buttons, can-pause/can-resume gated) | ✓ (row buttons) |
+| Progress + speed + ETA | ✓ | ✓ | ✓ | ✓ | ✓ (ProgressBar + stats line; header total-speed banner) | ✓ (linear `ProgressView` clamped 0…1 + stats line; header total-speed banner) | ✓ (drawn linear bar (permille) + stats line; header total-speed banner) | ✓ (LinearProgressIndicator + stats line) |
+| Per-task error display | ✓ | ✓ | ✓ | ✓ | ✓ (error AND notice lines, visibility-toggled) | ✓ (error AND notice lines, visibility-toggled) | ✓ (error AND notice lines, visibility-toggled) | ✓ (per-task error text) |
+| BT peers/seeds line | ✓ | ✓ | ✓ | ✓ | ✓ (`{}p/{}s` when peers > 0) | ✓ (`Xp/Ys` when peers > 0) | ✓ (`{n}p/{n}s` for BT kinds) | n/a (no BT engine yet) |
+| Stale rows on daemon death | handles engine stop | in-process (shares core) | in-process | ✓ fixed in source 2026-11-24 (stale banner + frozen rows + 2 s probe; compile witness `swift-frontend`) | in-process (shares core; engine-removed tasks drop their rows in-place) | ✓ (stale banner + frozen rows + 2 s probe; the gate-0010 consumer contract restated — SSE consumer) | in-process (shares core; membership resets drop removed rows) | in-process (shares engine) |
 
 ### 1.3 Settings
 
-| Setting | egui | Win32 | Slint | Swift (AppKit) | GTK3 | SwiftUI | Android |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Download dir | ✓ | ✓ | ✓ | ✓ | ✓ (Entry) | ✓ (Entry) | ✓ (system picker via dialog) |
-| Global speed limit | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (Entry, `parseBytes`) | ✗ |
-| Proxy (parse + display) | ✓ | ✓ | ✓ | ✓ (structured round-trip, gate 0004 fix) | ✓ (Entry, `proxy_display` push-back) | ✓ (structured round-trip, `RpcProxy.parse`; "none" clears) | ✗ |
-| Scheduler stop window | ✓ | ✓ | ✓ | ✓ | ✓ (start/end Entries) | ✓ (start/end Entries, `isHHMM`-validated) | ✗ |
-| Shutdown-when-done | ✓ | ✓ | ✓ | ✓ | ✓ (CheckButton) | ✓ (Toggle) | ✗ |
-| Max active / connections | ✓ | ✓ | ✓ | ✓ | ✓ (SpinButtons 1..32 / 1..16, clamped on Apply) | ✓ (1…16 / 1…32, clamped on Apply — the clamps the AppKit path lacks are implemented here) | ~ (connections fixed 1..8 in engine) |
+| Setting | egui | Win32 | Slint | Swift (AppKit) | GTK3 | SwiftUI | Qt Quick | Android |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Download dir | ✓ | ✓ | ✓ | ✓ | ✓ (Entry) | ✓ (Entry) | ✓ (TextInput) | ✓ (system picker via dialog) |
+| Global speed limit | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (Entry, `parseBytes`) | ✓ (TextInput, `parse_bytes`) | ✗ |
+| Proxy (parse + display) | ✓ | ✓ | ✓ | ✓ (structured round-trip, gate 0004 fix) | ✓ (Entry, `proxy_display` push-back) | ✓ (structured round-trip, `RpcProxy.parse`; "none" clears) | ✓ (TextInput, `proxy_display` push-back; "none" clears) | ✗ |
+| Scheduler stop window | ✓ | ✓ | ✓ | ✓ | ✓ (start/end Entries) | ✓ (start/end Entries, `isHHMM`-validated) | ✓ (from/to TextInputs, `is_hhmm` both-ends rule) | ✗ |
+| Shutdown-when-done | ✓ | ✓ | ✓ | ✓ | ✓ (CheckButton) | ✓ (Toggle) | ✓ (toggle button) | ✗ |
+| Max active / connections | ✓ | ✓ | ✓ | ✓ | ✓ (SpinButtons 1..32 / 1..16, clamped on Apply) | ✓ (1…16 / 1…32, clamped on Apply — the clamps the AppKit path lacks are implemented here) | ✓ (TextInputs 1…32 / 1…16, clamped on Apply) | ~ (connections fixed 1..8 in engine) |
 
 Android settings gaps are NOT promotion blockers for the Android gate:
 the shipped surface contract for Android v1.0.0 (Compose) never had them;
@@ -60,18 +60,18 @@ replaces (gate 0005 wording), not against the desktop settings surface.
 
 ### 1.4 Material You
 
-| Capability | egui | Win32 | Slint | Swift (AppKit) | GTK3 | SwiftUI | Android |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Token source | vdm-md3 in-process | vdm-md3 in-process | vdm-md3 in-process | Md3.swift port (constants-identical) | vdm-md3 in-process → static hex-only `GtkCssProvider` (19/27 role subset, same as Slint; zero `String` interpolation, token-only test pinned) | Md3.swift copy (math verbatim; SwiftUI `Color` bridge; honest 18/27 subset; 288-value golden tripwire vs the Rust baseline) | OS dynamic color 12+; Kotlin Md3 port below (golden-drift tripwire vs Rust baseline) |
-| Seed picker | ✓ (SEEDS list) | ✓ | ✓ | ✓ | ✓ (SEEDS cycle button + name label) | ✓ (8-seed cycle button + name label; `vdm.seed`) | ✓ (12+ wallpaper; pre-12 seed list) |
-| Light/dark toggle | ✓ | ✓ | ✓ | ✓ | ✓ (provider reload in place — registered once, no stacking) | ✓ (toggle; `vdm.dark`) | OS-follows (12+) / toggle pre-12 |
+| Capability | egui | Win32 | Slint | Swift (AppKit) | GTK3 | SwiftUI | Qt Quick | Android |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Token source | vdm-md3 in-process | vdm-md3 in-process | vdm-md3 in-process | Md3.swift port (constants-identical) | vdm-md3 in-process → static hex-only `GtkCssProvider` (19/27 role subset, same as Slint; zero `String` interpolation, token-only test pinned) | Md3.swift copy (math verbatim; SwiftUI `Color` bridge; honest 18/27 subset; 288-value golden tripwire vs the Rust baseline) | vdm-md3 in-process → hex-string qproperties (typed `format!("#{:06x}")` only; honest 16/27 role subset with the `ROLE_SUBSET` tripwire) | OS dynamic color 12+; Kotlin Md3 port below (golden-drift tripwire vs Rust baseline) |
+| Seed picker | ✓ (SEEDS list) | ✓ | ✓ | ✓ | ✓ (SEEDS cycle button + name label) | ✓ (8-seed cycle button + name label; `vdm.seed`) | ✓ (SEEDS cycle button + name label; `ui.json`) | ✓ (12+ wallpaper; pre-12 seed list) |
+| Light/dark toggle | ✓ | ✓ | ✓ | ✓ | ✓ (provider reload in place — registered once, no stacking) | ✓ (toggle; `vdm.dark`) | ✓ (toggle; qproperty re-apply + `ui.json`) | OS-follows (12+) / toggle pre-12 |
 
 ### 1.5 Engine integration
 
-| Aspect | egui | Win32 | Slint | Swift (AppKit) | GTK3 | SwiftUI | Android |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Core binding | in-process | in-process | in-process | remote JSON-RPC (loopback, trust-boundary compliant) | in-process | remote JSON-RPC (loopback, trust-boundary compliant; cookie-less sessions + redirect refusal) | in-process Kotlin-port engine (S8 owns unification) |
-| Progress refresh | repaint loop | `SetTimer` 200 ms | Timer | SSE stream (gate 0010) + stream-state recovery | glib timeout 200 ms poll (in-process; SSE change is Swift-only) | SSE stream (the gate-0010 consumer contract restated; stream-state recovery incl. launch-with-dead-daemon idempotency) | ViewModel flow |
+| Aspect | egui | Win32 | Slint | Swift (AppKit) | GTK3 | SwiftUI | Qt Quick | Android |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Core binding | in-process | in-process | in-process | remote JSON-RPC (loopback, trust-boundary compliant) | in-process | remote JSON-RPC (loopback, trust-boundary compliant; cookie-less sessions + redirect refusal) | in-process (fixed-port loopback RPC server for external clients; cxx-qt bridge) | in-process Kotlin-port engine (S8 owns unification) |
+| Progress refresh | repaint loop | `SetTimer` 200 ms | Timer | SSE stream (gate 0010) + stream-state recovery | glib timeout 200 ms poll (in-process; SSE change is Swift-only) | SSE stream (the gate-0010 consumer contract restated; stream-state recovery incl. launch-with-dead-daemon idempotency) | QML `Timer` 200 ms poll (SSE deferred — recorded in RUNBOOK/README) | ViewModel flow |
 
 ## 2. Packaging plan (what changes, per surface, at promotion)
 
@@ -154,7 +154,7 @@ these steps (honest boundary: no displays, no devices here).
 
 | Gap | Surface | Status at preparation | Owning step |
 | --- | --- | --- | --- |
-| Filename override in add dialog | Win32, Slint, Swift | **CLOSED by GTK3** 2026-11-24 (real Entry → `HttpOptions.filename`, `gtk3/src/main.rs`); **closed in the S12-mac2 SwiftUI tree** 2026-11-24 (real bound field → `options.filename`, `macos-swiftui/Sources/VelocityDMSwiftUIApp/RpcClient.swift`); Win32/Slint still absent, and the AppKit tree still carries the gap (its promotion owns it) — the egui reference's ✓ is a dead field (no TextEdit binds `add_filename`) | fix BEFORE each remaining surface's gate (parity criterion 3) |
+| Filename override in add dialog | Win32, Slint, Swift | **CLOSED by GTK3** 2026-11-24 (real Entry → `HttpOptions.filename`, `gtk3/src/main.rs`); **closed in the S12-mac2 SwiftUI tree** 2026-11-24 (real bound field → `options.filename`, `macos-swiftui/Sources/VelocityDMSwiftUIApp/RpcClient.swift`); **closed in the S12-lin3 Qt tree** 2026-11-25 (real TextInput → `HttpOptions.filename`, `qt/src/app_model.rs`); Win32/Slint still absent, and the AppKit tree still carries the gap (its promotion owns it) — the egui reference's ✓ is a dead field (no TextEdit binds `add_filename`) | fix BEFORE each remaining surface's gate (parity criterion 3) |
 | Local .torrent path add | Swift | **closed in the S12-mac2 SwiftUI tree** 2026-11-24 (typed path field → top-level `torrentPath`, `macos-swiftui/Sources/VelocityDMSwiftUIApp/RpcClient.swift`); macos-app still carries both gaps (its promotion owns them — magnet works there, local paths do not) | fix before the AppKit gate |
 | Enter-to-add + TAB traversal | Win32 | still absent | fix before the Win32 gate |
 | Per-paint brush/text-format churn | Win32 | still present | cache on retheme; fix before the Win32 gate |
@@ -181,7 +181,18 @@ these steps (honest boundary: no displays, no devices here).
    CI 13/13 green at d11dd1a5 — 8 required + 5 preview incl. `macOS
    frontend (SwiftUI)`; closes the filename + torrentPath gaps in that
    tree; promotion still owes its own gate + the §3 checklist);
-   next: S12-lin3 Qt.
+   ~~S12-lin3 Qt~~ **DONE (preview) 2026-11-25 under gate 0017**
+   (`harness/ASSESSMENTS/0017-s12-lin3-qt.md`, spec
+   `docs/SPECS/S12-LIN3-QT.md` + standalone `qt/` tree — cxx-qt 0.10.0,
+   QAbstractListModel via the upstream `#[base]`+`#[cxx_override]`+
+   inherited-`dataChanged` pattern; CI green incl. the new `Linux
+   frontend (Qt)` preview job after the namespace evidence-then-fix
+   cycle; closes the filename-override gap in that tree; promotion
+   still owes its own gate + the §3 checklist + a §2 packaging row);
+   the S12 sub-stage queue is now EMPTY — the owner's D5:A runtime
+   verification moment (§3) precedes the per-surface promotions, and
+   the remaining roadmap stages (S8 LAN daemon + Android unification,
+   S9 Safari app extension, S10 Flathub) own their gates.
 
 Prepared by session 13 (2026-11-23) as the D3:D preparation deliverable;
 committed before any of the steps above (no implementation rides along).

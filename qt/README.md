@@ -86,9 +86,12 @@ clean.
 - Tests are headless (no QApplication/QQmlEngine) and never bind the
   fixed product port.
 - Headless unit suites live in `config.rs` / `tokens.rs` / `model.rs`
-  (sanitizer literalness, chip mapping exhaustiveness, pause/resume
-  truth table, progress clamps, settings clamp/parse/merge behavior,
-  proxy display/parse, seed cycling, token hex format).
+  — **15 test functions, 15 passing on the CI witness** (sanitizer
+  literalness, chip mapping exhaustiveness, pause/resume truth table,
+  progress clamps, settings clamp/parse/merge behavior, proxy
+  display/parse, seed cycling, token hex format). Locally the same
+  suites run via the RUNBOOK's scratch-crate probe (a LIB crate with
+  path deps — no Qt needed).
 
 ## Drift rules
 

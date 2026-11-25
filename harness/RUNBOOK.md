@@ -349,3 +349,47 @@ Two truths future sessions would burn time on:
   fix the generator, never hand-edit the test file; any color-math/seed
   change patches Rust → Kotlin → BOTH Swift trees in the same commit
   (rule 12).
+
+## Qt preview (S12-lin3)
+
+The `qt/` tree is the S12-lin3 **preview** (gate 0017): standalone
+cxx-qt 0.10.0 workspace (`=0.10.0` pinned, MSRV 1.85), Qt Quick chrome
+from primitives, in-process core + fixed-port loopback RPC server.
+Ships in no release asset until its promotion gate; `release.yml` and
+the `v*` ruleset are untouched by the stage.
+
+Four truths future sessions would burn time on:
+
+- **Local compile is IMPOSSIBLE here** — the dev sandbox has no Qt and
+  no sudo. The local battery is `cargo generate-lockfile
+  --manifest-path qt/Cargo.toml` + `cargo fmt --manifest-path
+  qt/Cargo.toml --all -- --check` ONLY, PLUS the scratch-crate probe:
+  copy `qt/src/{config,model,tokens}.rs` into a throwaway LIB crate
+  with path deps on `../crates/{vdm-core,vdm-md3}` and run
+  `cargo test` + `cargo clippy --all-targets -- -D warnings` — the
+  pure-logic suites and their lints are then locally verifiable (the
+  probe is a LIB, so `pub` items suppress dead_code — bin-only lint
+  classes like the ROLE_SUBSET round still ride CI).
+- **The canonical witness is the `Linux frontend (Qt)` CI job**
+  (ubuntu-24.04 PINNED — the apt Qt 6.4.2 is frozen against the
+  committed lock; `qt6-base-dev qt6-declarative-dev qt6-base-dev-tools
+  qmake6 libgl1-mesa-dev` + `/usr/lib/qt6/bin` on PATH), fmt → clippy
+  `-D warnings` → test → build, all `--locked`, + the QML PlainText
+  tripwire step. A red job is evidence-then-fix forward; it does NOT
+  block tag cuts (ships nothing — same class as gtk3/swiftui;
+  android-frontend remains the only CI failure that blocks the
+  frozen-asset path).
+- **Push-triggered runs can silently not start** (observed twice:
+  2db01cb, 8358182 — the push lands, no workflow run is created).
+  When a push shows no run: dispatch `ci.yml` manually on main
+  (`POST .../actions/workflows/ci.yml/dispatches {"ref":"main"}`) —
+  ci.yml has `workflow_dispatch:` and dispatching it is safe (the
+  RUNBOOK prohibition is release.yml's dispatch, which would clobber
+  frozen assets).
+- **Lockfile discipline**: `git diff --exit-code qt/Cargo.lock` after
+  any generate-lockfile run; CI builds `--locked` (drift fails CI).
+  The bridge lives in `src/app_model.rs` and is the ONLY Qt-touching
+  Rust file; rendering rules (PlainText everywhere, static QML only)
+  are enforced by the CI tripwire — keep the tripwire regex and the
+  QML comment wording in sync (round-2 lesson: the tripwire greps
+  comments too).
