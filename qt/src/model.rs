@@ -370,8 +370,10 @@ mod tests {
 
     #[test]
     fn settings_apply_clamps_and_parses() {
-        let mut cfg: EngineConfig = Default::default();
-        cfg.user_agent = "keep me".into();
+        let mut cfg = EngineConfig {
+            user_agent: "keep me".into(),
+            ..Default::default()
+        };
         let f = SettingsFields {
             download_dir: "/tmp/dl".into(),
             connections: "99".into(),
