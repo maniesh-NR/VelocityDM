@@ -200,3 +200,57 @@ jobs:
         run: cargo build --manifest-path gtk3/Cargo.toml --locked
       - name: cargo test (frontend, headless-safe)
         run: cargo test --manifest-path gtk3/Cargo.toml --locked
+
+  qt-frontend:
+    name: Linux frontend (Qt)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - run: rustup default stable
+      # S12-lin3: the ONLY compile/test witness for the qt/ tree — the dev
+      # sandbox has no Qt and no sudo (gate 0017). ubuntu-24.04 is PINNED
+      # (not ubuntu-latest) so the distro Qt (6.4.2 today) stays frozen
+      # against the committed lock. The tools package is named explicitly
+      # so a future Ubuntu package split cannot silently break moc/rcc
+      # provisioning; qmake6 + /usr/lib/qt6/bin on PATH insure against
+      # Ubuntu's qtchooser quirk (cxx-qt-build probes QMAKE/qmake).
+      - run: sudo apt-get update -y && sudo apt-get install -y qt6-base-dev qt6-declarative-dev qt6-base-dev-tools qmake6 libgl1-mesa-dev
+      - name: qmake6 on PATH (qtchooser insurance)
+        run: echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
+      - name: cargo fmt (frontend)
+        run: cargo fmt --manifest-path qt/Cargo.toml --all -- --check
+      - name: cargo clippy (frontend)
+        run: cargo clippy --manifest-path qt/Cargo.toml --all-targets --locked -- -D warnings
+      - name: cargo test (frontend, headless-safe)
+        run: cargo test --manifest-path qt/Cargo.toml --locked
+      - name: cargo build (frontend)
+        run: cargo build --manifest-path qt/Cargo.toml --locked
+      - name: QML rendering tripwire (PlainText discipline)
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          bad = []
+          qml_files = list(pathlib.Path('qt/qml').rglob('*.qml'))
+          assert qml_files, "no QML sources found"
+          for p in qml_files:
+              text = p.read_text()
+              # forbidden rich-text formats, anywhere
+              for m in re.finditer(r'textFormat\s*:\s*Text\.(RichText|StyledText|MarkdownText)', text):
+                  bad.append(f"{p}: forbidden textFormat {m.group(0)}")
+              # every text-bearing element must carry PlainText near its
+              # opening brace (first property lines)
+              lines = text.splitlines()
+              for i, line in enumerate(lines):
+                  if re.match(r'\s*(Text|TextInput|TextEdit|TextField|TextArea|Label)\s*\{', line):
+                      window = lines[i + 1 : i + 6]
+                      if not any('textFormat: Text.PlainText' in w for w in window):
+                          bad.append(f"{p}:{i + 1}: text-bearing element without textFormat: Text.PlainText")
+              # dynamic QML is forbidden
+              for m in re.finditer(r'createQmlObject|createComponent|Qt\.createComponent|\beval\s*\(', text):
+                  bad.append(f"{p}: dynamic QML construct {m.group(0)}")
+          if bad:
+              print("\n".join(bad))
+              sys.exit(1)
+          print(f"QML tripwire clean ({len(qml_files)} file(s))")
+          PY

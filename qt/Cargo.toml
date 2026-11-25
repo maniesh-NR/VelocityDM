@@ -1,0 +1,35 @@
+[package]
+name = "velocitydm-qt"
+version = "1.0.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "VelocityDM Linux frontend — Qt 6 Quick (cxx-qt), Material You themed, in-process shared Rust core"
+rust-version = "1.85"
+
+[[bin]]
+name = "velocitydm-qt"
+path = "src/main.rs"
+
+[dependencies]
+vdm-core = { path = "../crates/vdm-core" }
+vdm-rpc = { path = "../crates/vdm-rpc" }
+vdm-md3 = { path = "../crates/vdm-md3" }
+cxx = "1"
+cxx-qt = "=0.10.0"
+cxx-qt-lib = { version = "=0.10.0", features = ["qt_gui", "qt_qml"] }
+serde = "1"
+serde_json = "1"
+
+[build-dependencies]
+cxx-qt-build = { version = "=0.10.0", features = ["link_qt_object_files"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+
+# Standalone workspace: the Qt build must not be resolved by the root
+# workspace (the other CI OS jobs have no Qt dev libraries). Precedent:
+# frontend/win32/Cargo.toml and gtk3/Cargo.toml (explicit package fields,
+# trailing [workspace] detach marker, committed Cargo.lock, --locked CI).
+[workspace]

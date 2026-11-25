@@ -179,3 +179,32 @@ sudo, so locally only `cargo generate-lockfile` (inside `gtk3/`) and
 `cargo fmt --manifest-path gtk3/Cargo.toml --all -- --check` are
 possible. The binary ships in no release asset — the egui GUI stays the
 shipped Linux surface until the gtk3 promotion gate.
+
+## Qt frontend (preview, S12-lin3)
+
+The `qt/` tree is the S12-lin3 **preview**: a Qt 6 Quick (QML) frontend
+on the shared Rust core via **cxx-qt 0.10.0** (pinned; MSRV 1.85), built
+the pure-cargo way (no CMake — `cxx-qt-build` probes `QMAKE` or `qmake6`
+from the PATH). Resolved stack in `qt/Cargo.lock`: cxx-qt 0.10.0,
+cxx-qt-lib 0.10.0 (`qt_gui` + `qt_qml` features), cxx 1.0.205,
+cxx-qt-build 0.10.0 (with `link_qt_object_files`, the
+cargo-without-cmake linking path). The runner Qt is whatever the pinned
+CI distro ships (`ubuntu-24.04` = Qt 6.4.2 today) — never PPAs or
+aqtinstall.
+
+Prerequisites: `qt6-base-dev qt6-declarative-dev qt6-base-dev-tools
+qmake6 libgl1-mesa-dev` (the tools package is named explicitly so a
+future Ubuntu package split cannot silently break moc/rcc provisioning).
+
+```sh
+cargo build --manifest-path qt/Cargo.toml --locked
+cargo test  --manifest-path qt/Cargo.toml --locked   # headless pure-logic suites
+./qt/target/debug/velocitydm-qt
+```
+
+The dev sandbox (this repository's primary CI authors) has no Qt and no
+sudo, so locally only `cargo generate-lockfile --manifest-path
+qt/Cargo.toml` and `cargo fmt --manifest-path qt/Cargo.toml --all --
+--check` are possible — the canonical compile/test witness is the
+non-required `Linux frontend (Qt)` CI job (the gtk3/SwiftUI preview
+pattern). The binary ships in no release asset until its promotion gate.

@@ -42,3 +42,6 @@ Thumbs.db
 # release working files
 notes.md
 SHA256SUMS-*.txt
+
+# S12-lin3 Qt frontend build artifacts
+/qt/target
