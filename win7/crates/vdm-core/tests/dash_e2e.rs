@@ -31,8 +31,7 @@ fn dash_template_manifest_assembles_identical() {
     server.set_file("/v0/init-1000000.mp4", init.clone());
     server.set_file("/slow/v0/seg-1.m4s", seg1.clone());
     server.set_file("/slow/v0/seg-2.m4s", seg2.clone());
-    let manifest = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+    let manifest = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
 <MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" type=\"static\" mediaPresentationDuration=\"PT4S\" minBufferTime=\"PT2S\">\n\
 <Period id=\"p0\" duration=\"PT4S\">\n\
 <AdaptationSet contentType=\"video\" mimeType=\"video/mp4\">\n\
@@ -40,9 +39,12 @@ fn dash_template_manifest_assembles_identical() {
 <Representation id=\"v0\" bandwidth=\"1000000\"/>\n\
 </AdaptationSet>\n\
 </Period>\n\
-</MPD>\n"
+</MPD>\n";
+    server.set_file_with_type(
+        "/video.mpd",
+        manifest.as_bytes().to_vec(),
+        "application/dash+xml",
     );
-    server.set_file_with_type("/video.mpd", manifest.into_bytes(), "application/dash+xml");
 
     let mut expected = Vec::new();
     expected.extend_from_slice(&init);

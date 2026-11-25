@@ -1189,8 +1189,7 @@ pub fn run_http_task(
             .as_deref()
             .map(|t| {
                 let t = t.to_ascii_lowercase();
-                t.starts_with("application/dash+xml")
-                    || t.starts_with("video/vnd.mpeg.dash.mpd")
+                t.starts_with("application/dash+xml") || t.starts_with("video/vnd.mpeg.dash.mpd")
             })
             .unwrap_or(false)
         || probe

@@ -192,7 +192,9 @@ pub fn announce_all(
             continue;
         }
         if t.starts_with("udp://") {
-            match udp_announce(t, info_hash, peer_id, port, uploaded, downloaded, left, event) {
+            match udp_announce(
+                t, info_hash, peer_id, port, uploaded, downloaded, left, event,
+            ) {
                 Ok(resp) => {
                     ok += 1;
                     for p in resp.peers {
@@ -318,9 +320,8 @@ fn udp_announce_timed(
     sock.send(&req)
         .map_err(|e| Error::Torrent(format!("udp tracker: send failed: {}", e)))?;
     let mut buf = [0u8; UDP_RECV_BUF];
-    let n = udp_recv_once(&sock, &mut buf).map_err(|e| {
-        Error::Torrent(format!("udp tracker: announce timeout (no reply): {}", e))
-    })?;
+    let n = udp_recv_once(&sock, &mut buf)
+        .map_err(|e| Error::Torrent(format!("udp tracker: announce timeout (no reply): {}", e)))?;
     parse_announce_reply(&buf[..n], &tid)
 }
 
@@ -1211,7 +1212,11 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::Torrent(_)), "got: {:?}", err);
-        assert!(err.to_string().contains("not multiple of 6"), "got: {}", err);
+        assert!(
+            err.to_string().contains("not multiple of 6"),
+            "got: {}",
+            err
+        );
         server.stop();
     }
 
@@ -1322,7 +1327,11 @@ mod tests {
             assert!(!f.contains("excess trackers skipped"), "got: {}", f);
         }
         for f in &failures[32..] {
-            assert!(f.contains("excess trackers skipped: round cap"), "got: {}", f);
+            assert!(
+                f.contains("excess trackers skipped: round cap"),
+                "got: {}",
+                f
+            );
         }
     }
 }

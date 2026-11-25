@@ -84,24 +84,24 @@ impl<'a> Scanner<'a> {
     /// processing instruction, DOCTYPE — literal, never expanded).
     fn skip_misc(&mut self) -> Result<bool> {
         let rest = &self.src[self.pos..];
-        if rest.starts_with("<?") {
-            let end = rest[2..]
+        if let Some(after) = rest.strip_prefix("<?") {
+            let end = after
                 .find("?>")
                 .map(|i| i + 4)
                 .ok_or_else(|| Self::err("unterminated processing instruction"))?;
             self.pos += end;
             return Ok(true);
         }
-        if rest.starts_with("<!--") {
-            let end = rest[4..]
+        if let Some(after) = rest.strip_prefix("<!--") {
+            let end = after
                 .find("-->")
                 .map(|i| i + 7)
                 .ok_or_else(|| Self::err("unterminated comment"))?;
             self.pos += end;
             return Ok(true);
         }
-        if rest.starts_with("<![CDATA[") {
-            let end = rest[9..]
+        if let Some(after) = rest.strip_prefix("<![CDATA[") {
+            let end = after
                 .find("]]>")
                 .map(|i| i + 12)
                 .ok_or_else(|| Self::err("unterminated CDATA"))?;
@@ -1460,11 +1460,9 @@ pub struct DashPlan {
 
 fn resolve_chain(base: &Url, parts: &[&Option<String>]) -> Result<Url> {
     let mut url = base.clone();
-    for p in parts {
-        if let Some(s) = p {
-            if !s.trim().is_empty() {
-                url = url.join(s.trim())?;
-            }
+    for s in parts.iter().copied().flatten() {
+        if !s.trim().is_empty() {
+            url = url.join(s.trim())?;
         }
     }
     Ok(url)
@@ -1545,9 +1543,8 @@ pub fn plan(text: &str, manifest_url: &Url, quality: &str) -> Result<DashPlan> {
     )?;
 
     let mut init: Vec<SegRef> = Vec::new();
-    let media;
 
-    match (list, sbase, template) {
+    let media = match (list, sbase, template) {
         // ---- SegmentList: fetched as listed ----
         (Some(sl), _, _) => {
             if let Some(iu) = &sl.init_url {
@@ -1568,7 +1565,7 @@ pub fn plan(text: &str, manifest_url: &Url, quality: &str) -> Result<DashPlan> {
                 let url = rep_base.join(m.trim())?;
                 refs.push(SegRef { url, range: *rng });
             }
-            media = MediaSource::Resolved(refs);
+            MediaSource::Resolved(refs)
         }
         // ---- SegmentBase@indexRange: the exec layer resolves via SIDX ----
         (None, Some(sb), _) => {
@@ -1577,10 +1574,10 @@ pub fn plan(text: &str, manifest_url: &Url, quality: &str) -> Result<DashPlan> {
                     "SegmentBase without indexRange is not supported".into(),
                 ));
             };
-            media = MediaSource::SegmentBase {
+            MediaSource::SegmentBase {
                 url: rep_base.clone(),
                 index,
-            };
+            }
         }
         // ---- SegmentTemplate: duration-based or timeline ----
         (None, None, Some(t)) => {
@@ -1645,14 +1642,14 @@ pub fn plan(text: &str, manifest_url: &Url, quality: &str) -> Result<DashPlan> {
                 let url = rep_base.join(expanded.trim())?;
                 refs.push(SegRef { url, range: None });
             }
-            media = MediaSource::Resolved(refs);
+            MediaSource::Resolved(refs)
         }
         (None, None, None) => {
             return Err(Error::Dash(
                 "no SegmentTemplate, SegmentList, or SegmentBase addressing".into(),
             ));
         }
-    }
+    };
 
     // ---- exact total only when every length is derivable ----
     let media_all_ranged = match &media {
@@ -2050,15 +2047,11 @@ mod tests {
 
     #[test]
     fn dynamic_mpd_loud_fails() {
-        let mpd = format!(
-            "<?xml version=\"1.0\"?><MPD type=\"dynamic\" minimumUpdatePeriod=\"PT2S\"><Period duration=\"PT1S\"><AdaptationSet contentType=\"video\"><Representation id=\"v\" bandwidth=\"1\"/></AdaptationSet></Period></MPD>"
-        );
-        assert!(plan_err(&mpd, "best").contains("live DASH"));
+        let mpd = "<?xml version=\"1.0\"?><MPD type=\"dynamic\" minimumUpdatePeriod=\"PT2S\"><Period duration=\"PT1S\"><AdaptationSet contentType=\"video\"><Representation id=\"v\" bandwidth=\"1\"/></AdaptationSet></Period></MPD>";
+        assert!(plan_err(mpd, "best").contains("live DASH"));
         // minimumUpdatePeriod without type also means live
-        let mpd2 = format!(
-            "<MPD minimumUpdatePeriod=\"PT2S\"><Period duration=\"PT1S\"><AdaptationSet contentType=\"video\"><Representation id=\"v\" bandwidth=\"1\"/></AdaptationSet></Period></MPD>"
-        );
-        assert!(plan_err(&mpd2, "best").contains("live DASH"));
+        let mpd2 = "<MPD minimumUpdatePeriod=\"PT2S\"><Period duration=\"PT1S\"><AdaptationSet contentType=\"video\"><Representation id=\"v\" bandwidth=\"1\"/></AdaptationSet></Period></MPD>";
+        assert!(plan_err(mpd2, "best").contains("live DASH"));
     }
 
     #[test]
@@ -2204,10 +2197,8 @@ mod tests {
         let p = plan_ok(&mpd, "best");
         assert_eq!(p.media_resolved().len(), 3);
         // @r=-1 WITHOUT a derivable period end ⇒ loud-fail
-        let mpd2 = format!(
-            "<?xml version=\"1.0\"?><MPD type=\"static\"><Period><AdaptationSet contentType=\"video\"><SegmentTemplate media=\"seg-$Time$.m4s\" timescale=\"1\"><SegmentTimeline><S t=\"0\" d=\"4\" r=\"-1\"/></SegmentTimeline></SegmentTemplate><Representation id=\"v\" bandwidth=\"1\"/></AdaptationSet></Period></MPD>"
-        );
-        assert!(plan_err(&mpd2, "best").contains("derivable Period duration"));
+        let mpd2 = "<?xml version=\"1.0\"?><MPD type=\"static\"><Period><AdaptationSet contentType=\"video\"><SegmentTemplate media=\"seg-$Time$.m4s\" timescale=\"1\"><SegmentTimeline><S t=\"0\" d=\"4\" r=\"-1\"/></SegmentTimeline></SegmentTemplate><Representation id=\"v\" bandwidth=\"1\"/></AdaptationSet></Period></MPD>";
+        assert!(plan_err(mpd2, "best").contains("derivable Period duration"));
     }
 
     #[test]
@@ -2366,15 +2357,14 @@ mod tests {
         let p = plan_ok(&mpd, "best");
         assert_eq!(p.exact_total, Some(200));
     }
-}
-
-#[cfg(test)]
-impl DashPlan {
-    /// Test helper: the resolved media refs (panics on SegmentBase plans).
-    fn media_resolved(&self) -> &[SegRef] {
-        match &self.media {
-            MediaSource::Resolved(r) => r,
-            MediaSource::SegmentBase { .. } => panic!("segment-base plan"),
+    // Test helper hoisted inside the tests module (items_after_test_module)
+    impl DashPlan {
+        /// Test helper: the resolved media refs (panics on SegmentBase plans).
+        fn media_resolved(&self) -> &[SegRef] {
+            match &self.media {
+                MediaSource::Resolved(r) => r,
+                MediaSource::SegmentBase { .. } => panic!("segment-base plan"),
+            }
         }
     }
 }
