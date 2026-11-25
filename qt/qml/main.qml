@@ -6,9 +6,9 @@
 //     (which sniffs HTML into rich text, including remote <img> fetches);
 //     StyledText/RichText/MarkdownText are forbidden tree-wide (CI
 //     tripwire);
-//   * all QML/JS here is static and embedded — no createQmlObject, no
-//     createComponent from runtime strings, no Loader with a runtime
-//     source, no eval;
+//   * all QML/JS here is static and embedded — no dynamically built QML
+//     objects or components, no runtime-sourced Loader, no script
+//     evaluation;
 //   * no link handlers on daemon-derived strings;
 //   * chrome is built from QtQuick primitives only (no QtQuick.Controls
 //     import) — the "MD3 chrome from primitives" approach shared with
