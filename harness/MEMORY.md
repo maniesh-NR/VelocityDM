@@ -1389,3 +1389,47 @@ session reads this file first, then `ROADMAP.md`.
   reports. Fresh-panel re-gate succeeded via one coordinator agent.
 - S6 (gate 0015), S7 (gates 0016/0016b), S12-lin3 (gate 0017) specs
   committed and consensus-cleared; their implementation commits follow.
+
+## Session 21 (2026-11-25): S6 closed (CI-fix + C3) under the owner's single-session directive
+
+- Owner directive (IM, standing): "implement everything in the roadmap that
+  doesn't require my input within a single session, backing up after each
+  stage is complete. Parallelize the workflow across as many agents as
+  possible." Reconcile FIRST: origin/main was 5 commits ahead — the parallel
+  session-20/21 had already landed the S5/S6/S7/S12-lin3 activation (gates
+  0014/0015/0016+0016b/0017, commit 2d2e8df), the S5 close (9437e59 +
+  92ec73f), the S7 round-2 re-gate record (0fee9da), and the S6 C2
+  implementation (8904d15) — then died mid-stage with RED CI (Rust format +
+  Clippy on 8904d15). Live queue on arrival: fix S6 CI → S6 close → S7 C2 →
+  S12-lin3 C2 → S8/S9.
+- Environment loss recovered (fifth time, recipe hardened): the stable
+  toolchain was gutted (only clippy binaries survived); 1.75.0 gone. New
+  provision-rust.sh (scripts/) — dist-tarball merge recipe now handles the
+  .tar.gz + no-component-wrapper layout shift (channel-rust-<v>.toml ->
+  sha256-verified tarballs -> merge xdir/<pkg>/<component>/ into the
+  toolchain). Registry catastrophe diagnosed precisely this time: the
+  recycle had TRUNCATED both registry/src extractions (empty dirs -> cargo's
+  "path source" internal error) AND all 646 cache .crate zips (invalid
+  archives); nuked the whole registry, fresh fetch (fast: ~15 s wall for
+  the root workspace graph).
+- S6 CI fix (evidence-then-fix, 7643ad8): win7 tree fmt (the C2 push shipped
+  unformatted win7 mirrors); dash.rs clippy (strip_prefix ×3, iter().flatten
+  for resolve_chain, late-init media -> match expression, the cfg(test)
+  DashPlan helper hoisted INSIDE mod tests for deny-by-default
+  items_after_test_module, 3 no-arg format! + e2e literal with
+  into_bytes->as_bytes().to_vec()); mirrors applied to win7; battery fmt +
+  clippy --workspace --all-targets green, vdm-core 225 tests green, 1.75
+  witness green. **CI 13/13 GREEN at 7643ad8.**
+- S6 bench A/B (scripts/s6-bench-record.txt): pre (worktree at 20a6af4)
+  159.1 MBps + the documented 1.41 s/91 MBps artifact class; post 160.0/
+  158.9 MBps, 12/37 request shape both sides, byte-identical. NO
+  REGRESSION.
+- S6 C3 close: ROADMAP row DONE, REQUIREMENTS-COVERAGE (video row + DASH
+  limitation flip), ALGORITHMS "DASH assembly (S6)" section, IMPROVEMENTS
+  row, TEST-REPORT limitation line, README video row; issue #3 comment.
+- Subagent reality (context deadline): BOTH implementation-agent dispatches
+  (S7 hls, Qt tree) exceeded the deadline with zero work written — matching
+  the session-20 lesson. The reliable shapes remain: (a) haiku Explore
+  agents for compact read-only extraction (the Qt API-surface report
+  succeeded and is reused below), (b) orchestrator-executed implementation.
+  S7 + S12-lin3 are implemented orchestrator-side this session.

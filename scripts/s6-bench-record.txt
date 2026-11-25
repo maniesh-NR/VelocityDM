@@ -1,0 +1,50 @@
+# S6 bench A/B record — DASH downloader (.mpd)
+# date: 2026-11-25 (UTC) | spec: docs/SPECS/S6-DASH-MPD.md | gate: ASSESSMENTS/0015
+# mechanism: scripts/bench-perf.sh <label> <outfile> — 128 MiB over 8 connections,
+# 40 ms simulated handshake RTT (the direct-HTTP segmented path; the DASH parser
+# and segment executor are witnessed by the loopback battery — 19 dash unit
+# tests + 4 dash e2e — stated honestly per the gate: bench-perf does not
+# exercise .mpd downloads). Each invocation appends one measured block.
+# toolchain: stable 1.100.0, CARGO_INCREMENTAL=0, release build.
+# pre  = worktree at 20a6af4 (last pre-S6 commit)
+# post = 7643ad8 (8904d15 S6 C2 + the fmt/clippy CI fix commit)
+
+label:            s6-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.80
+throughput_MBps:  159.1
+tcp_connections:  11
+http_requests:    36
+byte_identical:   yes
+
+label:            s6-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        1.41
+throughput_MBps:  91.1
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+label:            s6-post
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.80
+throughput_MBps:  160.0
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+label:            s6-post
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.81
+throughput_MBps:  158.9
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+# Verdict: NO REGRESSION — the second s6-pre block is the documented cold
+# artifact class (elapsed 1.41 s / 91 MBps, byte-identical signature to the
+# s11i3/s11i4 records where it was investigated and discarded). Warm-pair
+# comparison: pre 159.1 MBps vs post 160.0/158.9 MBps — within run-to-run
+# noise (±1%); request shape 12 conns / 37 reqs present on both sides
+# (pre's fast pass measured 11/36 — spawn-timing dependent, both shapes
+# appear across the historical records); output byte-identical everywhere.

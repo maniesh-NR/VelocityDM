@@ -12,7 +12,7 @@ maps each idea to its origin and where it lives in our code.
 | "Refresh link revives expired links" (resume without starting over) | `Engine::refresh` (`engine/mod.rs`) + `downloads.refresh` RPC + `velocitydm refresh ID --url NEW`; keeps the original filename and `.part` progress |
 | Scheduler & speed limiter: start/stop at set times, cap speed, shut down when done | `engine/scheduler.rs` (daily stop-window, queue-drained actions) + `TokenBucket` global + per-task limits + `shutdown-when-done`/`on-queue-drained` |
 | Batch download: paste hundreds of links or a pattern | `batch.rs` pattern expansion (`[001:120]`, `[1,4,7]`) + `downloads.addBatch` RPC + extension page-link grabber ("Grab links") |
-| HLS/DASH stream capture with quality picking | `engine/hls.rs` (master playlist, best/worst/bandwidth variant choice, AES-128) + extension video sniffing with quality labels |
+| HLS/DASH stream capture with quality picking | `engine/hls.rs` (master playlist, best/worst/bandwidth variant choice, AES-128) + `engine/dash.rs` (static `.mpd`: SegmentTemplate/SegmentList/SegmentBase+SIDX, S6) + extension video sniffing with quality labels |
 | "Works with your browser ... downloads are captured automatically with the cookies the site needs" | Extension `downloads.onCreated` takeover pauses→hands URL+cookies+referer→cancels browser download; falls back gracefully when the host is down |
 | Native app, no Electron, ~30 MB idle memory | Rust + egui; measured daemon RSS ≈ 6 MB (headless), GUI ≈ 15 MB |
 | Adjustable connections per download, automatic retries | `--conn N` (1–32), worker retry with exponential backoff + mirror rotation |

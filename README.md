@@ -15,7 +15,7 @@ VelocityDM 1.0.0
 | Area | What you get |
 | --- | --- |
 | HTTP/HTTPS | segmented transfers (guided work-stealing leases), **persistent connections across segments** (70% fewer handshakes, up to 1.7x faster on WAN RTTs), mirrors with **throughput-weighted selection** and automatic failover, retry with backoff, ETag/Last-Modified resume, checksum verification (MD5/SHA-1/SHA-256) |
-| Video | HLS `.m3u8` (master playlists, variant selection, AES-128-CBC), DASH detection, video sniffing via browser extension |
+| Video | HLS `.m3u8` (master playlists, variant selection, AES-128-CBC), DASH `.mpd` (static manifests: SegmentTemplate/SegmentList/SegmentBase+SIDX), video sniffing via browser extension |
 | BitTorrent | `.torrent` + `magnet:` (BEP-3/9/10), HTTP + **UDP trackers (BEP-15)** + **DHT (BEP-5) trackerless magnet resolution**, rarest-first piece selection, per-file selection, seeding + built-in tracker (`velocitydm seed`) |
 | Queue | priorities, max-simultaneous, daily stop-window, start-at scheduling, shutdown/command when the queue drains |
 | Batch | URL patterns like `https://site/pic[001:120].jpg`, page link grabber |

@@ -15,7 +15,7 @@ numbers refer to verified artifacts (tests in-tree, binaries built).
 | Portable version | Done | `--portable` flag (config beside the binary) + launcher script |
 | Android 8+ armv7/arm64 with 1DM-style features | Done (source) | `android/` — Compose app, segmented engine, sniffer browser, takeover, foreground service; APK must be built with the Android SDK (README) |
 | Browser extensions Chrome/Safari/Edge/Firefox/Opera (MV3) | Done | 4 zips built (`extensions/dist`), Safari conversion guide; MV3 service workers; 64 node assertions |
-| Video stream sniffing/capture | Done | Extension `webRequest` sniffing with quality labels; HLS engine with AES-128; Android sniffer browser |
+| Video stream sniffing/capture | Done | Extension `webRequest` sniffing with quality labels; HLS engine with AES-128; DASH `.mpd` engine (S6: static manifests — SegmentTemplate/SegmentTimeline/SegmentList/SegmentBase+SIDX, DRM loud-fail); Android sniffer browser |
 | Rust engine | Done | `vdm-core` (engine), `vdm-rpc`, `velocitydm`, `velocitydm-nmh` |
 | Material Design 3 GUI | Done | egui Material You theme (dynamic color seeds, light + dark; desktop), Compose MD3 + wallpaper dynamic color on Android 12+ (Android) |
 | GUI/engine decoupled, non-blocking channels | Done | Engine threads ↔ `EventBus` (sync channel) ↔ RPC SSE / GUI poll at 5–10 Hz; GUI is a client of the same engine API |
@@ -68,6 +68,11 @@ connection reuse. A/B on 128 MiB / 8 connections with simulated WAN RTT:
    payloads ARE cross-built via cargo-zigbuild (mingw) and shipped.
 2. **UDP trackers + DHT implemented** (S5 BEP-15 + S4 BEP-5): magnets resolve
    via HTTP/UDP trackers and DHT. Documented in ALGORITHMS.md.
+2b. **DASH implemented for static `.mpd` manifests** (S6): dynamic/live
+   manifests, `presentationTimeOffset` ≠ 0, and every DRM ContentProtection
+   scheme loud-fail with a named reason; first Period only (multi-period
+   downloads carry a completion notice). Dynamic DASH remains a documented
+   non-goal.
 3. **Live HLS (no `#EXT-X-ENDLIST`) rejected** — VOD playlists only.
 4. **SAMPLE-AES** and **fMP4 EXT-X-MAP** not supported in the HLS engine.
 5. **Android APK not built here** (SDK download size); source + instructions

@@ -84,6 +84,26 @@ queue-drained actions (run command / shutdown).
 4. AES-128-CBC per segment with the playlist IV or the media-sequence
    number as the 16-byte big-endian default IV; strict PKCS7 validation.
 
+## DASH assembly (S6)
+
+1. Static `.mpd` only (dynamic/live and `presentationTimeOffset` ≠ 0
+   loud-fail); first Period, with a completion notice when more follow.
+2. A bounded in-module XML tokenizer (no XML dependency): DOCTYPE/
+   comments/CDATA skipped as literals, five named entities + numeric refs,
+   depth-capped element walk, attribute-size cap — billion-laughs
+   structurally impossible.
+3. Addressing: three-level SegmentTemplate inheritance (child wins) with
+   duration-based counts (`ceil(period·ts/dur)`) or SegmentTimeline
+   (`@t/@d/@r`, `@r=-1` runs to the Period end); SegmentList with RFC 7233
+   first-last ranges; SegmentBase `@indexRange` + SIDX parse (v0/v1,
+   first-offset anchoring, declared-vs-consumed equality, 8 MiB index cap).
+4. Representation selection mirrors `hls::choose_variant` exactly on
+   `@bandwidth` (nearest, ties to earlier document position).
+5. Execution is deliberately sequential over ONE keep-alive connection
+   keyed scheme+host+port (the HLS multi-worker scheme-blindness was not
+   inherited); init segment first, `.part`+rename resume shape, exact total
+   only when every length is derivable.
+
 ## BitTorrent
 
 - **Bencode** with raw-span extraction so `SHA-1(info)` matches other
