@@ -1,8 +1,8 @@
-backup: 2026-11-25T11:39:45Z
-repo HEAD: 0fee9da4ff7cf729f0084aed0a1eba17ef33f76b
+backup: 2026-11-25T13:49:13Z
+repo HEAD: 05d7e78e1103f1b56a62da59c071c28150c5172f
 repo branch: main
 tags: v1.0.0 v1.0.0-android v1.0.0-extensions v1.0.0-linux v1.0.0-macos v1.0.0-windows 
-dirty files: 10
+dirty files: 0
 
 release-assets (sha256):
 8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef  LICENSE
