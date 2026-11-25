@@ -147,6 +147,7 @@ Window {
                                 anchors.margins: 6
                                 text: app.addUrl
                                 onTextChanged: app.addUrl = text
+                                onAccepted: app.addDownload()
                                 color: app.colorOnSurface
                                 font.pixelSize: 13
                                 clip: true
@@ -252,7 +253,7 @@ Window {
             ListView {
                 id: list
                 width: parent.width
-                height: parent.height - 44 - 84 - 190 - 32
+                height: parent.height - 44 - 84 - 190 - 24
                 clip: true
                 spacing: 8
                 model: app
