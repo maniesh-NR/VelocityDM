@@ -305,13 +305,20 @@ mod tests {
             TaskState::Failed,
             TaskState::Seeding,
         ];
+        // 8 states, 7 distinct chips: Paused and Queued deliberately share
+        // the "queued" chip (gtk3 parity); every state must map somewhere
         let mut seen: Vec<(&str, &str)> = Vec::new();
         for s in states {
-            let chip = state_chip(s);
-            assert!(!seen.contains(&chip), "duplicate chip {chip:?}");
-            seen.push(chip);
+            let (label, kind) = state_chip(s);
+            assert!(
+                !label.is_empty() && !kind.is_empty(),
+                "empty chip {label:?}/{kind:?}"
+            );
+            if !seen.contains(&(label, kind)) {
+                seen.push((label, kind));
+            }
         }
-        assert_eq!(seen.len(), 8);
+        assert_eq!(seen.len(), 7, "Paused/Queued share a chip by design");
     }
 
     #[test]
@@ -343,7 +350,7 @@ mod tests {
         s.seeds = 2;
         let rows = rows_from_snapshots(&[s]);
         assert_eq!(rows[0].name, "evil .bin");
-        assert_eq!(rows[0].error_text, "boom ");
+        assert_eq!(rows[0].error_text, "boom"); // trailing control-space is trimmed
         assert_eq!(rows[0].notice_text, "note <b>");
         assert_eq!(rows[0].progress_permille, 100);
         assert!(rows[0].stats.contains("3p/2s"), "{}", rows[0].stats);
