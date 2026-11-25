@@ -95,6 +95,13 @@ coverage on playlists whose media is byte ranges of one resource.
   mis-assembly).
 - SAMPLE-AES unchanged (S7).
 
+> **Superseded by S7 (2026-11-25):** `#EXT-X-MAP` init sections now
+> compose (spec `S7-HLS-FMP4-SAMPLEAES.md`, gate 0016b — ranged/unranged
+> inits, AES-128-encrypted inits with the required IV) and the
+> SAMPLE-AES AAC-over-TS slice decrypts in place. The loud-fail
+> discipline is retained for every out-of-slice shape (fMP4+SAMPLE-AES,
+> video/AC-3/LATM sub-samples, non-identity keyformats, dynamic DASH).
+
 ### Tests owed
 
 - Unit: explicit offsets; implicit-offset chain across same-URI

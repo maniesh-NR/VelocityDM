@@ -62,5 +62,7 @@ reconciled tree (2026-11-13, assessment 0002).
 
 ## Known limitations (documented, tracked as issues)
 
-DHT (BEP-5, S4), UDP trackers (BEP-15, S5), and DASH static `.mpd`
-(S6) shipped; HLS SAMPLE-AES and fMP4 EXT-X-MAP unsupported (S7 in flight).
+DHT (BEP-5, S4), UDP trackers (BEP-15, S5), DASH static `.mpd` (S6),
+and HLS SAMPLE-AES (AAC over TS) + fMP4 EXT-X-MAP (S7) shipped; the
+S7 out-of-slice shapes (fMP4+SAMPLE-AES, video/AC-3/LATM sub-samples,
+non-identity keyformats) loud-fail with named reasons.

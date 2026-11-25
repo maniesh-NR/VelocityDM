@@ -78,11 +78,28 @@ queue-drained actions (run command / shutdown).
 ## HLS assembly
 
 1. Master playlist parsed → variants; pick best/worst/nearest-bandwidth.
-2. `#EXT-X-KEY` tracked per segment; keys fetched once and cached.
+2. `#EXT-X-KEY` tracked per segment (METHOD allowlist NONE/AES-128/
+   SAMPLE-AES, non-NONE requires a URI, invalid IVs loud-fail); keys —
+   including MAP-captured and SAMPLE-AES keys — fetched once and cached.
 3. 4 workers fetch segments concurrently; a reorder map + ordered writer
-   appends to the `.part`, renaming to `<name>.ts` at the end.
+   appends to the `.part`, renaming to `<name>.ts` at the end; workers
+   propagate classified reasons and the collector surfaces the first.
 4. AES-128-CBC per segment with the playlist IV or the media-sequence
    number as the 16-byte big-endian default IV; strict PKCS7 validation.
+5. `#EXT-X-MAP` init sections (S7): resolved per RFC 8216 §4.3.2.5 with
+   the rfc8216bis/Apple first-MAP-offset-0 chain rule; fetched in a
+   distinct-init pre-pass (identity `Accept-Encoding` on ranged fetches),
+   AES-128-encrypted inits decrypt whole-buffer with the REQUIRED
+   explicit IV; the ordered writer emits each init before the first
+   segment of its group; exact totals include ranged init lengths.
+6. SAMPLE-AES AAC (S7, [SampleEnc] slice): a bounded TS demux (PAT →
+   first program → PMT → first 0x0F PID; every other stream type
+   loud-fails by name) reassembles the audio PES stream; per ADTS frame
+   the 7/9-byte header and 16-byte leader stay clear, a raw-CBC
+   (no-PKCS7) region of floor(n/16)×16 bytes decrypts with the IV reset
+   per frame, and a 0–15-byte trailer stays clear — all in place, the
+   TS container preserved; the ADTS sync word is the frame-geometry
+   witness (a wrong key only differs byte-wise — no integrity claim).
 
 ## DASH assembly (S6)
 

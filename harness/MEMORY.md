@@ -1433,3 +1433,33 @@ session reads this file first, then `ROADMAP.md`.
   agents for compact read-only extraction (the Qt API-surface report
   succeeded and is reused below), (b) orchestrator-executed implementation.
   S7 + S12-lin3 are implemented orchestrator-side this session.
+
+## Session 21 (continued) — S7 delivered (gates 0016/0016b) under the same directive
+
+- S7 C2 implemented orchestrator-side (the agent-dispatch route failed
+  twice on the context deadline; the haiku Explore extraction SUCCEEDED
+  and grounded the Qt work instead): `cc8d2fe`, single revert unit across
+  the four spec-scoped files. All [R2-1..8] conditions folded: the
+  frame-geometry witness scoped honestly (wrong key = byte-inequality,
+  no loud-fail claimed), per-frame IV reset, [SampleEnc] cited by name
+  (RFC 8216 §4.3.2.4-named + §11.2 Informative), the third test-only
+  win7 divergence line executed, init-only identity discipline, the
+  deterministic PMT selection pin, and parse-time URI-required for
+  non-NONE METHODs.
+- One real spec-fidelity catch during implementation: the KEY PREFETCH
+  originally missed MAP-captured keys (a key replaced by METHOD=NONE
+  before the first segment is still live for the init) — the spec's own
+  "the key prefetch loop extends to MAP-captured keys" sentence was the
+  fix; the encrypted-init e2e drove it.
+- Battery: 200 lib + 12 hls_e2e + 39 others green; fmt both trees;
+  clippy --workspace --all-targets -D warnings green; 1.75 witness
+  --workspace --locked green (all-targets still blocked by the documented
+  getrandom-0.4.3 edition2024 win7 DEV graph). **CI 13/13 GREEN at
+  cc8d2fe** (verified live on the API).
+- Bench: scripts/s7-bench-record.txt — warm pairs 158.8 vs 158.9/159.1
+  MBps, 12/37 shape; the pre side hit the 1.41s/91MBps artifact three
+  times (post-build saturation on the 2-CPU sandbox; discarded per the
+  documented class). NO REGRESSION.
+- S7 C3 close: ROADMAP row, REQUIREMENTS-COVERAGE (limitation 4 flip +
+  video row), ALGORITHMS HLS section (MAP + SAMPLE-AES assembly rules),
+  TEST-REPORT, the wave-2 B3 supersession note; issue #4 commented.

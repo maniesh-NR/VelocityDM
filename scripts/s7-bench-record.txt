@@ -1,0 +1,67 @@
+# S7 bench A/B record — HLS fMP4 EXT-X-MAP + SAMPLE-AES
+# date: 2026-11-25 (UTC) | spec: docs/SPECS/S7-HLS-FMP4-SAMPLEAES.md | gates: ASSESSMENTS/0016 + 0016b
+# mechanism: scripts/bench-perf.sh <label> <outfile> — 128 MiB over 8 connections,
+# 40 ms simulated handshake RTT. BENCH HONESTY (spec §4): bench-perf exercises
+# the direct-HTTP segmented path, NOT HLS — this A/B pair is a general-path
+# no-regression guard ONLY; the real S7 witness is the test battery
+# (200 lib incl. the SAMPLE-AES suite + 12 hls_e2e incl. the MAP composition
+# tests), stated here per the spec's own wording.
+# toolchain: stable 1.100.0, CARGO_INCREMENTAL=0, release build.
+# pre  = worktree at 05d7e78 (last pre-S7 commit)
+# post = working tree of the C2 (committed unmodified as cc8d2fe)
+
+label:            s7-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        1.41
+throughput_MBps:  91.0
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+label:            s7-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        1.41
+throughput_MBps:  91.0
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+label:            s7-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.81
+throughput_MBps:  158.8
+tcp_connections:  11
+http_requests:    36
+byte_identical:   yes
+
+label:            s7-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        1.41
+throughput_MBps:  91.1
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+label:            s7-post
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.81
+throughput_MBps:  158.9
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+label:            s7-post
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.80
+throughput_MBps:  159.1
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+# Verdict: NO REGRESSION — the pre-side runs hit the documented cold
+# artifact class three times (elapsed 1.41 s / 91 MBps, byte-identical
+# signature to the s6/s11i3/s11i4 records where it was investigated and
+# discarded; the worktree build had just saturated the 2-CPU sandbox).
+# Warm-pair comparison: pre 158.8 MBps vs post 158.9/159.1 MBps — within
+# run-to-run noise; request shape 12 conns / 37 reqs on both sides; output
+# byte-identical everywhere.
