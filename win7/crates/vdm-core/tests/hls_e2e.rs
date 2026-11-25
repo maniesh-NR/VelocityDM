@@ -80,14 +80,8 @@ fn setup_hls(server: &TestServer, encrypt: bool) -> (Vec<u8>, String) {
     }
     let master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000\n/hi.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=300000\n/lo.m3u8\n";
     server.set_file("/master.m3u8", master.as_bytes().to_vec());
-    (
-        stream_hi,
-        stream_lo
-            .to_vec()
-            .is_empty()
-            .then(|| String::new())
-            .unwrap_or_default(),
-    )
+    let _ = stream_lo; // the helper only consumes the hi stream payload
+    (stream_hi, String::new())
 }
 
 #[test]
@@ -208,7 +202,7 @@ fn playlist_resolution_over_http() {
 
 // ---- S11-i B3: EXT-X-BYTERANGE e2e ----
 
-/// A BYTERANGE playlist (>= 3 segments, mixed explicit/implicit offsets, one
+/// A BYTERANGE playlist (≥ 3 segments, mixed explicit/implicit offsets, one
 /// shared URI) assembles byte-identical to the resource bytes (spec test).
 #[test]
 fn hls_byterange_assembles_identical() {
@@ -315,6 +309,239 @@ fn hls_byterange_with_aes128() {
     let got = std::fs::read(&out).unwrap();
     assert_eq!(got.len(), expected.len());
     assert_eq!(got, expected, "byterange+AES assembly mismatch");
+    engine.shutdown();
+    server.stop();
+}
+
+// ---- S7: EXT-X-MAP composition ----
+
+/// MAP + BYTERANGE init + two ranged media segments: the init bytes are
+/// fetched in a pre-pass and written BEFORE the segments they cover; the
+/// exact total (init + segments) is surfaced (spec §1 test).
+#[test]
+fn hls_map_byterange_composes_identical() {
+    let server = TestServer::start();
+    // segments large enough (and the server slow enough) that the download
+    // spans multiple 100 ms progress windows — the exact-total assertion
+    // is then deterministic, not a race (the dash-e2e pattern)
+    server.set_slow(1);
+    let init: Vec<u8> = (0..900u32).map(|i| (i % 253) as u8).collect();
+    let media: Vec<u8> = (0..1_572_864u32).map(|i| (i % 251) as u8).collect();
+    let playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n\
+#EXT-X-MAP:URI=\"init.mp4\",BYTERANGE=\"900@0\"\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:1048576@0\nslow/media.bin\n\
+#EXTINF:5.0,\n#EXT-X-BYTERANGE:524288\nslow/media.bin\n\
+#EXT-X-ENDLIST\n";
+    server.set_file("/map.m3u8", playlist.as_bytes().to_vec());
+    server.set_file("/init.mp4", init.clone());
+    server.set_file("/slow/media.bin", media.clone());
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&init);
+    expected.extend_from_slice(&media[0..1_048_576]);
+    expected.extend_from_slice(&media[1_048_576..1_572_864]);
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(EngineConfig {
+        download_dir: dir.path().to_path_buf(),
+        ..Default::default()
+    });
+    let id = engine
+        .add_download(&server.url("/map.m3u8"), HttpOptions::default())
+        .unwrap();
+    assert!(
+        wait_until_ms(30_000, || engine.get(id).map(|s| s.state)
+            == Some(TaskState::Completed)),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
+    let out = dir.path().join("map.ts");
+    let got = std::fs::read(&out).unwrap();
+    assert_eq!(got, expected, "MAP composition is not byte-identical");
+    // exact-total accounting: init lengths add to the surfaced size
+    let snap = engine.get(id).unwrap();
+    assert_eq!(
+        snap.size,
+        900 + 1_048_576 + 524_288,
+        "exact total must include the init bytes"
+    );
+    assert_eq!(snap.done, snap.size);
+    engine.shutdown();
+    server.stop();
+}
+
+/// Multiple MAPs: each init is written before the segments IT covers.
+#[test]
+fn hls_map_multiple_switch() {
+    let server = TestServer::start();
+    let init_a: Vec<u8> = (0..500u32).map(|i| (i % 249) as u8).collect();
+    let init_b: Vec<u8> = (0..300u32).map(|i| ((i * 7) % 251) as u8).collect();
+    let s1: Vec<u8> = (0..20_000u32).map(|i| (i % 251) as u8).collect();
+    let s2: Vec<u8> = (0..21_000u32).map(|i| (i % 241) as u8).collect();
+    let s3: Vec<u8> = (0..22_000u32).map(|i| (i % 239) as u8).collect();
+    let playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n\
+#EXT-X-MAP:URI=\"initA.mp4\"\n\
+#EXTINF:5.0,\nseg1.bin\n\
+#EXTINF:5.0,\nseg2.bin\n\
+#EXT-X-MAP:URI=\"initB.mp4\"\n\
+#EXTINF:5.0,\nseg3.bin\n\
+#EXT-X-ENDLIST\n";
+    server.set_file("/switch.m3u8", playlist.as_bytes().to_vec());
+    server.set_file("/initA.mp4", init_a.clone());
+    server.set_file("/initB.mp4", init_b.clone());
+    server.set_file("/seg1.bin", s1.clone());
+    server.set_file("/seg2.bin", s2.clone());
+    server.set_file("/seg3.bin", s3.clone());
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&init_a);
+    expected.extend_from_slice(&s1);
+    expected.extend_from_slice(&s2);
+    expected.extend_from_slice(&init_b);
+    expected.extend_from_slice(&s3);
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(EngineConfig {
+        download_dir: dir.path().to_path_buf(),
+        ..Default::default()
+    });
+    let id = engine
+        .add_download(&server.url("/switch.m3u8"), HttpOptions::default())
+        .unwrap();
+    assert!(
+        wait_until_ms(30_000, || engine.get(id).map(|s| s.state)
+            == Some(TaskState::Completed)),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
+    let out = dir.path().join("switch.ts");
+    let got = std::fs::read(&out).unwrap();
+    assert_eq!(got, expected, "multi-MAP switch order is wrong");
+    let snap = engine.get(id).unwrap();
+    assert_eq!(snap.done, snap.size);
+    engine.shutdown();
+    server.stop();
+}
+
+/// An UNRANGED init (whole-resource MAP URI) has an unknown length until
+/// fetched — the total degrades to an estimate, stated in the stage
+/// record; the composition stays byte-identical.
+#[test]
+fn hls_map_unranged_init_estimate() {
+    let server = TestServer::start();
+    let init: Vec<u8> = (0..800u32).map(|i| (i % 239) as u8).collect();
+    let s1: Vec<u8> = (0..30_000u32).map(|i| (i % 251) as u8).collect();
+    let s2: Vec<u8> = (0..31_000u32).map(|i| (i % 257) as u8).collect();
+    let playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n\
+#EXT-X-MAP:URI=\"initC.mp4\"\n\
+#EXTINF:5.0,\nsegA.bin\n\
+#EXTINF:5.0,\nsegB.bin\n\
+#EXT-X-ENDLIST\n";
+    server.set_file("/est.m3u8", playlist.as_bytes().to_vec());
+    server.set_file("/initC.mp4", init.clone());
+    server.set_file("/segA.bin", s1.clone());
+    server.set_file("/segB.bin", s2.clone());
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&init);
+    expected.extend_from_slice(&s1);
+    expected.extend_from_slice(&s2);
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(EngineConfig {
+        download_dir: dir.path().to_path_buf(),
+        ..Default::default()
+    });
+    let id = engine
+        .add_download(&server.url("/est.m3u8"), HttpOptions::default())
+        .unwrap();
+    assert!(
+        wait_until_ms(30_000, || engine.get(id).map(|s| s.state)
+            == Some(TaskState::Completed)),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
+    let out = dir.path().join("est.ts");
+    let got = std::fs::read(&out).unwrap();
+    assert_eq!(got, expected, "unranged-init composition mismatch");
+    engine.shutdown();
+    server.stop();
+}
+
+/// An AES-128-encrypted init (whole-buffer PKCS7 primitive, IV REQUIRED
+/// at the MAP position) decrypts with the key active at the MAP line;
+/// METHOD=NONE after the MAP keeps the media segments clear.
+#[test]
+fn hls_map_aes128_init_composes() {
+    let server = TestServer::start();
+    let key: [u8; 16] = *b"VelocityDM-Init!";
+    server.set_file("/key.bin", key.to_vec());
+    let plain_init: Vec<u8> = (0..700u32).map(|i| (i % 251) as u8).collect();
+    let enc_init = aes128_cbc_encrypt(&key, &[0x2Au8; 16], &plain_init);
+    let s1: Vec<u8> = (0..25_000u32).map(|i| (i % 239) as u8).collect();
+    let playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n\
+#EXT-X-KEY:METHOD=AES-128,URI=\"/key.bin\",IV=0x2A2A2A2A2A2A2A2A2A2A2A2A2A2A2A2A\n\
+#EXT-X-MAP:URI=\"/encinit.bin\"\n\
+#EXT-X-KEY:METHOD=NONE\n\
+#EXTINF:5.0,\nsegK.bin\n\
+#EXT-X-ENDLIST\n";
+    server.set_file("/encmap.m3u8", playlist.as_bytes().to_vec());
+    server.set_file("/encinit.bin", enc_init);
+    server.set_file("/segK.bin", s1.clone());
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&plain_init);
+    expected.extend_from_slice(&s1);
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(EngineConfig {
+        download_dir: dir.path().to_path_buf(),
+        ..Default::default()
+    });
+    let id = engine
+        .add_download(&server.url("/encmap.m3u8"), HttpOptions::default())
+        .unwrap();
+    assert!(
+        wait_until_ms(30_000, || engine.get(id).map(|s| s.state)
+            == Some(TaskState::Completed)),
+        "err: {:?}",
+        engine.get(id).and_then(|s| s.error)
+    );
+    let out = dir.path().join("encmap.ts");
+    let got = std::fs::read(&out).unwrap();
+    assert_eq!(got, expected, "encrypted-init composition mismatch");
+    engine.shutdown();
+    server.stop();
+}
+
+/// AES-128 at the MAP position WITHOUT an IV is a parse-time loud-fail
+/// (RFC 8216 §4.3.2.5: the IV attribute is required for init sections).
+#[test]
+fn hls_map_aes128_init_without_iv_fails() {
+    let server = TestServer::start();
+    server.set_file("/key.bin", vec![7u8; 16]);
+    let playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n\
+#EXT-X-KEY:METHOD=AES-128,URI=\"/key.bin\"\n\
+#EXT-X-MAP:URI=\"/encinit.bin\"\n\
+#EXTINF:5.0,\nsegK.bin\n\
+#EXT-X-ENDLIST\n";
+    server.set_file("/noiv.m3u8", playlist.as_bytes().to_vec());
+    server.set_file("/encinit.bin", vec![1u8; 32]);
+    server.set_file("/segK.bin", vec![2u8; 1024]);
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new(EngineConfig {
+        download_dir: dir.path().to_path_buf(),
+        ..Default::default()
+    });
+    let id = engine
+        .add_download(&server.url("/noiv.m3u8"), HttpOptions::default())
+        .unwrap();
+    assert!(wait_until_ms(15_000, || {
+        engine.get(id).map(|s| s.state) == Some(TaskState::Failed)
+    }));
+    let err = engine.get(id).unwrap().error.unwrap();
+    assert!(
+        err.contains("requires an explicit IV"),
+        "unexpected error: {}",
+        err
+    );
     engine.shutdown();
     server.stop();
 }
