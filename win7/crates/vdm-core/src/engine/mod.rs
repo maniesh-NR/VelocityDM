@@ -1,6 +1,7 @@
 //! The engine facade: task registry, add/pause/resume/remove/refresh, torrent
 //! and magnet tasks, scheduler thread, global limiter, configuration.
 
+pub mod dash;
 pub mod events;
 pub mod gate;
 pub mod hls;

@@ -80,6 +80,10 @@ pub struct ProbeResult {
     pub last_modified: Option<String>,
     pub filename: String,
     pub content_type: Option<String>,
+    /// S6 DASH detection: a retained ≤ 1 KiB body prefix from the probe's
+    /// GET-fallback path (fail-open — a long prolog that pushes `<MPD`
+    /// past the window simply misses detection). Internal, non-RPC.
+    pub head_sniff: Option<String>,
 }
 
 // ---- S11-i B2p: link-class connection presets ----
@@ -222,9 +226,18 @@ pub(crate) fn probe_with_meta(
         .unwrap_or(false);
     let mut etag = resp.header("etag").map(|s| s.to_string());
     let last_modified = resp.header("last-modified").map(|s| s.to_string());
-    let content_type = resp.header("content-type").map(|s| s.to_string());
+    let mut content_type = resp.header("content-type").map(|s| s.to_string());
     let disposition = resp.header("content-disposition").map(|s| s.to_string());
-    let _ = resp.read_body(1024);
+    // S6: when the probe itself ran as GET (HEAD transport-failed), the
+    // ≤ 1 KiB body prefix is retained for the DASH head-sniff (fail-open).
+    let mut head_sniff: Option<String> = if !head_ok {
+        resp.read_body(1024)
+            .ok()
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+    } else {
+        let _ = resp.read_body(1024);
+        None
+    };
     let mut fatal: Option<ProbeFailure> = if head_status >= 400 {
         Some(ProbeFailure {
             msg: status_failure_reason(head_status),
@@ -264,8 +277,20 @@ pub(crate) fn probe_with_meta(
                     if etag.is_none() {
                         etag = r2.header("etag").map(|s| s.to_string());
                     }
+                    // S6 (gate 0015 INT #7): the HEAD-rejected (405) fallback
+                    // path also refreshes content_type from the ranged GET,
+                    // mirroring the etag fallback above.
+                    if content_type.is_none() {
+                        content_type = r2.header("content-type").map(|s| s.to_string());
+                    }
                 }
-                let _ = r2.read_body(1024);
+                let sniff = r2
+                    .read_body(1024)
+                    .ok()
+                    .map(|b| String::from_utf8_lossy(&b).into_owned());
+                if head_sniff.is_none() {
+                    head_sniff = sniff;
+                }
             }
             Err(_) => {
                 // keep the HEAD-level fatal status, if any
@@ -287,6 +312,7 @@ pub(crate) fn probe_with_meta(
         last_modified,
         filename,
         content_type,
+        head_sniff,
     })
 }
 
@@ -1150,6 +1176,28 @@ pub fn run_http_task(
             .to_ascii_lowercase()
             .ends_with(".m3u8");
 
+    // S6 DASH detection (gate 0015): final-URL extension, then content
+    // type, then the bounded fail-open probe head-sniff (XML declaration
+    // + MPD root within the retained ≤ 1 KiB prefix, GET-fallback only).
+    let is_dash = probe
+        .final_url
+        .path_and_query
+        .to_ascii_lowercase()
+        .ends_with(".mpd")
+        || probe
+            .content_type
+            .as_deref()
+            .map(|t| {
+                let t = t.to_ascii_lowercase();
+                t.starts_with("application/dash+xml") || t.starts_with("video/vnd.mpeg.dash.mpd")
+            })
+            .unwrap_or(false)
+        || probe
+            .head_sniff
+            .as_deref()
+            .map(|s| s.contains("<?xml") && s.contains("<MPD"))
+            .unwrap_or(false);
+
     let filename = opts
         .filename
         .clone()
@@ -1175,9 +1223,31 @@ pub fn run_http_task(
         // assembled segment streams are MPEG-TS
         out_path = out_path.with_extension("ts");
     }
+    if is_dash {
+        // assembled segment streams are MP4 (gate 0015 naming: strip .mpd,
+        // apply .mp4 — mirrors the .ts forcing above, clobber semantics
+        // included, recorded honestly)
+        out_path = out_path.with_extension("mp4");
+    }
 
     if is_hls {
         run_hls(
+            id,
+            shared,
+            env,
+            control,
+            &url_parsed,
+            &opts,
+            &out_path,
+            &probe,
+        );
+        return;
+    }
+    if is_dash {
+        // DASH dispatch sits BEFORE the size/ranges gate (gate 0015: an
+        // .mpd on a no-ranges server must not fall into run_single, which
+        // would download the manifest as the output file).
+        run_dash(
             id,
             shared,
             env,
@@ -2005,6 +2075,129 @@ fn run_hls(
     let _ = bridger.join();
     match result {
         Ok(()) => {
+            shared.update(id, |s| {
+                s.done = s.size;
+                s.speed = 0;
+            });
+            shared.set_state(id, TaskState::Completed);
+            shared
+                .bus
+                .publish(crate::engine::events::Event::TaskCompleted {
+                    id,
+                    path: out_path.to_string_lossy().to_string(),
+                });
+        }
+        Err(e) => {
+            if control.is_paused() || control.is_stopped() {
+                shared.set_state(id, TaskState::Paused);
+            } else {
+                fail(&shared, id, &e.to_string());
+            }
+        }
+    }
+}
+
+/// S6 DASH wrapper — mirrors `run_hls`'s plumbing exactly (cfg, rate
+/// bucket, throttled snapshot progress, pause/stop bridging, completion
+/// path). Sequential single-connection fetch inside `download_dash`; the
+/// completion notice (first-of-N-periods) lands in the snapshot `notice`.
+#[allow(clippy::too_many_arguments)]
+fn run_dash(
+    id: u64,
+    shared: Arc<EngineShared>,
+    env: TaskEnv,
+    control: Arc<crate::engine::events::TaskControl>,
+    url: &Url,
+    opts: &HttpOptions,
+    out_path: &Path,
+    probe: &ProbeResult,
+) {
+    let cfg = ClientCfg {
+        user_agent: opts
+            .user_agent
+            .clone()
+            .unwrap_or_else(|| env.user_agent.clone()),
+        extra_headers: opts.headers.clone(),
+        proxy: opts.proxy.clone().or_else(|| env.proxy.clone()),
+        connect_timeout: Some(Duration::from_secs(15)),
+        io_timeout: Some(Duration::from_secs(30)),
+        tls_min: env.tls_min,
+    };
+    let task_bucket = if opts.rate_limit_bps > 0 {
+        Some(Arc::new(TokenBucket::new(opts.rate_limit_bps, 256 * 1024)))
+    } else {
+        None
+    };
+    let rate: Option<Arc<TokenBucket>> = if env.global_bucket.rate() > 0 {
+        Some(env.global_bucket.clone())
+    } else {
+        task_bucket
+    };
+    let mut last = (Instant::now(), 0u64);
+    let mut speed_ema = 0u64;
+    shared.update(id, |s| {
+        s.out_path = out_path.to_string_lossy().to_string();
+        s.name = out_path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| s.name.clone());
+        s.size = probe.size;
+    });
+    shared.set_state(id, TaskState::Downloading);
+    let shared2 = shared.clone();
+    let mut progress = move |done: u64, total: u64| {
+        let now = Instant::now();
+        if now.duration_since(last.0).as_millis() >= 100 {
+            let inst = ((done - last.1) as f64 / now.duration_since(last.0).as_secs_f64()) as u64;
+            speed_ema = if speed_ema == 0 {
+                inst
+            } else {
+                (speed_ema * 7 + inst) / 8
+            };
+            last = (now, done);
+            shared2.update(id, |s| {
+                s.done = done;
+                s.size = total;
+                s.speed = speed_ema;
+            });
+        }
+    };
+    let pause = Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicBool::new(false));
+    let control2 = control.clone();
+    let pause_t = pause.clone();
+    let stop_t = stop.clone();
+    let bridger = std::thread::spawn(move || loop {
+        if stop_t.load(Ordering::Relaxed) {
+            break;
+        }
+        let p = control2.is_paused();
+        pause_t.store(p, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(100));
+    });
+    let result = crate::engine::dash::download_dash(
+        &cfg,
+        url,
+        if opts.quality.is_empty() {
+            "best"
+        } else {
+            &opts.quality
+        },
+        out_path,
+        rate.as_ref(),
+        pause.as_ref(),
+        stop.as_ref(),
+        &mut progress,
+    );
+    stop.as_ref().store(true, Ordering::Relaxed);
+    let _ = bridger.join();
+    match result {
+        Ok(notice) => {
+            if let Some(n) = notice {
+                shared.update(id, |s| {
+                    s.notice = Some(n);
+                });
+            }
             shared.update(id, |s| {
                 s.done = s.size;
                 s.speed = 0;

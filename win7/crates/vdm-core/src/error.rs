@@ -11,6 +11,8 @@ pub enum Error {
     Torrent(String),
     /// HLS playlist failure.
     Hls(String),
+    /// DASH manifest/segment failure (S6).
+    Dash(String),
     /// Task-level failure (bad options, failed download, checksum mismatch...).
     Task(String),
     /// JSON (de)serialization failure.
@@ -27,6 +29,7 @@ impl fmt::Display for Error {
             Error::Bencode(s) => write!(f, "bencode: {}", s),
             Error::Torrent(s) => write!(f, "torrent: {}", s),
             Error::Hls(s) => write!(f, "hls: {}", s),
+            Error::Dash(s) => write!(f, "dash: {}", s),
             Error::Task(s) => write!(f, "task: {}", s),
             Error::Json(e) => write!(f, "json: {}", e),
             #[cfg(feature = "tls")]
