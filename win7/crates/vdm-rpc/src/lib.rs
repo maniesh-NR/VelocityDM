@@ -1,24 +1,47 @@
 //! JSON-RPC 2.0 over HTTP on 127.0.0.1:36990 + SSE event stream.
 //!
-//! Endpoints (loopback only, like IDM/XDM browser integration):
+//! Endpoints (loopback default, like IDM/XDM browser integration):
 //! - `POST /rpc` — JSON-RPC 2.0 request (single or batch-lite)
 //! - `GET  /events` — `text/event-stream` of engine events + progress ticks
 //! - `GET  /health` — liveness probe
 //!
 //! The browser native-messaging host (velocitydm-nmh) and the CLI both speak
 //! `POST /rpc`. Progress is pushed at 10 Hz max (GUI/extension refresh budget).
+//!
+//! LAN mode (S8-W1, `lan` feature): a NON-loopback bind (wildcard or explicit
+//! LAN IP) is fail-closed — without the feature the server refuses to start;
+//! with it, every PEER is classified at accept: loopback peers keep today's
+//! byte-identical plain-HTTP path (CLI/NMH/GUI/frontends), non-loopback peers
+//! must speak TLS (rustls, self-signed cert from `secrets`) and present the
+//! bearer token on every endpoint. See `docs/SPECS/S8-LAN-RPC-WAVE1.md`.
+
+pub mod secrets;
+
+#[cfg(feature = "lan")]
+pub mod lan;
 
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::io::{BufRead, Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use vdm_core::bt::{BtSpec, Magnet};
 use vdm_core::engine::events::Event;
 use vdm_core::engine::{Engine, HttpOptions};
 use vdm_core::proxy::ProxyConfig;
+
+/// Non-loopback connection budget (spec rule 4: loopback is exempt and
+/// unbounded — today's behavior).
+const LAN_MAX_CONNS: usize = 32;
+/// Header-count / total-size caps for non-loopback peers (loopback keeps
+/// the byte-identical single-line cap only).
+const LAN_HEADER_MAX_LINES: usize = 128;
+const LAN_HEADER_MAX_BYTES: usize = 64 * 1024;
+/// Read timeout for non-loopback peers until their first authorized
+/// request completes (then the normal 300 s applies).
+const LAN_PREAUTH_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[allow(dead_code)]
 pub struct RpcServer {
@@ -35,35 +58,142 @@ pub struct RpcError {
 }
 
 impl RpcServer {
-    /// Bind and serve; binds 127.0.0.1 only.
+    /// Bind and serve (loopback semantics: see [`RpcServer::start_ex`]).
     pub fn start(engine: Arc<Engine>, bind: &str) -> std::io::Result<Arc<RpcServer>> {
+        RpcServer::start_ex(engine, bind, false)
+    }
+
+    /// Bind and serve; portable selects the exe-dir secrets/config layout
+    /// for LAN mode (loopback binds never touch secrets).
+    ///
+    /// **S8-W1 fail-closed posture:** a non-loopback bind (wildcard or
+    /// explicit LAN IP) REFUSES to start unless the `lan` feature is
+    /// compiled in (bearer token + TLS); with it, secrets are loaded or
+    /// generated and peers are demuxed per connection (loopback = plain
+    /// HTTP byte-identical to the pre-LAN server; non-loopback = TLS +
+    /// bearer token). Loopback binds behave exactly as before.
+    pub fn start_ex(
+        engine: Arc<Engine>,
+        bind: &str,
+        #[allow(unused_variables)] portable: bool,
+    ) -> std::io::Result<Arc<RpcServer>> {
+        let bind_addr = bind
+            .to_socket_addrs()
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("bad bind address '{}': {}", bind, e),
+                )
+            })?
+            .next()
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "empty bind address")
+            })?;
+        let lan_mode = !bind_addr.ip().is_loopback();
+        #[cfg(feature = "lan")]
+        let (lan_token, lan_tls): (Option<String>, Option<Arc<rustls::ServerConfig>>) = if lan_mode
+        {
+            let secrets = secrets::load_or_generate(portable, true).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("LAN secrets: {}", e),
+                )
+            })?;
+            let tls = lan::server_config(&secrets.cert, &secrets.key).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("LAN tls: {}", e))
+            })?;
+            (Some(secrets.token), Some(Arc::new(tls)))
+        } else {
+            (None, None)
+        };
+        #[cfg(not(feature = "lan"))]
+        if lan_mode {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "LAN bind refused: non-loopback binds require the `lan` feature \
+                 (bearer token + TLS); rebuild with --features lan",
+            ));
+        }
+        #[cfg(not(feature = "lan"))]
+        let (lan_token, lan_tls): (Option<String>, Option<()>) = (None, None);
         let listener = TcpListener::bind(bind)?;
         let addr = listener.local_addr()?;
         let stop = Arc::new(AtomicBool::new(false));
         let engine_c = engine.clone();
         let stop_c = stop.clone();
+        let lan_conns = Arc::new(AtomicUsize::new(0));
         listener.set_nonblocking(true)?;
-        let handle = std::thread::spawn(move || loop {
-            if stop_c.load(Ordering::Relaxed) {
-                break;
-            }
-            match listener.accept() {
-                Ok((stream, _)) => {
-                    // macOS/BSD/Windows: accepted sockets inherit the
-                    // listener's non-blocking flag (Linux does not); the RPC
-                    // connection loop is blocking I/O.
-                    let _ = stream.set_nonblocking(false);
-                    let engine = engine_c.clone();
-                    let stop = stop_c.clone();
-                    let bind = addr;
-                    std::thread::spawn(move || {
-                        let _ = handle_conn(stream, engine, stop, bind);
-                    });
+        let handle = std::thread::spawn(move || {
+            let _ = &lan_tls; // capture on both feature states
+            loop {
+                if stop_c.load(Ordering::Relaxed) {
+                    break;
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(50));
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        // macOS/BSD/Windows: accepted sockets inherit the
+                        // listener's non-blocking flag (Linux does not); the RPC
+                        // connection loop is blocking I/O.
+                        let _ = stream.set_nonblocking(false);
+                        // S8-W1 peer classification: fail closed on
+                        // unresolvable peers; IPv4-mapped v6 loopback is
+                        // canonicalized (see `peer_is_loopback`).
+                        let peer = match stream.peer_addr() {
+                            Ok(p) => p,
+                            Err(_) => continue,
+                        };
+                        let peer_lan = !peer_is_loopback(&peer);
+                        let guard = if peer_lan {
+                            if lan_conns.fetch_add(1, Ordering::Relaxed) >= LAN_MAX_CONNS {
+                                lan_conns.fetch_sub(1, Ordering::Relaxed);
+                                continue;
+                            }
+                            Some(ConnGuard::new(lan_conns.clone()))
+                        } else {
+                            None
+                        };
+                        let conn = if !peer_lan {
+                            Conn::Plain(stream)
+                        } else {
+                            #[cfg(feature = "lan")]
+                            {
+                                let cfg = lan_tls
+                                    .as_ref()
+                                    .expect("lan bind guarantees a tls config")
+                                    .clone();
+                                Conn::Tls(Box::new(rustls::StreamOwned::new(
+                                    rustls::ServerConnection::new(cfg)
+                                        .expect("valid server config"),
+                                    stream,
+                                )))
+                            }
+                            #[cfg(not(feature = "lan"))]
+                            {
+                                let _ = stream;
+                                unreachable!("non-loopback bind refused at start_ex")
+                            }
+                        };
+                        let engine = engine_c.clone();
+                        let stop = stop_c.clone();
+                        let bind = addr;
+                        let token = lan_token.clone();
+                        std::thread::spawn(move || {
+                            let _ = handle_conn(
+                                SharedConn::new(conn),
+                                engine,
+                                stop,
+                                bind,
+                                peer_lan,
+                                token,
+                                guard,
+                            );
+                        });
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
         });
         Ok(Arc::new(RpcServer {
@@ -126,15 +256,167 @@ fn host_allowed(host_hdr: &str, bind: std::net::SocketAddr) -> bool {
     }
 }
 
+/// Whether a bind address string names a loopback authority (the
+/// daemon uses this to decide whether to print the LAN token after a
+/// successful `start_ex`).
+pub fn bind_is_loopback(bind: &str) -> bool {
+    bind.to_socket_addrs()
+        .ok()
+        .and_then(|mut it| it.next())
+        .map(|a| a.ip().is_loopback())
+        .unwrap_or(false) // unresolvable binds fail inside start_ex anyway
+}
+
+/// Loopback peer classification with IPv4-mapped canonicalization: a
+/// v6 wildcard bind presents v4 loopback peers as `::ffff:127.0.0.1`,
+/// whose `is_loopback()` is false — canonicalize before checking
+/// (gate 0018, ATKR condition).
+fn peer_is_loopback(addr: &std::net::SocketAddr) -> bool {
+    match addr.ip() {
+        std::net::IpAddr::V4(v4) => v4.is_loopback(),
+        std::net::IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.is_loopback(),
+            None => v6.is_loopback(),
+        },
+    }
+}
+
+/// One accepted connection: plain TCP (loopback peers, byte-identical
+/// path) or a rustls server stream (non-loopback peers, `lan` feature).
+enum Conn {
+    Plain(TcpStream),
+    // Boxed: StreamOwned dwarfs TcpStream (clippy large_enum_variant);
+    // one heap alloc per LAN connection is noise.
+    #[cfg(feature = "lan")]
+    Tls(Box<rustls::StreamOwned<rustls::ServerConnection, TcpStream>>),
+}
+
+impl Conn {
+    fn set_read_timeout(&self, d: Option<Duration>) -> std::io::Result<()> {
+        match self {
+            Conn::Plain(s) => s.set_read_timeout(d),
+            #[cfg(feature = "lan")]
+            Conn::Tls(s) => s.sock.set_read_timeout(d),
+        }
+    }
+    fn set_write_timeout(&self, d: Option<Duration>) -> std::io::Result<()> {
+        match self {
+            Conn::Plain(s) => s.set_write_timeout(d),
+            #[cfg(feature = "lan")]
+            Conn::Tls(s) => s.sock.set_write_timeout(d),
+        }
+    }
+}
+
+impl Read for Conn {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Conn::Plain(s) => s.read(buf),
+            #[cfg(feature = "lan")]
+            Conn::Tls(s) => s.read(buf),
+        }
+    }
+}
+
+impl Write for Conn {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Conn::Plain(s) => s.write(buf),
+            #[cfg(feature = "lan")]
+            Conn::Tls(s) => s.write(buf),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Conn::Plain(s) => s.flush(),
+            #[cfg(feature = "lan")]
+            Conn::Tls(s) => s.flush(),
+        }
+    }
+}
+
+/// Reader/writer split over any connection (the plain path previously
+/// used `TcpStream::try_clone`; rustls streams cannot, so both halves
+/// share one mutex — RPC request rates make the lock cost irrelevant).
+struct SharedConn<S> {
+    inner: Arc<Mutex<S>>,
+}
+
+impl<S> Clone for SharedConn<S> {
+    fn clone(&self) -> Self {
+        SharedConn {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<S> SharedConn<S> {
+    fn new(s: S) -> Self {
+        SharedConn {
+            inner: Arc::new(Mutex::new(s)),
+        }
+    }
+}
+
+impl<S: Read> Read for SharedConn<S> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.lock().unwrap().read(buf)
+    }
+}
+
+impl<S: Write> Write for SharedConn<S> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.inner.lock().unwrap().write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.lock().unwrap().flush()
+    }
+}
+
+impl SharedConn<Conn> {
+    fn set_read_timeout(&self, d: Option<Duration>) -> std::io::Result<()> {
+        self.inner.lock().unwrap().set_read_timeout(d)
+    }
+    fn set_write_timeout(&self, d: Option<Duration>) -> std::io::Result<()> {
+        self.inner.lock().unwrap().set_write_timeout(d)
+    }
+}
+
+/// Decrements the non-loopback connection budget when the connection
+/// thread ends (held for the connection's lifetime).
+struct ConnGuard {
+    counter: Arc<AtomicUsize>,
+}
+
+impl ConnGuard {
+    fn new(counter: Arc<AtomicUsize>) -> Self {
+        ConnGuard { counter }
+    }
+}
+
+impl Drop for ConnGuard {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 fn handle_conn(
-    mut stream: TcpStream,
+    mut conn: SharedConn<Conn>,
     engine: Arc<Engine>,
     stop: Arc<AtomicBool>,
     bind: std::net::SocketAddr,
+    peer_lan: bool,
+    token: Option<String>,
+    guard: Option<ConnGuard>,
 ) -> std::io::Result<()> {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(300)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
-    let mut reader = std::io::BufReader::new(stream.try_clone()?);
+    let _ = &guard; // held for the connection lifetime
+    let _ = conn.set_read_timeout(Some(if peer_lan {
+        LAN_PREAUTH_TIMEOUT
+    } else {
+        Duration::from_secs(300)
+    }));
+    let _ = conn.set_write_timeout(Some(Duration::from_secs(30)));
+    let mut reader = std::io::BufReader::new(conn.clone());
     // one HTTP request per connection (keep-alive supported, bounded)
     for _ in 0..256 {
         let mut request_line = String::new();
@@ -150,14 +432,29 @@ fn handle_conn(
         let mut origin_seen = false;
         let mut referer_seen = false;
         let mut content_type: Option<String> = None;
+        let mut authorization: Option<String> = None;
+        let mut header_lines = 0usize;
+        let mut header_bytes = 0usize;
         loop {
             let mut line = String::new();
             if reader.read_line(&mut line)? == 0 {
                 return Ok(());
             }
             if line.len() > 16 * 1024 {
-                write_response(&mut stream, 431, "text/plain", b"header too large", false)?;
+                write_response(&mut conn, 431, "text/plain", b"header too large", false)?;
                 return Ok(());
+            }
+            // S8-W1: non-loopback peers get a bounded header block
+            // (count + total size) so a dribbling header flood cannot
+            // pin a connection slot for the full read timeout; loopback
+            // keeps the byte-identical single-line cap only.
+            if peer_lan {
+                header_lines += 1;
+                header_bytes += line.len();
+                if header_lines > LAN_HEADER_MAX_LINES || header_bytes > LAN_HEADER_MAX_BYTES {
+                    write_response(&mut conn, 431, "text/plain", b"too many headers", false)?;
+                    return Ok(());
+                }
             }
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -184,6 +481,9 @@ fn handle_conn(
                 if k.eq_ignore_ascii_case("content-type") {
                     content_type = Some(v.to_string());
                 }
+                if k.eq_ignore_ascii_case("authorization") {
+                    authorization = Some(v.to_string());
+                }
             }
         }
         // --- Loopback trust boundary ---------------------------------------
@@ -201,8 +501,26 @@ fn handle_conn(
             None => false, // HTTP/1.1 requires Host; HTTP/1.0 is not a client we serve
         };
         if !host_ok || origin_seen || referer_seen {
-            write_response(&mut stream, 403, "text/plain", b"forbidden", false)?;
+            write_response(&mut conn, 403, "text/plain", b"forbidden", false)?;
             return Ok(());
+        }
+        // --- LAN trust boundary (S8-W1) -----------------------------------
+        // Non-loopback peers must present the bearer token on EVERY
+        // endpoint (checked after the header block, before the body —
+        // spec rule 2/4). Loopback peers never reach this branch, so
+        // their path stays byte-identical.
+        if peer_lan {
+            let expected = token.as_deref().unwrap_or("");
+            let presented = authorization
+                .as_deref()
+                .and_then(bearer_token)
+                .unwrap_or("");
+            if !secrets::token_matches(presented, expected) {
+                write_response(&mut conn, 401, "text/plain", b"unauthorized", false)?;
+                return Ok(());
+            }
+            // first authorized request: adopt the normal read timeout
+            let _ = conn.set_read_timeout(Some(Duration::from_secs(300)));
         }
         if method == "POST" {
             let ct_ok = content_type
@@ -211,7 +529,7 @@ fn handle_conn(
                 .unwrap_or(false);
             if !ct_ok {
                 write_response(
-                    &mut stream,
+                    &mut conn,
                     415,
                     "text/plain",
                     b"content-type must be application/json",
@@ -222,7 +540,7 @@ fn handle_conn(
         }
         if content_length > 8 * 1024 * 1024 {
             write_response(
-                &mut stream,
+                &mut conn,
                 413,
                 "text/plain",
                 b"payload too large",
@@ -236,7 +554,7 @@ fn handle_conn(
         match (method.as_str(), path.as_str()) {
             ("GET", "/health") => {
                 write_response(
-                    &mut stream,
+                    &mut conn,
                     200,
                     "application/json",
                     b"{\"ok\":true}",
@@ -246,14 +564,14 @@ fn handle_conn(
             ("POST", "/rpc") => {
                 let resp = dispatch(&engine, &body, &stop);
                 let payload = serde_json::to_vec(&resp).unwrap_or_else(|_| b"{}".to_vec());
-                write_response(&mut stream, 200, "application/json", &payload, keep_alive)?;
+                write_response(&mut conn, 200, "application/json", &payload, keep_alive)?;
             }
             ("GET", "/events") => {
-                sse_loop(&mut stream, &engine, &stop)?;
+                sse_loop(&mut conn, &engine, &stop)?;
                 return Ok(());
             }
             _ => {
-                write_response(&mut stream, 404, "text/plain", b"not found", keep_alive)?;
+                write_response(&mut conn, 404, "text/plain", b"not found", keep_alive)?;
             }
         }
         if !keep_alive {
@@ -263,8 +581,19 @@ fn handle_conn(
     Ok(())
 }
 
-fn write_response(
-    stream: &mut TcpStream,
+/// Extract the token from an `Authorization` header value (scheme is
+/// case-insensitive per RFC 9110; anything else is not a bearer token).
+fn bearer_token(header_value: &str) -> Option<&str> {
+    let v = header_value.trim();
+    if v.len() > 7 && v[..7].eq_ignore_ascii_case("bearer ") {
+        Some(v[7..].trim())
+    } else {
+        None
+    }
+}
+
+fn write_response<W: Write>(
+    stream: &mut W,
     status: u16,
     ctype: &str,
     body: &[u8],
@@ -272,8 +601,10 @@ fn write_response(
 ) -> std::io::Result<()> {
     let reason = match status {
         200 => "OK",
+        401 => "Unauthorized",
         404 => "Not Found",
         413 => "Payload Too Large",
+        431 => "Request Header Fields Too Large",
         _ => "Error",
     };
     let conn = if keep_alive { "keep-alive" } else { "close" };
@@ -291,8 +622,8 @@ fn write_response(
 }
 
 /// SSE: engine events + periodic snapshot deltas (10 Hz).
-fn sse_loop(
-    stream: &mut TcpStream,
+fn sse_loop<W: Write>(
+    stream: &mut W,
     engine: &Arc<Engine>,
     stop: &AtomicBool,
 ) -> std::io::Result<()> {
@@ -343,7 +674,7 @@ fn sse_loop(
     Ok(())
 }
 
-fn send_sse(stream: &mut TcpStream, payload: &Value) -> std::io::Result<()> {
+fn send_sse<W: Write>(stream: &mut W, payload: &Value) -> std::io::Result<()> {
     let text = payload.to_string();
     let frame = format!("data: {}\n\n", text.replace('\n', " "));
     stream.write_all(frame.as_bytes())?;
@@ -811,6 +1142,59 @@ mod tests {
             download_dir: dir,
             ..Default::default()
         })
+    }
+
+    #[test]
+    fn peer_loopback_classification_including_mapped_v4() {
+        // S8-W1 gate 0018: ::ffff:127.0.0.1 must classify as loopback.
+        assert!(peer_is_loopback(&"127.0.0.1:1".parse().unwrap()));
+        assert!(peer_is_loopback(&"127.255.0.9:1".parse().unwrap()));
+        assert!(peer_is_loopback(&"[::1]:1".parse().unwrap()));
+        assert!(peer_is_loopback(&"[::ffff:127.0.0.1]:1".parse().unwrap()));
+        assert!(!peer_is_loopback(&"192.168.1.5:1".parse().unwrap()));
+        assert!(!peer_is_loopback(
+            &"[::ffff:192.168.1.5]:1".parse().unwrap()
+        ));
+        assert!(!peer_is_loopback(&"[fe80::1]:1".parse().unwrap()));
+    }
+
+    #[test]
+    fn bearer_token_extraction_is_scheme_case_insensitive() {
+        assert_eq!(bearer_token("Bearer abc"), Some("abc"));
+        assert_eq!(bearer_token("bearer abc"), Some("abc"));
+        assert_eq!(bearer_token("  BEARER   tok  "), Some("tok"));
+        assert_eq!(bearer_token("Basic abc"), None);
+        assert_eq!(bearer_token(""), None);
+    }
+
+    #[test]
+    #[cfg(not(feature = "lan"))]
+    fn lan_bind_refused_without_the_feature() {
+        // S8-W1 fail-closed posture: a wildcard bind must never serve
+        // unauthenticated — without the `lan` feature the server refuses
+        // to start at all (this witness compiles only in default builds;
+        // the positive path lives in tests/lan.rs under the feature).
+        let engine = start_test_engine();
+        let err = match RpcServer::start_ex(engine, "0.0.0.0:0", false) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("wildcard bind must be refused without the lan feature"),
+        };
+        assert!(err.contains("lan"), "{}", err);
+    }
+
+    #[test]
+    #[cfg(not(feature = "lan"))]
+    fn explicit_lan_ip_bind_refused_without_the_feature() {
+        let engine = start_test_engine();
+        // 192.0.2.1 is TEST-NET-1: non-loopback by construction
+        assert!(RpcServer::start_ex(engine, "192.0.2.1:0", false).is_err());
+    }
+
+    #[test]
+    fn loopback_bind_still_starts_in_default_builds() {
+        let engine = start_test_engine();
+        let server = RpcServer::start_ex(engine, "127.0.0.1:0", false).unwrap();
+        assert!(server.addr.ip().is_loopback());
     }
 
     #[test]

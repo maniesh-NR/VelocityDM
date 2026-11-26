@@ -1,0 +1,50 @@
+# S8-W1 bench A/B (gate 0018 rule 8) — bench-perf drives through the daemon
+# RPC (loopback path), so the per-connection peer-classification branch is
+# the only C2 delta on the measured path. The engine is untouched.
+#
+# Pair 1 (first runs after each build): pre 0.81 s / 158.9 MBps (11 conns /
+# 36 reqs) vs post 0.80 s / 159.3 MBps (13 conns / 38 reqs) — throughput
+# parity; the conn/req counts straddle the canonical 12/37 shape on both
+# sides (B2 optional-connection spawn is timing-sensitive on the shared
+# 2-CPU sandbox, and the __stats curl probe itself counts).
+#
+# Pair 2 (the documented post-build saturation artifact on BOTH sides —
+# 1.41 s / ~91 MBps, the same class recorded at s11i3/s6/s7): shape 12/37
+# on BOTH sides — the canonical request shape is preserved.
+#
+# Verdict: NO REGRESSION (throughput parity across warm pairs; identical
+# canonical shape under equal saturation; byte-identical all four runs).
+
+=== pair 1 ===
+label:            s8-pre
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.81
+throughput_MBps:  158.9
+tcp_connections:  11
+http_requests:    36
+byte_identical:   yes
+
+label:            s8-post
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        0.80
+throughput_MBps:  159.3
+tcp_connections:  13
+http_requests:    38
+byte_identical:   yes
+
+=== pair 2 ===
+label:            s8-pre2
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        1.41
+throughput_MBps:  91.0
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes
+
+label:            s8-post2
+file:             128 MiB, 8 connections, 40ms simulated handshake RTT
+elapsed_s:        1.41
+throughput_MBps:  91.1
+tcp_connections:  12
+http_requests:    37
+byte_identical:   yes

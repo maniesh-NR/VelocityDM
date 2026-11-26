@@ -8,9 +8,26 @@ description = "VelocityDM JSON-RPC 2.0 + SSE transport"
 [features]
 default = ["tls"]
 tls = ["vdm-core/tls"]
+# S8-W1 LAN mode: non-loopback binds (token + TLS). Non-default on
+# purpose (gate 0018 INT conditions): gtk3/qt inherit defaults and
+# their committed locks must stay valid; the win7 mirror does not
+# declare the feature (its 1.75 build + lock stay untouched).
+lan = ["tls", "dep:rcgen", "dep:rustls", "dep:pem"]
 
 [dependencies]
 vdm-core = { path = "../vdm-core", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
+# rcgen: MIT OR Apache-2.0 (GPL-3.0 compatible). Ring backend only —
+# aws-lc-rs and x509-parser are kept OUT of the graph (gate 0018).
+rcgen = { version = "0.13", optional = true, default-features = false, features = [
+    "ring",
+    "pem",
+] }
+rustls = { version = "0.23", optional = true, default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+pem = { version = "3", optional = true }

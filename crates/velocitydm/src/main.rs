@@ -187,6 +187,14 @@ enum Commands {
     },
     /// Ask a running daemon to shut down cleanly.
     Shutdown,
+    /// Print the LAN-mode bearer token for pairing remote clients
+    /// (local secrets-file read; --rotate replaces it).
+    LanToken {
+        /// Replace the token with a fresh random one (certificate and
+        /// TOFU pins are kept; connected clients must re-pair).
+        #[arg(long)]
+        rotate: bool,
+    },
     /// Print version and feature summary.
     Version,
 }
@@ -198,6 +206,7 @@ fn main() {
         Commands::Daemon => daemon::run(&addr, cli.portable),
         #[cfg(feature = "gui")]
         Commands::Gui => gui::run(&addr, cli.portable),
+        Commands::LanToken { rotate } => cli::lan_token(cli.portable, *rotate),
         other => other.run_remote(&addr),
     };
     std::process::exit(code);

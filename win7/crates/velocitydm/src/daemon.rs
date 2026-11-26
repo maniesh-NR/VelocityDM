@@ -46,13 +46,25 @@ static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 pub fn run(addr: &str, portable: bool) -> i32 {
     let cfg = load_config(portable);
     let engine = Engine::new(cfg);
-    let server = match RpcServer::start(engine.clone(), addr) {
+    let server = match RpcServer::start_ex(engine.clone(), addr, portable) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("cannot bind {}: {} (is another daemon running?)", addr, e);
             return 1;
         }
     };
+    // S8-W1: a LAN bind serves the token to its owner exactly once per
+    // start (stdout) — pairing for the Android remote mode. Loopback
+    // binds never have a token.
+    if !vdm_rpc::bind_is_loopback(addr) {
+        match vdm_rpc::secrets::load_or_generate(portable, false) {
+            Ok(s) => println!(
+                "LAN mode: non-loopback peers require TLS + this bearer token: {}",
+                s.token
+            ),
+            Err(e) => eprintln!("warning: cannot read LAN token: {}", e),
+        }
+    }
     println!(
         "VelocityDM daemon {} listening on http://{} (config: {})",
         env!("CARGO_PKG_VERSION"),

@@ -36,6 +36,31 @@ pub fn ensure_daemon(addr: &str) -> Result<(), String> {
     Err("daemon did not come up within 10s".to_string())
 }
 
+/// S8-W1: print the LAN-mode bearer token for pairing remote clients
+/// (e.g. the Android remote mode). LOCAL secrets-file read — the token
+/// never travels over RPC. `--rotate` replaces the token first: the
+/// certificate (and therefore every TOFU pin) is kept; connected
+/// clients must re-pair with the new token.
+pub fn lan_token(portable: bool, rotate: bool) -> i32 {
+    let result = if rotate {
+        vdm_rpc::secrets::rotate_token(portable)
+    } else {
+        vdm_rpc::secrets::load_or_generate(portable, false).map(|s| s.token)
+    };
+    match result {
+        Ok(token) => {
+            println!("{}", token);
+            if rotate {
+                eprintln!("token rotated; re-pair connected LAN clients (they keep their TLS pin)");
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("cannot read LAN secrets: {}", e);
+            1
+        }
+    }
+}
 fn out_file_dir(opts: &mut Value, out: Option<&str>, dir: Option<&str>) {
     if let Some(o) = out {
         opts["filename"] = json!(o);
@@ -416,6 +441,10 @@ impl Commands {
                     .map_err(|e| e.to_string())?;
                 Ok("daemon shut down".to_string())
             }
+            // Unreachable in practice: main() dispatches LanToken locally
+            // (secrets-file read, never RPC); the arm keeps this match
+            // exhaustive.
+            Commands::LanToken { .. } => Err("lan-token is local-only".into()),
             Commands::Version => {
                 Ok(format!(
                     "VelocityDM {} (engine {}, features: http, hls+aes128, bittorrent, magnet, batch, scheduler, proxy, refresh-link)",

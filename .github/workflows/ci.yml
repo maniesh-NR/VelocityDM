@@ -36,6 +36,10 @@ jobs:
       - run: sudo apt-get update -y && sudo apt-get install -y musl-tools libfontconfig1-dev
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # S8-W1: feature-scoped clippy witness (same rationale as the
+      # LAN-mode test step in test-ubuntu).
+      - name: LAN-mode clippy (vdm-rpc --features lan)
+        run: cargo clippy -p vdm-rpc --all-targets --features lan --locked -- -D warnings
 
   test-ubuntu:
     name: Test (ubuntu-latest)
@@ -47,6 +51,10 @@ jobs:
       - run: sudo apt-get update -y && sudo apt-get install -y musl-tools libfontconfig1-dev
       - run: cargo build --workspace --bins
       - run: cargo test --workspace
+      # S8-W1: the `lan` feature is non-default, so without this step its
+      # tests (TLS + token + conn budget matrix) would run in zero jobs.
+      - name: LAN-mode tests (vdm-rpc --features lan)
+        run: cargo test -p vdm-rpc --features lan --locked
 
   test-windows:
     name: Test (windows-latest)
