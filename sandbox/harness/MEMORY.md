@@ -1352,3 +1352,255 @@ session reads this file first, then `ROADMAP.md`.
   sub-stage, needs its own five-role gate + spec FIRST (a C++/Qt toolchain
   is a real provisioning question in this sandbox). The D5:A owner
   runtime-verification moment remains the owner's.
+
+## Session 20 (2026-11-24): S5 shipped + S6/S7/S12-lin3 activation + T1/T3 protocol
+
+- Owner directive (IM): "implement everything in the roadmap that doesn't
+  require my input within a single session, backing up after each stage is
+  complete. Parallelize the workflow across as many agents as possible."
+- Environment loss recovered FIRST: toolchains re-provisioned from dist
+  tarballs (stable 1.100.0 + clippy 1.100.0 + rustfmt; 1.75.0 witness) —
+  rustup-init dies silently in this sandbox; the dist-tarball merge recipe
+  (channel manifest URLs + component/ extraction) is the reliable path.
+  The old cargo registry cache was keyed to a stale index hash and broke
+  resolution ("failed to find X in path source") — moved aside, fresh fetch
+  (705 crates). Ghidra/JDK/Android SDK/jdk17 all gone this instance.
+- Fresh five-role gates run in ONE session (independent dispatch):
+  0014 S5 (5×PWC), 0015 S6 (5×PWC), 0016 S7 round 1 (4×PWC + **1× BLOCK
+  FALS** — the draft's SAMPLE-AES section inverted the [SampleEnc]
+  sub-sample layout and cited a nonexistent RFC section; revised), 0016b
+  S7 fresh re-run (5× PROCEED — consensus), 0017 S12-lin3 (5×PWC). All
+  conditions folded into the committed specs BEFORE any implementing
+  commit (spec-first held for all four stages).
+- S5 IMPLEMENTED + CLOSED: commit 9437e59 (C2 revert unit: bt/tracker.rs +
+  engine.rs + win7 mirrors). BEP-15 client with connected-socket source
+  pinning; 32-tracker round cap; bench parity; 219 tests green; doc truth
+  flips (REQUIREMENTS-COVERAGE/ALGORITHMS/IMPROVEMENTS/TEST-REPORT/README).
+  **1.75 witness truth:** `check --workspace --locked` green; the gate's
+  `--all-targets` shape is NOT runnable on 1.75 locally — the win7 lock DEV
+  graph pins getrandom 0.4.3 (edition2024 via tempfile), cargo 1.75 refuses
+  at download. lib+bins compile; test-code 1.75 compilation is CI-blind.
+- T1/T3 observation protocol PREPARED (D4:B):
+  docs/T1-T3-OBSERVATION-PROTOCOL.md — measurement plans, trace hygiene,
+  VM-boundary whitelist; execution still gated on the owner-provisioned VM.
+- Subagent budget lesson: implementation agents with repo-wide reading +
+  full batteries exceeded the context deadline TWICE; the reliable shape is
+  tight-scoped dispatch (or orchestrator-executed finishing) with compact
+  reports. Fresh-panel re-gate succeeded via one coordinator agent.
+- S6 (gate 0015), S7 (gates 0016/0016b), S12-lin3 (gate 0017) specs
+  committed and consensus-cleared; their implementation commits follow.
+
+## Session 21 (2026-11-25): S6 closed (CI-fix + C3) under the owner's single-session directive
+
+- Owner directive (IM, standing): "implement everything in the roadmap that
+  doesn't require my input within a single session, backing up after each
+  stage is complete. Parallelize the workflow across as many agents as
+  possible." Reconcile FIRST: origin/main was 5 commits ahead — the parallel
+  session-20/21 had already landed the S5/S6/S7/S12-lin3 activation (gates
+  0014/0015/0016+0016b/0017, commit 2d2e8df), the S5 close (9437e59 +
+  92ec73f), the S7 round-2 re-gate record (0fee9da), and the S6 C2
+  implementation (8904d15) — then died mid-stage with RED CI (Rust format +
+  Clippy on 8904d15). Live queue on arrival: fix S6 CI → S6 close → S7 C2 →
+  S12-lin3 C2 → S8/S9.
+- Environment loss recovered (fifth time, recipe hardened): the stable
+  toolchain was gutted (only clippy binaries survived); 1.75.0 gone. New
+  provision-rust.sh (scripts/) — dist-tarball merge recipe now handles the
+  .tar.gz + no-component-wrapper layout shift (channel-rust-<v>.toml ->
+  sha256-verified tarballs -> merge xdir/<pkg>/<component>/ into the
+  toolchain). Registry catastrophe diagnosed precisely this time: the
+  recycle had TRUNCATED both registry/src extractions (empty dirs -> cargo's
+  "path source" internal error) AND all 646 cache .crate zips (invalid
+  archives); nuked the whole registry, fresh fetch (fast: ~15 s wall for
+  the root workspace graph).
+- S6 CI fix (evidence-then-fix, 7643ad8): win7 tree fmt (the C2 push shipped
+  unformatted win7 mirrors); dash.rs clippy (strip_prefix ×3, iter().flatten
+  for resolve_chain, late-init media -> match expression, the cfg(test)
+  DashPlan helper hoisted INSIDE mod tests for deny-by-default
+  items_after_test_module, 3 no-arg format! + e2e literal with
+  into_bytes->as_bytes().to_vec()); mirrors applied to win7; battery fmt +
+  clippy --workspace --all-targets green, vdm-core 225 tests green, 1.75
+  witness green. **CI 13/13 GREEN at 7643ad8.**
+- S6 bench A/B (scripts/s6-bench-record.txt): pre (worktree at 20a6af4)
+  159.1 MBps + the documented 1.41 s/91 MBps artifact class; post 160.0/
+  158.9 MBps, 12/37 request shape both sides, byte-identical. NO
+  REGRESSION.
+- S6 C3 close: ROADMAP row DONE, REQUIREMENTS-COVERAGE (video row + DASH
+  limitation flip), ALGORITHMS "DASH assembly (S6)" section, IMPROVEMENTS
+  row, TEST-REPORT limitation line, README video row; issue #3 comment.
+- Subagent reality (context deadline): BOTH implementation-agent dispatches
+  (S7 hls, Qt tree) exceeded the deadline with zero work written — matching
+  the session-20 lesson. The reliable shapes remain: (a) haiku Explore
+  agents for compact read-only extraction (the Qt API-surface report
+  succeeded and is reused below), (b) orchestrator-executed implementation.
+  S7 + S12-lin3 are implemented orchestrator-side this session.
+
+## Session 21 (continued) — S7 delivered (gates 0016/0016b) under the same directive
+
+- S7 C2 implemented orchestrator-side (the agent-dispatch route failed
+  twice on the context deadline; the haiku Explore extraction SUCCEEDED
+  and grounded the Qt work instead): `cc8d2fe`, single revert unit across
+  the four spec-scoped files. All [R2-1..8] conditions folded: the
+  frame-geometry witness scoped honestly (wrong key = byte-inequality,
+  no loud-fail claimed), per-frame IV reset, [SampleEnc] cited by name
+  (RFC 8216 §4.3.2.4-named + §11.2 Informative), the third test-only
+  win7 divergence line executed, init-only identity discipline, the
+  deterministic PMT selection pin, and parse-time URI-required for
+  non-NONE METHODs.
+- One real spec-fidelity catch during implementation: the KEY PREFETCH
+  originally missed MAP-captured keys (a key replaced by METHOD=NONE
+  before the first segment is still live for the init) — the spec's own
+  "the key prefetch loop extends to MAP-captured keys" sentence was the
+  fix; the encrypted-init e2e drove it.
+- Battery: 200 lib + 12 hls_e2e + 39 others green; fmt both trees;
+  clippy --workspace --all-targets -D warnings green; 1.75 witness
+  --workspace --locked green (all-targets still blocked by the documented
+  getrandom-0.4.3 edition2024 win7 DEV graph). **CI 13/13 GREEN at
+  cc8d2fe** (verified live on the API).
+- Bench: scripts/s7-bench-record.txt — warm pairs 158.8 vs 158.9/159.1
+  MBps, 12/37 shape; the pre side hit the 1.41s/91MBps artifact three
+  times (post-build saturation on the 2-CPU sandbox; discarded per the
+  documented class). NO REGRESSION.
+- S7 C3 close: ROADMAP row, REQUIREMENTS-COVERAGE (limitation 4 flip +
+  video row), ALGORITHMS HLS section (MAP + SAMPLE-AES assembly rules),
+  TEST-REPORT, the wave-2 B3 supersession note; issue #4 commented.
+
+## Session 21 (final) — S12-lin3 Qt delivered (gate 0017) under the single-session directive
+
+- S12-lin3 C2 pushed at 0832088 after grounding the ENTIRE cxx-qt 0.10.0
+  API against the real sources (cargo-fetch of cxx-qt/cxx-qt-lib/
+  cxx-qt-gen + the upstream cargo_without_cmake / todo_app /
+  custom_base_class examples — no API was written from memory), then
+  converged through SIX evidence-then-fix rounds (the Qt tree's CI job
+  is its only compile witness; the sandbox recycle mid-cycle cost the
+  local scripts/toolchain/registry — all recovered from origin by
+  fast-forward + re-provision, the RUNBOOK recipe held):
+  R1 bridge namespace wrongly wrapped the cxx-qt-lib aliases + the
+  QAbstractListModel base (dropped — the QML module URI is the real
+  namespacing); R2 the QML header comment tripped the dynamic-QML
+  tripwire (comment reworded; the tripwire greps comments); R3 the spec
+  Enter-to-add row was missing (onAccepted wired) + list-height
+  arithmetic; R3b Rust-side: TaskSnapshot private re-export (public
+  path events::TaskSnapshot), the default constructor DECLARED in the
+  bridge (impl cxx_qt::Initialize for AppModel {} inside the bridge =
+  the ConstructorDeclared shorthand), index() usize->i32, stop_window
+  test as_deref on a tuple, apply_theme mut self; R4 two test
+  expectations (Paused/Queued share the queued chip by design — 7
+  distinct chips over 8 states; display_text trims trailing controls) —
+  caught by the NEW scratch-crate probe (config/model/tokens in a lib
+  crate with path deps: local cargo test + clippy for the pure-logic
+  half); R5 clippy field_reassign_with_default in a test fixture; R6
+  ROLE_SUBSET dead_code (bin crates have no external API surface — the
+  lib-shaped probe cannot see that class, noted in the RUNBOOK).
+  **CI 14/14 ALL-GREEN at 8358182** (8 required + 6 preview incl.
+  `Linux frontend (Qt)`; 15/15 headless tests on the runner).
+- Platform quirk recorded in the RUNBOOK: push-triggered CI runs
+  silently failed to start twice (2db01cb, 8358182) — the dispatch API
+  is the reliable fallback (ci.yml has workflow_dispatch; the release.yml
+  dispatch prohibition is untouched).
+- C3 close: parity-matrix Qt columns §1.1–§1.5 grounded in qt/src, gap
+  register (filename override closed in the Qt tree), §5 gate-order flip
+  (the S12 sub-stage queue is EMPTY — the D5:A owner runtime
+  verification precedes the per-surface promotions), DESIGN stack-matrix
+  row, RUNBOOK §"Qt preview" (the four truths), README test-count
+  truth, issue #16 comment.
+- Honest standing queue for the NEXT session: S8 (LAN daemon + Android
+  engine unification — needs its own five-role gate; the LAN half
+  re-architects the documented loopback trust boundary, the Android half
+  needs SDK/NDK re-provisioning that this instance no longer carries),
+  S9 (Safari app extension — Xcode-conversion gate), S10 (Flathub —
+  owner account REQUIRED, out of single-session scope), T1/T3 (owner
+  Windows VM), and the D5:A promotions + D6 milestone shape (owner).
+  Nothing was silently dropped: S5/S6/S7/S12-lin3 all closed this
+  session; S8/S9 gates were NOT run (session budget went to the
+  evidence-then-fix convergence + the recycle recovery).
+
+
+## 2026-11-26 (session 22) — S8 wave 1 delivered (gate 0018): LAN mode + Android remote control
+
+- Standing directive (single-session batch implementation + maximum
+  agent parallelization) continued. Reconcile first: origin/main was
+  8 commits ahead — the parallel sessions had already closed S6 (DASH),
+  S7 (SAMPLE-AES + EXT-X-MAP), and S12-lin3 Qt (gate 0017, CI 14/14 at
+  8358182 after SIX evidence-then-fix rounds); the honest standing
+  queue named S8 (own gate) and S9, with S10/T1/T3/D5:A/D6
+  owner-gated. Fast-forwarded to da057d8; local tree clean.
+- **Gate 0018 (S8-W1 activation), five roles dispatched in parallel**
+  (ATKR/FALS/REQ/INT/REL, identical evidence packs): 5×
+  PROCEED-WITH-CONDITIONS, zero BLOCK. The panel earned its keep:
+  ATKR found the live unauthenticated-wildcard footgun (host_allowed's
+  wildcard branch serves full engine control to LAN natives TODAY) and
+  the token-in-EngineConfig silent-destruction path (save_config
+  round-trips + 0644); FALS pinned loopback byte-identity as PEER-
+  scoped not bind-scoped (bind-wise TLS would break every local
+  client), the pre-auth DoS (32 idle LAN sockets wedging loopback
+  slots for 300 s), the SSE consumer contract gap (ticks omit
+  removals; no replay), the silently-dead remote actions/notifications,
+  and the mapping lies (verifying/seeding chip-less, userPaused
+  dropped → stop-window Resume that instantly re-stops); REQ demanded
+  the W1/W2 split honesty (ROADMAP never DONE), explicit non-goals
+  (mDNS/QR), and the owner-verification rows; INT pinned the CI
+  feature-witness hole (a non-default feature compiles in ZERO jobs),
+  the gtk3/qt lock discipline, and the win7 1.75 mirror shape; REL
+  pinned the bench truth (bench-perf drives THROUGH the daemon RPC —
+  the cheap A/B was owed) and the doc-reconciliation duty (the stale
+  wildcard sentence in RPC.md).
+- **C1 (55a9b4f):** gate record + spec, committed BEFORE any
+  implementing commit.
+- **C2 (56ca99e) + addendum (1178935):** vdm-rpc `lan` feature
+  (non-default; rcgen 0.13.2 ring-only — no aws-lc-rs/x509-parser;
+  root lock delta exactly rcgen's graph; gtk3/qt locks untouched);
+  start_ex fail-closed posture; per-peer demux via the Conn enum
+  (Plain / Boxed rustls StreamOwned) + SharedConn (Arc<Mutex> split —
+  rustls cannot try_clone); constant-time token check; LanSecrets in
+  their own 0600 file with the cert fingerprint recorded + printed by
+  the daemon and `velocitydm lan-token [--rotate]`; non-loopback-only
+  resource bounds; CI feature steps inside the existing required jobs
+  (names unchanged — branch protection intact); win7 mirrors
+  byte-identical (style-edition divergence only in cli/main, the
+  pre-existing class). Tests: default suite 12 (byte-identity
+  witnesses kept) + feature suite 5 (token matrix over pinned TLS,
+  plain-refused, wildcard-loopback plain path, conn budget both ways,
+  header flood 431, identity stability incl. the fingerprint).
+  Bench A/B (scripts/s8-bench-record.txt): warm pair 0.81 s/158.9 vs
+  0.80 s/159.3 MBps; saturated pair IDENTICAL 12/37 shape both sides —
+  NO REGRESSION (the first pair's ±1-2 conn jitter straddles the
+  canonical shape on BOTH sides: B2 optional-spawn timing noise, not
+  attributable to the one added per-connection branch).
+- **C2b (1c7e315):** Android remote mode — DownloadEngine interface
+  (SegmentEngine adopts it + stopAll for the graceful mode switch);
+  :shared jvmCommon remote package (RemoteConfig https-only
+  validation, TofuTrustManager — first-use pin with the documented
+  MITM window closed by manual fingerprint entry, changed-cert hard
+  fail naming both pins; SseFrameParser 1 MiB DROP cap; RemoteRpc
+  cookie-less/no-redirect/typed failures; RemoteMapper explicit
+  dropped-fields table; RemoteEngine = the gate-0010 consumer
+  contract restated for Android) + TaskState additive notice/userPaused
+  (the .vdmctl schema untouched); :app RemotePrefs/RemoteDialog
+  (Test button)/stale banner/notification tag split/adapter chips.
+  LOCAL BATTERY EXCEEDED THE SPEC: re-provisioned the Android
+  toolchain (system JDK 21 + Gradle 8.9 + cmdline-tools SDK;
+  Maven-Central 429 backoff lesson in the RUNBOOK) and ran
+  `:shared:jvmTest` 53/53 + assembleDebug + assembleRelease (R8)
+  locally, PLUS the env-gated LanDaemonLiveTest against a real
+  lan-featured daemon in-sandbox (wrong token → 401, ping/list, TOFU
+  pin == the printed fingerprint, SSE frame over TLS). CI skips the
+  live test by design.
+- **CI:** 14/14 structure unchanged; one `Test (windows-latest)` red
+  on 1178935 = the DOCUMENTED flake class (session 14:
+  `optional_connections_spawn_when_live_underperform`, "missing
+  ranges", 242 s crawl; the engine diff is EMPTY — vdm-rpc/CLI only);
+  failed job rerun-requested; fresh runs arbitrate.
+- Docs flipped (C3): RPC.md LAN section + wildcard-sentence truth fix;
+  REQUIREMENTS-COVERAGE Android row (+ the stale Compose mentions);
+  S12-PROMOTION-GATES §1.5 Android core-binding cell; README quick-
+  start LAN lines; RUNBOOK "LAN mode" (ops + live-witness recipe +
+  provisioning notes); android/README + ARCHITECTURE remote sections
+  (in C2b); ROADMAP S8 → ACTIVE (W1 DONE; **W2 = NDK/JNI
+  unification, pending its own gate**); issue #5 commented (open
+  until W2).
+- Clean-room: no S11/T2 linkage — no CLEAN_ROOM row owed (explicit in
+  the gate record). No release.yml/packaging/tag/ruleset contact;
+  versionCode/versionName frozen.
+- Next standing queue: S9 (Safari app extension — Xcode-conversion
+  gate; CI macos-latest is the only compile witness class), then S8-W2
+  when its provisioning question is faced, then the owner-gated items.

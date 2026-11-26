@@ -349,3 +349,113 @@ Two truths future sessions would burn time on:
   fix the generator, never hand-edit the test file; any color-math/seed
   change patches Rust → Kotlin → BOTH Swift trees in the same commit
   (rule 12).
+
+## Qt preview (S12-lin3)
+
+The `qt/` tree is the S12-lin3 **preview** (gate 0017): standalone
+cxx-qt 0.10.0 workspace (`=0.10.0` pinned, MSRV 1.85), Qt Quick chrome
+from primitives, in-process core + fixed-port loopback RPC server.
+Ships in no release asset until its promotion gate; `release.yml` and
+the `v*` ruleset are untouched by the stage.
+
+Four truths future sessions would burn time on:
+
+- **Local compile is IMPOSSIBLE here** — the dev sandbox has no Qt and
+  no sudo. The local battery is `cargo generate-lockfile
+  --manifest-path qt/Cargo.toml` + `cargo fmt --manifest-path
+  qt/Cargo.toml --all -- --check` ONLY, PLUS the scratch-crate probe:
+  copy `qt/src/{config,model,tokens}.rs` into a throwaway LIB crate
+  with path deps on `../crates/{vdm-core,vdm-md3}` and run
+  `cargo test` + `cargo clippy --all-targets -- -D warnings` — the
+  pure-logic suites and their lints are then locally verifiable (the
+  probe is a LIB, so `pub` items suppress dead_code — bin-only lint
+  classes like the ROLE_SUBSET round still ride CI).
+- **The canonical witness is the `Linux frontend (Qt)` CI job**
+  (ubuntu-24.04 PINNED — the apt Qt 6.4.2 is frozen against the
+  committed lock; `qt6-base-dev qt6-declarative-dev qt6-base-dev-tools
+  qmake6 libgl1-mesa-dev` + `/usr/lib/qt6/bin` on PATH), fmt → clippy
+  `-D warnings` → test → build, all `--locked`, + the QML PlainText
+  tripwire step. A red job is evidence-then-fix forward; it does NOT
+  block tag cuts (ships nothing — same class as gtk3/swiftui;
+  android-frontend remains the only CI failure that blocks the
+  frozen-asset path).
+- **Push-triggered runs can silently not start** (observed twice:
+  2db01cb, 8358182 — the push lands, no workflow run is created).
+  When a push shows no run: dispatch `ci.yml` manually on main
+  (`POST .../actions/workflows/ci.yml/dispatches {"ref":"main"}`) —
+  ci.yml has `workflow_dispatch:` and dispatching it is safe (the
+  RUNBOOK prohibition is release.yml's dispatch, which would clobber
+  frozen assets).
+- **Lockfile discipline**: `git diff --exit-code qt/Cargo.lock` after
+  any generate-lockfile run; CI builds `--locked` (drift fails CI).
+  The bridge lives in `src/app_model.rs` and is the ONLY Qt-touching
+  Rust file; rendering rules (PlainText everywhere, static QML only)
+  are enforced by the CI tripwire — keep the tripwire regex and the
+  QML comment wording in sync (round-2 lesson: the tripwire greps
+  comments too).
+
+
+## LAN mode (S8-W1, gate 0018)
+
+The daemon's LAN mode (`--addr 0.0.0.0:port` or an explicit LAN IP)
+requires a build with the `lan` feature:
+
+```sh
+cargo build -p velocitydm --features vdm-rpc/lan
+./target/debug/velocitydm daemon --addr 0.0.0.0:36990   # prints token + fingerprint
+./target/debug/velocitydm lan-token                      # reprint both
+./target/debug/velocitydm lan-token --rotate             # new token (cert/pins kept)
+```
+
+**Facts that matter operationally:**
+
+- Secrets live in `velocitydm-lan-secrets.json` beside the config
+  (portable: exe dir). Token lost? `lan-token` reprints it. Full reset:
+  delete the file (new token AND new certificate — every phone must
+  re-pair, including re-pinning).
+- Token rotation keeps the certificate, so TOFU pins survive — only the
+  phone's token field must be updated. A CHANGED certificate is a hard
+  failure on the phone by design (MITM posture): re-pairing after a
+  deliberate identity reset means clearing the stored fingerprint in
+  the Remote dialog.
+- Portable mode keeps secrets beside the binary — if that directory is
+  synced/shared, the token travels with it (documented risk; prefer the
+  config-dir layout when pairing).
+- Loopback clients are NEVER affected: same plain HTTP, no token
+  (byte-identical — the shape tests are the regression net). The
+  wildcard listener demuxes per PEER: loopback peers stay plain,
+  non-loopback peers must do TLS + token.
+- Non-loopback binds WITHOUT the feature fail at startup with a clear
+  error (this closes the old unauthenticated wildcard footgun).
+- CI: the `Test (ubuntu-latest)` job runs
+  `cargo test -p vdm-rpc --features lan --locked` and Clippy runs the
+  feature-scoped clippy — the LAN suite (token matrix, TLS, conn
+  budget, header caps, identity stability) never runs in the default
+  workspace tests.
+- The android-frontend job remains compile + `:shared:jvmTest` witness
+  only; runtime pairing is owner verification (D5:A class).
+
+**Live client-vs-daemon witness (manual, in-sandbox):**
+
+```sh
+cargo build -p velocitydm --features vdm-rpc/lan
+mkdir -p /tmp/vdm-live
+VELOCITYDM_LAN_SECRETS=/tmp/vdm-live/secrets.json \
+  XDG_CONFIG_HOME=/tmp/vdm-live/config \
+  ./target/debug/velocitydm daemon --addr 0.0.0.0:36997 &
+LANIP=$(python3 -c "import socket;s=socket.socket(2,2);s.connect(('8.8.8.8',80));print(s.getsockname()[0])")
+VDM_LAN_TEST_ADDR=$LANIP:36997 VELOCITYDM_LAN_SECRETS=/tmp/vdm-live/secrets.json \
+  gradle -p android :shared:jvmTest --tests 'com.velocitydm.shared.remote.LanDaemonLiveTest'
+```
+
+(env-gated: CI skips it; the recipe exercises the real OkHttp+TOFU
+stack against the real rustls+token daemon — wrong-token 401, ping,
+list, TOFU pin == the printed fingerprint, SSE frame.)
+
+**Toolchain note:** the persistent Android provisioning under
+`tools/` (JDK17/Gradle 8.9/SDK) was lost to a recycle; re-provisioned
+2026-11-26 with the SYSTEM JDK 21 (AGP 8.7 accepts it) + Gradle 8.9 +
+cmdline-tools SDK (platform-34, build-tools 34.0.0) —
+`GRADLE_USER_HOME=tools/gradle-home`, `ANDROID_HOME=tools/android-sdk`.
+Maven Central 429s during first resolution: back off 2-4 minutes and
+rerun; single-worker `--max-workers=2` keeps it polite.
