@@ -12,20 +12,22 @@ same surface.
 
 ## Loopback trust boundary
 
-The daemon is unauthenticated by design and binds loopback only. Three
-request-shape rules keep web pages out while local clients work untouched
-(`crates/vdm-rpc/src/lib.rs`, `host_allowed` + `handle_conn`):
+The daemon is unauthenticated by design and binds loopback only by
+default. Three request-shape rules keep web pages out while local
+clients work untouched (`crates/vdm-rpc/src/lib.rs`, `host_allowed` +
+`handle_conn`):
 
 1. `Host` must name a loopback authority (`127.0.0.0/8`, `localhost`,
    `[::1]`) when the bind is loopback — a rebound attacker hostname can
-   never satisfy this. Wildcard (`0.0.0.0`) binds accept any IP literal;
-   other binds must match the bound host.
-2. Any request carrying `Origin` or `Referer` is refused — browsers always
-   send one on cross-site fetch/sendBeacon/form posts; native clients never
-   do.
+   never satisfy this. Wildcard (`0.0.0.0`) binds are LAN mode (below):
+   loopback peers keep these same rules, non-loopback peers must pass
+   the token gate first; other binds must match the bound host.
+2. Any request carrying `Origin` or `Referer` is refused — browsers
+   always send one on cross-site fetch/sendBeacon/form posts; native
+   clients never do.
 3. `POST /rpc` must be `Content-Type: application/json` — defeats
-   no-cors "simple requests" (`text/plain` form posts) that execute without
-   a CORS preflight.
+   no-cors "simple requests" (`text/plain` form posts) that execute
+   without a CORS preflight.
 
 Outgoing request headers (per-download `options.headers`, referer/cookies
 forwarded from the browser, the configured user-agent) are CRLF/NUL-sanitized
@@ -130,7 +132,67 @@ data: {"type":"task-completed","id":1,"path":"/home/me/Downloads/file.zip"}
 ## `GET /health`
 
 `200 {"ok":true}` — liveness probe. (The CLI's daemon auto-start probes
-`daemon.ping` over `/rpc`.)
+`daemon.ping` over `/rpc`.) In LAN mode the health probe also requires
+the bearer token from non-loopback peers.
+
+## LAN mode (S8-W1, `--features lan`)
+
+Binding a NON-loopback address (`--addr 0.0.0.0:36990` or an explicit
+LAN IP) switches the daemon to LAN mode so a phone (the Android
+remote mode) or other native clients on the network can drive it.
+LAN mode is FAIL-CLOSED:
+
+- Without the `lan` compile feature the daemon REFUSES to start on a
+  non-loopback bind (the historical unauthenticated wildcard bind is
+  closed — it was a footgun).
+- With the feature, every PEER is classified at accept:
+  - **loopback peers** keep the byte-identical plain-HTTP path above
+    (CLI, NMH, GUI, the desktop frontends — all unchanged, no token);
+  - **non-loopback peers** must speak **TLS** (self-signed certificate,
+    rustls, TLS 1.2 kept enabled for Android API 26–28) and present
+    `Authorization: Bearer <token>` on EVERY endpoint (`/rpc`,
+    `/events`, `/health`); plain-HTTP bytes to the TLS path are
+    dropped at the handshake (no HTTP error — fail-closed); a
+    missing/wrong token is `401` + close.
+- Resource bounds for non-loopback peers only (loopback is exempt
+  and unbounded, as before): at most 32 concurrent connections, a
+  10 s read timeout until the first authorized request (then 300 s),
+  and a 128-line / 64 KiB header cap (`431`).
+
+### Secrets (`velocitydm-lan-secrets.json`)
+
+The bearer token (32 random bytes, hex), the certificate + key PEMs
+and the certificate's SHA-256 fingerprint live in their OWN file
+beside the config (portable: exe dir; else
+`$XDG_CONFIG_HOME|$HOME/.config/velocitydm/`) — never inside
+`config.json` (the daemon rewrites that file on every settings
+change). Created `0600` on Unix. The identity is STABLE across
+restarts (TOFU pins survive); `VELOCITYDM_LAN_SECRETS` overrides the
+path (ops/tests).
+
+- The daemon prints the token + fingerprint on a LAN-mode start.
+- `velocitydm lan-token` reprints both; `--rotate` replaces the token
+  only (clients re-pair; TLS pins are kept). Deleting the secrets
+  file regenerates the whole identity.
+
+### Pairing (Android)
+
+1. Desktop: `velocitydm daemon --addr 0.0.0.0:36990` (or a LAN IP) —
+   note the token and fingerprint from the output.
+2. Phone (VelocityDM app → Remote): host, port, token; optionally the
+   fingerprint (pre-pins the daemon and closes the first-connect
+   MITM window; otherwise the app pins on first use — compare it
+   against `velocitydm lan-token` out-of-band).
+
+**Threat model honesty:** the token grants FULL engine control
+(settings incl. proxy configuration and arbitrary `outDir` writes) —
+treat it like a password. TLS is self-signed + TOFU: a network
+attacker positioned before the first pairing can intercept; manual
+fingerprint entry defeats that. Plain SharedPreferences on the phone
+(keystore encryption is a recorded follow-up). Rotation is `lan-token
+--rotate`.
+
+Spec: `docs/SPECS/S8-LAN-RPC-WAVE1.md` (gate 0018).
 
 ## Client notes
 

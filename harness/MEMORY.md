@@ -1513,3 +1513,94 @@ session reads this file first, then `ROADMAP.md`.
   Nothing was silently dropped: S5/S6/S7/S12-lin3 all closed this
   session; S8/S9 gates were NOT run (session budget went to the
   evidence-then-fix convergence + the recycle recovery).
+
+
+## 2026-11-26 (session 22) — S8 wave 1 delivered (gate 0018): LAN mode + Android remote control
+
+- Standing directive (single-session batch implementation + maximum
+  agent parallelization) continued. Reconcile first: origin/main was
+  8 commits ahead — the parallel sessions had already closed S6 (DASH),
+  S7 (SAMPLE-AES + EXT-X-MAP), and S12-lin3 Qt (gate 0017, CI 14/14 at
+  8358182 after SIX evidence-then-fix rounds); the honest standing
+  queue named S8 (own gate) and S9, with S10/T1/T3/D5:A/D6
+  owner-gated. Fast-forwarded to da057d8; local tree clean.
+- **Gate 0018 (S8-W1 activation), five roles dispatched in parallel**
+  (ATKR/FALS/REQ/INT/REL, identical evidence packs): 5×
+  PROCEED-WITH-CONDITIONS, zero BLOCK. The panel earned its keep:
+  ATKR found the live unauthenticated-wildcard footgun (host_allowed's
+  wildcard branch serves full engine control to LAN natives TODAY) and
+  the token-in-EngineConfig silent-destruction path (save_config
+  round-trips + 0644); FALS pinned loopback byte-identity as PEER-
+  scoped not bind-scoped (bind-wise TLS would break every local
+  client), the pre-auth DoS (32 idle LAN sockets wedging loopback
+  slots for 300 s), the SSE consumer contract gap (ticks omit
+  removals; no replay), the silently-dead remote actions/notifications,
+  and the mapping lies (verifying/seeding chip-less, userPaused
+  dropped → stop-window Resume that instantly re-stops); REQ demanded
+  the W1/W2 split honesty (ROADMAP never DONE), explicit non-goals
+  (mDNS/QR), and the owner-verification rows; INT pinned the CI
+  feature-witness hole (a non-default feature compiles in ZERO jobs),
+  the gtk3/qt lock discipline, and the win7 1.75 mirror shape; REL
+  pinned the bench truth (bench-perf drives THROUGH the daemon RPC —
+  the cheap A/B was owed) and the doc-reconciliation duty (the stale
+  wildcard sentence in RPC.md).
+- **C1 (55a9b4f):** gate record + spec, committed BEFORE any
+  implementing commit.
+- **C2 (56ca99e) + addendum (1178935):** vdm-rpc `lan` feature
+  (non-default; rcgen 0.13.2 ring-only — no aws-lc-rs/x509-parser;
+  root lock delta exactly rcgen's graph; gtk3/qt locks untouched);
+  start_ex fail-closed posture; per-peer demux via the Conn enum
+  (Plain / Boxed rustls StreamOwned) + SharedConn (Arc<Mutex> split —
+  rustls cannot try_clone); constant-time token check; LanSecrets in
+  their own 0600 file with the cert fingerprint recorded + printed by
+  the daemon and `velocitydm lan-token [--rotate]`; non-loopback-only
+  resource bounds; CI feature steps inside the existing required jobs
+  (names unchanged — branch protection intact); win7 mirrors
+  byte-identical (style-edition divergence only in cli/main, the
+  pre-existing class). Tests: default suite 12 (byte-identity
+  witnesses kept) + feature suite 5 (token matrix over pinned TLS,
+  plain-refused, wildcard-loopback plain path, conn budget both ways,
+  header flood 431, identity stability incl. the fingerprint).
+  Bench A/B (scripts/s8-bench-record.txt): warm pair 0.81 s/158.9 vs
+  0.80 s/159.3 MBps; saturated pair IDENTICAL 12/37 shape both sides —
+  NO REGRESSION (the first pair's ±1-2 conn jitter straddles the
+  canonical shape on BOTH sides: B2 optional-spawn timing noise, not
+  attributable to the one added per-connection branch).
+- **C2b (1c7e315):** Android remote mode — DownloadEngine interface
+  (SegmentEngine adopts it + stopAll for the graceful mode switch);
+  :shared jvmCommon remote package (RemoteConfig https-only
+  validation, TofuTrustManager — first-use pin with the documented
+  MITM window closed by manual fingerprint entry, changed-cert hard
+  fail naming both pins; SseFrameParser 1 MiB DROP cap; RemoteRpc
+  cookie-less/no-redirect/typed failures; RemoteMapper explicit
+  dropped-fields table; RemoteEngine = the gate-0010 consumer
+  contract restated for Android) + TaskState additive notice/userPaused
+  (the .vdmctl schema untouched); :app RemotePrefs/RemoteDialog
+  (Test button)/stale banner/notification tag split/adapter chips.
+  LOCAL BATTERY EXCEEDED THE SPEC: re-provisioned the Android
+  toolchain (system JDK 21 + Gradle 8.9 + cmdline-tools SDK;
+  Maven-Central 429 backoff lesson in the RUNBOOK) and ran
+  `:shared:jvmTest` 53/53 + assembleDebug + assembleRelease (R8)
+  locally, PLUS the env-gated LanDaemonLiveTest against a real
+  lan-featured daemon in-sandbox (wrong token → 401, ping/list, TOFU
+  pin == the printed fingerprint, SSE frame over TLS). CI skips the
+  live test by design.
+- **CI:** 14/14 structure unchanged; one `Test (windows-latest)` red
+  on 1178935 = the DOCUMENTED flake class (session 14:
+  `optional_connections_spawn_when_live_underperform`, "missing
+  ranges", 242 s crawl; the engine diff is EMPTY — vdm-rpc/CLI only);
+  failed job rerun-requested; fresh runs arbitrate.
+- Docs flipped (C3): RPC.md LAN section + wildcard-sentence truth fix;
+  REQUIREMENTS-COVERAGE Android row (+ the stale Compose mentions);
+  S12-PROMOTION-GATES §1.5 Android core-binding cell; README quick-
+  start LAN lines; RUNBOOK "LAN mode" (ops + live-witness recipe +
+  provisioning notes); android/README + ARCHITECTURE remote sections
+  (in C2b); ROADMAP S8 → ACTIVE (W1 DONE; **W2 = NDK/JNI
+  unification, pending its own gate**); issue #5 commented (open
+  until W2).
+- Clean-room: no S11/T2 linkage — no CLEAN_ROOM row owed (explicit in
+  the gate record). No release.yml/packaging/tag/ruleset contact;
+  versionCode/versionName frozen.
+- Next standing queue: S9 (Safari app extension — Xcode-conversion
+  gate; CI macos-latest is the only compile witness class), then S8-W2
+  when its provisioning question is faced, then the owner-gated items.

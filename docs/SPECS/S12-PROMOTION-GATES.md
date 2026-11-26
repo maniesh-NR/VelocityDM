@@ -70,7 +70,7 @@ replaces (gate 0005 wording), not against the desktop settings surface.
 
 | Aspect | egui | Win32 | Slint | Swift (AppKit) | GTK3 | SwiftUI | Qt Quick | Android |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Core binding | in-process | in-process | in-process | remote JSON-RPC (loopback, trust-boundary compliant) | in-process | remote JSON-RPC (loopback, trust-boundary compliant; cookie-less sessions + redirect refusal) | in-process (fixed-port loopback RPC server for external clients; cxx-qt bridge) | in-process Kotlin-port engine (S8 owns unification) |
+| Core binding | in-process | in-process | in-process | remote JSON-RPC (loopback, trust-boundary compliant) | in-process | remote JSON-RPC (loopback, trust-boundary compliant; cookie-less sessions + redirect refusal) | in-process (fixed-port loopback RPC server for external clients; cxx-qt bridge) | in-process Kotlin-port engine locally + OPTIONAL remote control of a desktop daemon (S8-W1: authenticated TLS + bearer token, TOFU-pinned, SSE consumer per gate-0010; unification onto the Rust core remains S8-W2) |
 | Progress refresh | repaint loop | `SetTimer` 200 ms | Timer | SSE stream (gate 0010) + stream-state recovery | glib timeout 200 ms poll (in-process; SSE change is Swift-only) | SSE stream (the gate-0010 consumer contract restated; stream-state recovery incl. launch-with-dead-daemon idempotency) | QML `Timer` 200 ms poll (SSE deferred — recorded in RUNBOOK/README) | ViewModel flow |
 
 ## 2. Packaging plan (what changes, per surface, at promotion)

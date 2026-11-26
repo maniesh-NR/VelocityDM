@@ -393,3 +393,69 @@ Four truths future sessions would burn time on:
   are enforced by the CI tripwire — keep the tripwire regex and the
   QML comment wording in sync (round-2 lesson: the tripwire greps
   comments too).
+
+
+## LAN mode (S8-W1, gate 0018)
+
+The daemon's LAN mode (`--addr 0.0.0.0:port` or an explicit LAN IP)
+requires a build with the `lan` feature:
+
+```sh
+cargo build -p velocitydm --features vdm-rpc/lan
+./target/debug/velocitydm daemon --addr 0.0.0.0:36990   # prints token + fingerprint
+./target/debug/velocitydm lan-token                      # reprint both
+./target/debug/velocitydm lan-token --rotate             # new token (cert/pins kept)
+```
+
+**Facts that matter operationally:**
+
+- Secrets live in `velocitydm-lan-secrets.json` beside the config
+  (portable: exe dir). Token lost? `lan-token` reprints it. Full reset:
+  delete the file (new token AND new certificate — every phone must
+  re-pair, including re-pinning).
+- Token rotation keeps the certificate, so TOFU pins survive — only the
+  phone's token field must be updated. A CHANGED certificate is a hard
+  failure on the phone by design (MITM posture): re-pairing after a
+  deliberate identity reset means clearing the stored fingerprint in
+  the Remote dialog.
+- Portable mode keeps secrets beside the binary — if that directory is
+  synced/shared, the token travels with it (documented risk; prefer the
+  config-dir layout when pairing).
+- Loopback clients are NEVER affected: same plain HTTP, no token
+  (byte-identical — the shape tests are the regression net). The
+  wildcard listener demuxes per PEER: loopback peers stay plain,
+  non-loopback peers must do TLS + token.
+- Non-loopback binds WITHOUT the feature fail at startup with a clear
+  error (this closes the old unauthenticated wildcard footgun).
+- CI: the `Test (ubuntu-latest)` job runs
+  `cargo test -p vdm-rpc --features lan --locked` and Clippy runs the
+  feature-scoped clippy — the LAN suite (token matrix, TLS, conn
+  budget, header caps, identity stability) never runs in the default
+  workspace tests.
+- The android-frontend job remains compile + `:shared:jvmTest` witness
+  only; runtime pairing is owner verification (D5:A class).
+
+**Live client-vs-daemon witness (manual, in-sandbox):**
+
+```sh
+cargo build -p velocitydm --features vdm-rpc/lan
+mkdir -p /tmp/vdm-live
+VELOCITYDM_LAN_SECRETS=/tmp/vdm-live/secrets.json \
+  XDG_CONFIG_HOME=/tmp/vdm-live/config \
+  ./target/debug/velocitydm daemon --addr 0.0.0.0:36997 &
+LANIP=$(python3 -c "import socket;s=socket.socket(2,2);s.connect(('8.8.8.8',80));print(s.getsockname()[0])")
+VDM_LAN_TEST_ADDR=$LANIP:36997 VELOCITYDM_LAN_SECRETS=/tmp/vdm-live/secrets.json \
+  gradle -p android :shared:jvmTest --tests 'com.velocitydm.shared.remote.LanDaemonLiveTest'
+```
+
+(env-gated: CI skips it; the recipe exercises the real OkHttp+TOFU
+stack against the real rustls+token daemon — wrong-token 401, ping,
+list, TOFU pin == the printed fingerprint, SSE frame.)
+
+**Toolchain note:** the persistent Android provisioning under
+`tools/` (JDK17/Gradle 8.9/SDK) was lost to a recycle; re-provisioned
+2026-11-26 with the SYSTEM JDK 21 (AGP 8.7 accepts it) + Gradle 8.9 +
+cmdline-tools SDK (platform-34, build-tools 34.0.0) —
+`GRADLE_USER_HOME=tools/gradle-home`, `ANDROID_HOME=tools/android-sdk`.
+Maven Central 429s during first resolution: back off 2-4 minutes and
+rerun; single-worker `--max-workers=2` keeps it polite.

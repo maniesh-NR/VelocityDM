@@ -13,11 +13,11 @@ numbers refer to verified artifacts (tests in-tree, binaries built).
 | Linux Mint Cinnamon/MATE/Xfce/Debian | Done | glibc build verified end-to-end; `.desktop` + install.sh; musl static build for older baselines |
 | Flatpak | Done | `packaging/flatpak/io.github.velocitydm.VelocityDM.yml` |
 | Portable version | Done | `--portable` flag (config beside the binary) + launcher script |
-| Android 8+ armv7/arm64 with 1DM-style features | Done (source) | `android/` — Compose app, segmented engine, sniffer browser, takeover, foreground service; APK must be built with the Android SDK (README) |
+| Android 8+ armv7/arm64 with 1DM-style features | Done (source) | `android/` — Views app, segmented engine, sniffer browser, takeover, foreground service; APK must be built with the Android SDK (README); remote mode (S8-W1) pairs with a desktop daemon over authenticated TLS + token (LAN) |
 | Browser extensions Chrome/Safari/Edge/Firefox/Opera (MV3) | Done | 4 zips built (`extensions/dist`), Safari conversion guide; MV3 service workers; 64 node assertions |
 | Video stream sniffing/capture | Done | Extension `webRequest` sniffing with quality labels; HLS engine with AES-128 + SAMPLE-AES (AAC/TS) + EXT-X-MAP init sections; DASH `.mpd` engine (S6: static manifests — SegmentTemplate/SegmentTimeline/SegmentList/SegmentBase+SIDX, DRM loud-fail); Android sniffer browser |
 | Rust engine | Done | `vdm-core` (engine), `vdm-rpc`, `velocitydm`, `velocitydm-nmh` |
-| Material Design 3 GUI | Done | egui Material You theme (dynamic color seeds, light + dark; desktop), Compose MD3 + wallpaper dynamic color on Android 12+ (Android) |
+| Material Design 3 GUI | Done | egui Material You theme (dynamic color seeds, light + dark; desktop), MDC Views + wallpaper dynamic color on Android 12+ (Android; S12-e) |
 | GUI/engine decoupled, non-blocking channels | Done | Engine threads ↔ `EventBus` (sync channel) ↔ RPC SSE / GUI poll at 5–10 Hz; GUI is a client of the same engine API |
 | Refresh-rate limiting (10–30 Hz) | Done | SSE ticks 10 Hz, GUI repaint request 200 ms (5 Hz), progress updates ≥ 100 ms |
 | Zero-copy streaming writes | Done | 64–256 KiB read buffers stream straight to `pwrite`-style positioned writes on the pre-allocated `.part`; no full-file buffering (verified: 6 MB RSS during 3 MB transfer) |

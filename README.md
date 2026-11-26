@@ -37,6 +37,11 @@ Improvements adopted from XDM, Motrix and Gopeed are itemized in
 ```sh
 # daemon + CLI
 velocitydm daemon                          # engine + JSON-RPC on 127.0.0.1:36990
+velocitydm daemon --addr 0.0.0.0:36990    # LAN mode (build with --features lan):
+                                           # TLS + bearer token for LAN peers;
+                                           # prints the token + cert fingerprint
+                                           # (pair the Android remote mode with it)
+velocitydm lan-token                       # reprint the LAN token + fingerprint
 velocitydm add https://example.com/big.iso --conn 8
 velocitydm add https://cdn/file.m3u8 --quality best
 velocitydm batch "https://site/pic[001:120].jpg"
