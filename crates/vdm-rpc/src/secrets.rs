@@ -32,6 +32,11 @@ pub struct LanSecrets {
     /// Certificate private key PEM.
     #[serde(default)]
     pub key: String,
+    /// SHA-256 fingerprint of the certificate DER (hex) — the value
+    /// remote clients pin (TOFU); printed by the daemon/CLI for
+    /// out-of-band comparison (gate 0018 ATKR-5).
+    #[serde(default)]
+    pub fingerprint: String,
 }
 
 /// Where the LAN secrets file lives: `$VELOCITYDM_LAN_SECRETS` (test
@@ -87,6 +92,13 @@ pub fn load_or_generate(portable: bool, with_cert: bool) -> Result<LanSecrets, S
                  (rebuild vdm-rpc with --features lan)"
                 .to_string());
         }
+    }
+    // backfill the fingerprint for certs generated before the field
+    // existed (or hand-migrated secrets files)
+    #[cfg(feature = "lan")]
+    if !secrets.cert.trim().is_empty() && secrets.fingerprint.trim().is_empty() {
+        secrets.fingerprint = crate::lan::certificate_fingerprint(&secrets.cert)?;
+        changed = true;
     }
     if changed || !path.exists() {
         save(&secrets, &path)?;

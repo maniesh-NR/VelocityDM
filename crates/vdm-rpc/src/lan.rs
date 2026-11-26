@@ -75,6 +75,17 @@ fn pem_to_der(pem: &str, expected_label: &str) -> Result<Vec<u8>, String> {
     Ok(parsed.into_contents())
 }
 
+/// SHA-256 fingerprint of the certificate DER (lowercase hex) — the
+/// value remote clients pin (TOFU) and the daemon/CLI print for
+/// out-of-band comparison.
+pub fn certificate_fingerprint(cert_pem: &str) -> Result<String, String> {
+    let der = pem_to_der(cert_pem, "CERTIFICATE")?;
+    Ok(vdm_core::checksum::digest_bytes(
+        vdm_core::checksum::Algo::Sha256,
+        &der,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,6 +96,11 @@ mod tests {
         assert!(cert.starts_with("-----BEGIN CERTIFICATE-----"));
         assert!(key.starts_with("-----BEGIN PRIVATE KEY-----"));
         let cfg = server_config(&cert, &key).unwrap();
+        // fingerprint: stable DER digest, lowercase hex
+        let fp = certificate_fingerprint(&cert).unwrap();
+        assert_eq!(fp.len(), 64);
+        assert_eq!(certificate_fingerprint(&cert).unwrap(), fp);
+        assert!(fp.chars().all(|c| c.is_ascii_hexdigit()));
         // rustls keeps TLS 1.2 available (Android API 26-28 floor): a
         // 1.2-only client must be able to negotiate. The supported
         // versions list is private API; the honest public witness is

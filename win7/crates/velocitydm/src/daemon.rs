@@ -58,10 +58,15 @@ pub fn run(addr: &str, portable: bool) -> i32 {
     // binds never have a token.
     if !vdm_rpc::bind_is_loopback(addr) {
         match vdm_rpc::secrets::load_or_generate(portable, false) {
-            Ok(s) => println!(
-                "LAN mode: non-loopback peers require TLS + this bearer token: {}",
-                s.token
-            ),
+            Ok(s) => {
+                println!(
+                    "LAN mode: non-loopback peers require TLS + this bearer token: {}",
+                    s.token
+                );
+                if !s.fingerprint.is_empty() {
+                    println!("LAN certificate fingerprint (SHA-256): {}", s.fingerprint);
+                }
+            }
             Err(e) => eprintln!("warning: cannot read LAN token: {}", e),
         }
     }

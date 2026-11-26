@@ -43,13 +43,16 @@ pub fn ensure_daemon(addr: &str) -> Result<(), String> {
 /// clients must re-pair with the new token.
 pub fn lan_token(portable: bool, rotate: bool) -> i32 {
     let result = if rotate {
-        vdm_rpc::secrets::rotate_token(portable)
+        vdm_rpc::secrets::rotate_token(portable).map(|token| (token, String::new()))
     } else {
-        vdm_rpc::secrets::load_or_generate(portable, false).map(|s| s.token)
+        vdm_rpc::secrets::load_or_generate(portable, false).map(|s| (s.token, s.fingerprint))
     };
     match result {
-        Ok(token) => {
+        Ok((token, fingerprint)) => {
             println!("{}", token);
+            if !fingerprint.is_empty() {
+                println!("certificate fingerprint (SHA-256): {}", fingerprint);
+            }
             if rotate {
                 eprintln!("token rotated; re-pair connected LAN clients (they keep their TLS pin)");
             }

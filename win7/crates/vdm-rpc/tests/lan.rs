@@ -308,5 +308,7 @@ fn lan_secrets_identity_is_stable_across_restarts() {
     let s2 = secrets::load_or_generate(false, false).unwrap();
     assert_eq!(s1.token, s2.token, "token stable across restarts");
     assert_eq!(s1.cert, s2.cert, "cert (TOFU identity) stable");
+    assert!(!s1.fingerprint.is_empty(), "fingerprint recorded");
+    assert_eq!(s1.fingerprint, s2.fingerprint, "fingerprint stable");
     clear_secrets_env(&dir);
 }
