@@ -69,6 +69,14 @@ class Chrome(private val ctx: Context) {
     fun error(): Int =
         if (dynamic) attr(appcompatR.attr.colorError, scheme.error) else scheme.error
 
+    /** Error banner surface (S8-W1 remote stale banner). */
+    fun errorContainer(): Int =
+        if (dynamic) attr(materialR.attr.colorErrorContainer, scheme.errorContainer) else scheme.errorContainer
+
+    /** Text on the error-container surface. */
+    fun onErrorContainer(): Int =
+        if (dynamic) attr(materialR.attr.colorOnErrorContainer, scheme.onErrorContainer) else scheme.onErrorContainer
+
     /** Subtle borders/dividers. */
     fun outlineVariant(): Int =
         if (dynamic) attr(materialR.attr.colorOutlineVariant, scheme.outlineVariant) else scheme.outlineVariant

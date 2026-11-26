@@ -47,7 +47,7 @@ class DownloadService : Service() {
             }
         }
 
-        fun notify(context: Context, t: TaskState?) {
+        fun notify(context: Context, t: TaskState?, remote: Boolean = false) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
             if (nm.getNotificationChannel(CHANNEL) == null) {
                 nm.createNotificationChannel(
@@ -87,7 +87,14 @@ class DownloadService : Service() {
                     )
                 )
                 .build()
-            nm.notify(t.id.toInt() + 1000, n)
+            // S8-W1: local and remote ids live in independent
+            // namespaces — the tag keeps notification ids from
+            // colliding across the two stores.
+            nm.notify(
+                if (remote) "remote" else "local",
+                t.id.toInt() + 1000,
+                n
+            )
         }
 
         private fun humanSpeed(bps: Long): String {

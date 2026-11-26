@@ -20,10 +20,12 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.velocitydm.android.browser.BrowserActivity
 import com.velocitydm.android.data.DownloadsViewModel
+import com.velocitydm.android.data.RemotePrefs
 import com.velocitydm.android.ui.AddDialog
 import com.velocitydm.android.ui.Chrome
 import com.velocitydm.android.ui.DownloadsAdapter
 import com.velocitydm.android.ui.Md3Theme
+import com.velocitydm.android.ui.RemoteDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,6 +63,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var chrome: Chrome
     private lateinit var adapter: DownloadsAdapter
     private lateinit var emptyView: TextView
+    private lateinit var staleBanner: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,10 +74,21 @@ class MainActivity : ComponentActivity() {
         // handle VIEW intents (http download links, .torrent, magnet)
         intent?.dataString?.let { viewModel.add(it) }
 
+        // S8-W1: apply the persisted engine mode (remote default OFF —
+        // local behavior unchanged until the user pairs a daemon)
+        viewModel.applyMode(RemotePrefs.read(this))
+
         lifecycleScope.launch {
             viewModel.tasks.collect { list ->
                 adapter.submit(list)
                 emptyView.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+            }
+        }
+        lifecycleScope.launch {
+            viewModel.remoteStatus.collect { st ->
+                staleBanner.visibility =
+                    if (st.active && st.stale) View.VISIBLE else View.GONE
+                staleBanner.text = "${st.failure ?: "daemon unreachable"} — rows stale"
             }
         }
     }
@@ -91,6 +105,9 @@ class MainActivity : ComponentActivity() {
                     R.id.action_add -> {
                         showAddDialog(); true
                     }
+                    R.id.action_remote -> {
+                        showRemoteDialog(); true
+                    }
                     R.id.action_browser -> {
                         browserLauncher.launch(
                             android.content.Intent(this@MainActivity, BrowserActivity::class.java)
@@ -103,6 +120,20 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(
             toolbar,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+
+        // S8-W1: dead-daemon banner for remote mode (rows freeze while
+        // the 2 s probe retries; recovery is automatic)
+        staleBanner = TextView(this).apply {
+            textSize = 12f
+            setTextColor(chrome.onErrorContainer())
+            setBackgroundColor(chrome.errorContainer())
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            visibility = View.GONE
+        }
+        root.addView(
+            staleBanner,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
 
@@ -165,6 +196,13 @@ class MainActivity : ComponentActivity() {
     private fun showAddDialog() {
         AddDialog(this, chrome) { url, name, limitBps ->
             viewModel.add(url, name.ifBlank { null }, limitBps)
+        }.show()
+    }
+
+    private fun showRemoteDialog() {
+        RemoteDialog(this, chrome) { settings ->
+            RemotePrefs.write(this, settings)
+            viewModel.applyMode(settings)
         }.show()
     }
 

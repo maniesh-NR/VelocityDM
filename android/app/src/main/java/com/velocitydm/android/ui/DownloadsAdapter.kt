@@ -98,6 +98,15 @@ class DownloadsAdapter(private val chrome: Chrome) : RecyclerView.Adapter<Downlo
         }
         col.addView(error, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
+        // Notice line (S8-W1: the daemon's advisory hints — proxy
+        // warnings, recovery notes; local tasks never set it)
+        val notice = TextView(ctx).apply {
+            textSize = 11f
+            setTextColor(chrome.onSurfaceVariant())
+            visibility = View.GONE
+        }
+        col.addView(notice, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
         card.addView(
             col,
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -107,7 +116,7 @@ class DownloadsAdapter(private val chrome: Chrome) : RecyclerView.Adapter<Downlo
         ).apply { bottomMargin = dp(ctx, 6) }
         card.layoutParams = lp
 
-        return TaskViewHolder(card, filename, state, progress, stats, action, remove, error)
+        return TaskViewHolder(card, filename, state, progress, stats, action, remove, error, notice)
     }
 
     private fun borderlessButton(ctx: android.content.Context, text: String): MaterialButton =
@@ -124,7 +133,8 @@ class DownloadsAdapter(private val chrome: Chrome) : RecyclerView.Adapter<Downlo
             when (t.state) {
                 "completed" -> chrome.tertiary()
                 "failed" -> chrome.error()
-                "downloading" -> chrome.primary()
+                "downloading", "verifying" -> chrome.primary()
+                "seeding" -> chrome.tertiary()
                 else -> chrome.onSurfaceVariant()
             }
         )
@@ -138,10 +148,19 @@ class DownloadsAdapter(private val chrome: Chrome) : RecyclerView.Adapter<Downlo
                 holder.action.setOnClickListener { onPause(t.id) }
             }
             "paused", "failed" -> {
-                holder.action.visibility = View.VISIBLE
-                holder.action.text = "Resume"
-                holder.action.setOnClickListener { onResume(t.id) }
+                // S8-W1: a daemon-paused task (stop window, userPaused
+                // = false) would instantly re-stop on resume — no
+                // action is offered; the notice line explains why.
+                if (t.state == "failed" || t.userPaused != false) {
+                    holder.action.visibility = View.VISIBLE
+                    holder.action.text = "Resume"
+                    holder.action.setOnClickListener { onResume(t.id) }
+                } else {
+                    holder.action.visibility = View.GONE
+                }
             }
+            // verifying/seeding/completed: no pause (the card keeps
+            // Remove in every state)
             else -> holder.action.visibility = View.GONE
         }
         holder.remove.setOnClickListener { onRemove(t.id) }
@@ -150,6 +169,12 @@ class DownloadsAdapter(private val chrome: Chrome) : RecyclerView.Adapter<Downlo
             holder.error.visibility = View.VISIBLE
         } else {
             holder.error.visibility = View.GONE
+        }
+        if (t.notice != null) {
+            holder.notice.text = t.notice
+            holder.notice.visibility = View.VISIBLE
+        } else {
+            holder.notice.visibility = View.GONE
         }
     }
 
@@ -162,6 +187,7 @@ class DownloadsAdapter(private val chrome: Chrome) : RecyclerView.Adapter<Downlo
         val action: MaterialButton,
         val remove: MaterialButton,
         val error: TextView,
+        val notice: TextView,
     ) : RecyclerView.ViewHolder(view)
 
     private fun dp(ctx: android.content.Context, v: Int): Int =

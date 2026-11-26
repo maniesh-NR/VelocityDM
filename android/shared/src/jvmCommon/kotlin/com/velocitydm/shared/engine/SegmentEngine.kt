@@ -37,19 +37,19 @@ import java.util.concurrent.atomic.AtomicLong
  * zero; a missing server ETag only resumes on an exact size match),
  * and every filename passes [sanitizeFilename].
  */
-class SegmentEngine(private val scope: CoroutineScope) {
+class SegmentEngine(private val scope: CoroutineScope) : DownloadEngine {
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    val tasks = mutableListOf<TaskState>()
+    override val tasks = mutableListOf<TaskState>()
     private val mutex = Mutex()
     private val jobs = mutableMapOf<Long, Job>()
     private val stops = mutableMapOf<Long, AtomicBoolean>()
-    var listener: ((TaskState) -> Unit)? = null
+    override var listener: ((TaskState) -> Unit)? = null
 
-    suspend fun add(url: String, dirPath: String, opts: DownloadOptions): Long = mutex.withLock {
+    override suspend fun add(url: String, dirPath: String, opts: DownloadOptions): Long = mutex.withLock {
         val id = (tasks.maxOfOrNull { it.id } ?: 0L) + 1
         val filename = opts.filename?.let { sanitizeFilename(it) } ?: filenameFromUrl(url)
         tasks.add(TaskState(id, url, filename, dirPath))
@@ -57,11 +57,11 @@ class SegmentEngine(private val scope: CoroutineScope) {
         id
     }
 
-    fun pause(id: Long) {
+    override fun pause(id: Long) {
         stops[id]?.set(true)
     }
 
-    suspend fun resume(id: Long) = mutex.withLock {
+    override suspend fun resume(id: Long) = mutex.withLock {
         val t = tasks.firstOrNull { it.id == id } ?: return
         if (t.state == "paused" || t.state == "failed") {
             stops[id] = AtomicBoolean(false)
@@ -69,10 +69,23 @@ class SegmentEngine(private val scope: CoroutineScope) {
         }
     }
 
-    suspend fun remove(id: Long) = mutex.withLock {
-        stops[id]?.set(true)
-        jobs.remove(id)?.cancel()
-        tasks.removeAll { it.id == id }
+    override suspend fun remove(id: Long) {
+        mutex.withLock {
+            stops[id]?.set(true)
+            jobs.remove(id)?.cancel()
+            tasks.removeAll { it.id == id }
+        }
+    }
+
+    /**
+     * S8-W1: pause every active task (graceful — workers check their
+     * stop flag each 64 KiB and save resume state). Called when the
+     * user switches the app from local to remote mode so no local
+     * download keeps running invisibly; tasks resume when the user
+     * switches back (crash-safe .part/.vdmctl state on disk).
+     */
+    fun stopAll() {
+        stops.values.forEach { it.set(true) }
     }
 
     // ----------------------------------------------------------------- core

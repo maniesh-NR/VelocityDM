@@ -6,6 +6,10 @@
         android:title="Add"
         android:showAsAction="always" />
     <item
+        android:id="@+id/action_remote"
+        android:title="Remote"
+        android:showAsAction="never" />
+    <item
         android:id="@+id/action_browser"
         android:title="Browser"
         android:showAsAction="always" />

@@ -85,3 +85,40 @@ Colors resolve per element via `ui/Chrome.kt`:
 - Cleartext: the manifest `usesCleartextTraffic` attribute is the one
   source of truth (the dead, unreferenced network security config XML
   was removed).
+
+
+## Remote mode (S8-W1, gate 0018)
+
+`data/DownloadsViewModel` holds BOTH engines behind the shared
+`engine/DownloadEngine` interface: `SegmentEngine` (local, Kotlin) and
+`remote/RemoteEngine` (:shared jvmCommon — a remote-control client of
+the desktop daemon). The mode is a persisted setting (`RemotePrefs`,
+default OFF — local behavior is unchanged until pairing).
+
+- **RemoteEngine** implements the gate-0010 SSE consumer contract:
+  initial `downloads.list`; `tasks` ticks merge in place keyed by id;
+  membership/metadata changes and non-tick events coalesce into a
+  150 ms re-list; ticks are dropped inside the resync window so the
+  full re-list precedes any merge after (re)connect; a dead stream
+  freezes rows (stale banner) and probes every 2 s — probe failures
+  never mutate the list.
+- **RemoteRpc** (OkHttp): cookie-less, redirects refused, bearer token
+  on every request, dedicated no-read-timeout SSE client; failures are
+  typed (unreachable / 401 / TLS).
+- **TofuTrustManager**: first-use pins the daemon certificate's SHA-256
+  (the MITM window — mitigated by entering the fingerprint printed by
+  `velocitydm lan-token`); a changed certificate is a hard failure.
+- **Mapping** (`remote/RemoteMapper`): the explicit snapshot->TaskState
+  table — state/error/notice/userPaused pass through (verifying and
+  seeding render as distinct chips); etaSecs/connections/peers/seeds/
+  priority/startAt/checksumOk/createdAt are dropped (the card renders
+  none of them).
+- **Mode switch**: leaving local calls `SegmentEngine.stopAll()`
+  (graceful pause, resumable); leaving remote closes the stream only
+  (the daemon is untouched). Lists are never merged (independent id
+  namespaces); notifications use distinct tags (`local`/`remote`).
+- **Tests**: `:shared:jvmTest` covers the parser, mapper, config
+  validation and TOFU decision (fixed OpenSSL fixtures); the live
+  stack (OkHttp client <-> rustls daemon) is witnessed by the env-gated
+  `LanDaemonLiveTest` (runbook recipe) and by the Rust-side feature
+  suite in `crates/vdm-rpc/tests/lan.rs`.

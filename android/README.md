@@ -52,7 +52,39 @@ gradle -p android :app:assembleRelease  # minified release (R8)
 One universal APK per release (`velocitydm-<ver>-android.apk`); there
 are no per-ABI splits.
 
-> Note: the Android engine is Kotlin-only; BitTorrent/HLS stay on the
-> desktop Rust engine (the RPC protocol is shared, so a desktop daemon
-> can also be reached over LAN in a future release — S8 also owns
-> unifying the Android engine onto the Rust core).
+> Note: the local engine is Kotlin-only; BitTorrent/HLS/DASH downloads
+> require the desktop Rust engine. Since S8-W1 the app can PAIR with a
+> desktop daemon and remote-control it over the LAN (below); S8's
+> second half (unifying the local engine onto the Rust core) is still
+> pending its own gate.
+
+## Remote mode (S8-W1)
+
+The toolbar overflow menu gains **Remote**: pair the phone with a
+desktop daemon running in LAN mode.
+
+1. On the desktop: `velocitydm daemon --addr 0.0.0.0:36990` — the
+   daemon prints the bearer token and the certificate fingerprint
+   (`velocitydm lan-token` reprints them; `--rotate` replaces the
+   token).
+2. On the phone: Remote dialog -> enable, enter the desktop's host,
+   port, and token (optionally the fingerprint, which pre-pins the
+   daemon and closes the first-connect window). **Test** probes
+   `daemon.ping` and reports honestly.
+3. In remote mode the phone is a remote control: adds send
+   url + filename only (the daemon's downloadDir owns placement), the
+   task list is the daemon's (states `verifying`/`seeding` included),
+   and the stale banner appears while the daemon is unreachable (rows
+   freeze; a 2 s probe reconnects automatically).
+
+Security posture (spec `docs/SPECS/S8-LAN-RPC-WAVE1.md`): non-loopback
+daemon peers require TLS (self-signed certificate) + the bearer token;
+the phone pins the certificate fingerprint on first use (TOFU) — a
+later change is a hard failure, never silently re-pinned. Switching
+local <-> remote pauses local tasks gracefully (resumable via
+`.part`/`.vdmctl`); the two task lists are never merged. The token is
+stored in app-private SharedPreferences (a keystore-encrypted store is
+a recorded follow-up). Desktop snapshot fields the card does not
+render (BT p/s, ETA, connections, peers/seeds) are dropped (see the
+mapping table in the spec); real-device pairing/Doze behavior is an
+owner-verification item, not CI-tested.
