@@ -1585,11 +1585,20 @@ session reads this file first, then `ROADMAP.md`.
   lan-featured daemon in-sandbox (wrong token → 401, ping/list, TOFU
   pin == the printed fingerprint, SSE frame over TLS). CI skips the
   live test by design.
-- **CI:** 14/14 structure unchanged; one `Test (windows-latest)` red
-  on 1178935 = the DOCUMENTED flake class (session 14:
-  `optional_connections_spawn_when_live_underperform`, "missing
-  ranges", 242 s crawl; the engine diff is EMPTY — vdm-rpc/CLI only);
-  failed job rerun-requested; fresh runs arbitrate.
+- **CI: 14/14 ALL-GREEN at fb18a108** (8 required + 6 preview, incl.
+  the new LAN feature steps and the Android tree). Two flake
+  arbitrations on the way, both the documented runner-flake class:
+  `Test (windows-latest)` red on 1178935
+  (`optional_connections_spawn_when_live_underperform`, "missing
+  ranges", 242 s crawl — session-14 signature) and `Test
+  (ubuntu-latest)` red on fb18a108
+  (`inconsistent_edge_triggers_single_connection_recovery`,
+  http_engine.rs:791 — the EXACT gate-0017 flake, which fired on a
+  qt-only diff there). Both times: the vdm-core diff is EMPTY
+  (vdm-core cannot depend on vdm-rpc), 5/5 local repetitions green,
+  and the job rerun PASSED. Watch-item stands: if the B1-audit flake
+  recurs, instrument the pool/release accounting under extreme runner
+  slowness before touching anything else.
 - Docs flipped (C3): RPC.md LAN section + wildcard-sentence truth fix;
   REQUIREMENTS-COVERAGE Android row (+ the stale Compose mentions);
   S12-PROMOTION-GATES §1.5 Android core-binding cell; README quick-
@@ -1603,4 +1612,9 @@ session reads this file first, then `ROADMAP.md`.
   versionCode/versionName frozen.
 - Next standing queue: S9 (Safari app extension — Xcode-conversion
   gate; CI macos-latest is the only compile witness class), then S8-W2
-  when its provisioning question is faced, then the owner-gated items.
+  when its provisioning question is faced, then the owner-gated items
+  (S10 Flathub account, T1/T3 Windows VM, D5:A promotions, D6
+  milestone shape). S9's gate was NOT run this session — the budget
+  went to S8-W1's full arc (gate + Rust + Android + docs + backup +
+  two CI flake arbitrations + the Android/Gradle toolchain
+  re-provision); nothing was silently dropped.
