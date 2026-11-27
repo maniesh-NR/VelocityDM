@@ -46,3 +46,6 @@ SHA256SUMS-*.txt
 # S12-lin3 Qt frontend build artifacts
 /qt/target
 android/.kotlin/
+
+# S9: the CI converter witness builds into an ephemeral, gitignored dir
+extensions/safari/build/

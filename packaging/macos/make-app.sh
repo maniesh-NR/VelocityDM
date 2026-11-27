@@ -28,7 +28,7 @@ cat > "$APP/Contents/Resources/com.velocitydm.nmh.json" << 'NMHEOF'
   "description": "VelocityDM native messaging host",
   "path": "/Applications/VelocityDM.app/Contents/MacOS/velocitydm-nmh",
   "type": "stdio",
-  "allowed_extensions": ["velocitydm@velocitydm.local"]
+  "allowed_extensions": ["velocitydm@velocitydm.example"]
 }
 NMHEOF
 # User-level NMH registration for Chromium browsers on macOS.

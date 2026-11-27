@@ -169,6 +169,64 @@ jobs:
           cd macos-swiftui
           swift test
 
+  # S9 (gate 0019, docs/SPECS/S9-SAFARI-XCODE.md rule 4): the ONLY Apple
+  # witness for the Safari conversion — the dev sandbox is Linux with no
+  # Xcode. NON-required preview: it witnesses COMPILE + CONVERT only, never
+  # "works in Safari" (loading needs signing; distribution is the owner
+  # Apple-ID lane, W2). Converter output is ephemeral (gitignored
+  # extensions/safari/build/) — shape-based assertions only, never
+  # byte-diffs; manifest warnings are informational by Apple's own docs.
+  safari-conversion:
+    name: Safari app extension (Xcode conversion)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      # macos-14 was retired 2026-11-02; macos-latest = macOS 26 arm64 today.
+      # Xcode 26 renamed the tool safari-web-extension-packager — probe both.
+      - name: log the Xcode in use
+        run: xcodebuild -version
+      - name: build the real ship shape (five variants; safari stays unpacked)
+        run: bash scripts/build-ext.sh
+      - name: locate the packager (Xcode 26 renamed the converter)
+        id: tool
+        run: |
+          if xcrun -f safari-web-extension-packager 2>/dev/null; then
+            echo "tool=safari-web-extension-packager" >> "$GITHUB_OUTPUT"
+          else
+            xcrun -f safari-web-extension-converter
+            echo "tool=safari-web-extension-converter" >> "$GITHUB_OUTPUT"
+          fi
+      - name: convert the safari variant headlessly
+        run: |
+          xcrun "${{ steps.tool.outputs.tool }}" extensions/dist/safari \
+            --project-location extensions/safari/build \
+            --app-name VelocityDM \
+            --bundle-identifier com.velocitydm.safari \
+            --swift --macos-only --copy-resources \
+            --no-open --no-prompt --force
+      - name: generated-project shape assertions
+        run: |
+          xcodebuild -project extensions/safari/build/VelocityDM/VelocityDM.xcodeproj \
+            -list | tee list.txt
+          grep -q "VelocityDM" list.txt
+          grep -q "VelocityDM Extension" list.txt
+      - name: unsigned build witness
+        run: |
+          xcodebuild \
+            -project extensions/safari/build/VelocityDM/VelocityDM.xcodeproj \
+            -scheme VelocityDM \
+            -configuration Debug \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath extensions/safari/build/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO \
+            build
+      - name: upload built app (optional evidence, non-load-bearing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: velocitydm-safari-unsigned
+          path: extensions/safari/build/dd/Build/Products/Debug/VelocityDM.app
+          if-no-files-found: warn
+
   android-frontend:
     name: Android frontend (Views + KMP)
     runs-on: ubuntu-22.04

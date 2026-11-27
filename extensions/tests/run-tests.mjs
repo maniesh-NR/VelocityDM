@@ -865,5 +865,76 @@ console.log('proxyreport (B16 wiring — browser proxy report)');
     logs2.every((l) => l.indexOf('vpn-secret.example') === -1));
 }
 
+console.log('safari (S9 gate 0019 — structural tripwires)');
+{
+  // Pure-node structural checks per docs/SPECS/S9-SAFARI-XCODE.md rule 3.
+  // Honest note (rule 3a): the gate's own bug PARSED clean — node --check is
+  // a necessary net, not a sufficient one; the API-surface tripwires below
+  // are what actually catch that class.
+  const { execFileSync } = require('node:child_process');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { fileURLToPath } = require('node:url');
+  const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+
+  // (a) syntax: every shipped extension JS parses
+  const jsFiles = [
+    'extensions/chromium/background.js', 'extensions/chromium/content.js',
+    'extensions/chromium/popup.js', 'extensions/chromium/options.js',
+    ...fs.readdirSync(path.join(ROOT, 'extensions/shared'))
+      .filter((f) => f.endsWith('.js')).map((f) => 'extensions/shared/' + f),
+  ];
+  let syntaxOk = true;
+  for (const f of jsFiles) {
+    try { execFileSync(process.execPath, ['--check', path.join(ROOT, f)], { stdio: 'pipe' }); }
+    catch (e) { syntaxOk = false; console.error('  syntax fail:', f, e.message); }
+  }
+  ok('every shipped extension JS parses (node --check, ' + jsFiles.length + ' files)', syntaxOk);
+
+  const bg = read('extensions/chromium/background.js');
+
+  // (b) the phantom event may never return: it exists in NO WebExtension
+  // engine, and the old top-level registration killed every background at load
+  ok('no chrome.webRequest.onResponseHeaders registration returns',
+    !/chrome\.webRequest\.onResponseHeaders/.test(bg));
+  ok('the onHeadersReceived fix is in place',
+    bg.includes('chrome.webRequest.onHeadersReceived.addListener('));
+
+  // (c) downloads listeners stay feature-guarded (Chromium-only events killed
+  // Firefox; downloads is absent in Safari entirely)
+  ok('no statement-level chrome.downloads registration returns',
+    !/^chrome\.downloads\./m.test(bg));
+  ok('downloads listeners are feature-guarded (applyShelf pattern)',
+    bg.includes('typeof chrome.downloads.onCreated.addListener') &&
+    bg.includes('typeof chrome.downloads.onDeterminingFilename.addListener'));
+
+  // (d) Safari variant derivation rules exactly as build-ext.sh performs them
+  const buildSrc = read('scripts/build-ext.sh');
+  const manifest = JSON.parse(read('extensions/chromium/manifest.json'));
+  ok('source manifest declares downloads+proxy (the variant story is meaningful)',
+    manifest.permissions.includes('downloads') && manifest.permissions.includes('proxy'));
+  ok('build-ext.sh ships the safari variant', /build_variant safari /.test(buildSrc));
+  ok('safari variant takes the event-page shape',
+    buildSrc.includes("if name in ('firefox', 'safari'):"));
+  ok('safari variant drops the downloads+proxy permissions',
+    buildSrc.includes("if p not in ('downloads', 'proxy')"));
+  ok('safari variant is never zipped (release-glob guard)',
+    buildSrc.includes('[ "$name" = "safari" ]'));
+
+  // (e) NMH id-match invariant (the gate found .local vs .example drift,
+  // a B24-class access-denied on macOS Firefox)
+  const ffNmh = JSON.parse(read('packaging/nmh/com.velocitydm.nmh.firefox.json'));
+  const geckoId = (buildSrc.match(/'id': '([^']+)'/) || [])[1];
+  ok('firefox NMH allowlist matches the built gecko id',
+    Boolean(geckoId) && ffNmh.allowed_extensions[0] === geckoId);
+  ok('macOS app NMH allowlist matches the built gecko id',
+    read('packaging/macos/make-app.sh').includes('"' + geckoId + '"'));
+
+  // (f) the macOS binary story cannot silently vanish
+  ok('velocitydm-nmh bin target still declared',
+    /name = "velocitydm-nmh"/.test(read('crates/velocitydm-nmh/Cargo.toml')));
+}
+
 console.log('\n' + passed + ' assertions passed');
 if (process.exitCode) console.error('FAILURES PRESENT');

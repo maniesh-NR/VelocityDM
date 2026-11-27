@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Build the four browser extension packages from the chromium sources.
-# Chrome/Edge/Opera are MV3 service-worker builds; Firefox uses an event-page
-# manifest variant. Safari: see extensions/safari/README.md for conversion.
+# Build the browser extension packages from the chromium sources.
+# Chrome/Edge/Opera/Firefox ship as zips (MV3 service worker; Firefox takes an
+# event-page manifest variant). Safari builds an UNPACKED variant directory
+# (S9, docs/SPECS/S9-SAFARI-XCODE.md rule 2): the Xcode conversion itself is
+# witnessed on CI (see ci.yml "Safari app extension (Xcode conversion)");
+# distribution is the owner Apple-ID lane (W2) — never a zip here.
 set -eu
 cd "$(dirname "$0")/.."
 EXT=extensions
@@ -27,8 +30,10 @@ import json, sys
 path, pretty, name = sys.argv[1], sys.argv[2], sys.argv[3]
 m = json.load(open(path))
 m['name'] = pretty
-if name == 'firefox':
-    # Firefox MV3: event page instead of a service worker
+if name in ('firefox', 'safari'):
+    # MV3 event page instead of a service worker: Firefox <109 service-worker
+    # gaps and Safari's 15.4-16.3 importScripts breakage (Safari 16.4 release
+    # note) both take the same manifest shape.
     m.pop('background', None)
     m['background'] = {
         'scripts': [
@@ -38,25 +43,43 @@ if name == 'firefox':
             'shared/proxyreport.js', 'shared/state.js', 'background.js'
         ]
     }
-    m['browser_specific_settings'] = {
-        'gecko': {'id': 'velocitydm@velocitydm.example', 'strict_min_version': '109.0'}
-    }
     m.pop('minimum_chrome_version', None)
-    # Firefox background.js must not call importScripts
+    # Event-page backgrounds must not call importScripts (Firefox never
+    # supported it there; Safari 15.4-16.3 broke it in service workers).
     bg = open(path.replace('manifest.json', 'background.js')).read()
     bg = bg.replace(
         "importScripts(\n  'shared/detector.js',\n  'shared/patterns.js',\n  'shared/links.js',\n  'shared/filters.js',\n  'shared/messaging.js',\n  'shared/nmhost.js',\n  'shared/cookies.js',\n  'shared/takeover.js',\n  'shared/mime-table.js',\n  'shared/proxyreport.js',\n  'shared/state.js'\n);",
-        "// Firefox event page: shared modules are loaded via manifest scripts")
+        "// Event page: shared modules are loaded via manifest scripts")
     open(path.replace('manifest.json', 'background.js'), 'w').write(bg)
+if name == 'firefox':
+    m['browser_specific_settings'] = {
+        'gecko': {'id': 'velocitydm@velocitydm.example', 'strict_min_version': '109.0'}
+    }
+if name == 'safari':
+    # S9 (docs/SPECS/S9-SAFARI-XCODE.md rule 2 + the gate capability matrix):
+    # Safari has no chrome.downloads (MDN BCD: version_added false) and
+    # chrome.proxy is unverified (the Safari 17 note covers WKWebView only).
+    # Both drop from the manifest; the background's feature guards (assessment
+    # 0019 C2a) degrade the intercept categories by omission. No gecko id, no
+    # minimum_chrome_version; the version stays the frozen chromium one.
+    m['permissions'] = [p for p in m['permissions'] if p not in ('downloads', 'proxy')]
 json.dump(m, open(path, 'w'), indent=2)
 PYEOF
-  (cd "$OUT" && zip -qr "$name-$version.zip" "$name")
-  echo "built $OUT/$name-$version.zip"
+  if [ "$name" = "safari" ]; then
+    # Never a zip: the release glob extensions/dist/*.zip and the explicit
+    # release.yml publish mapping must both stay unable to pick this up.
+    echo "built $OUT/$name (unpacked dir only; conversion witnessed on CI)"
+  else
+    (cd "$OUT" && zip -qr "$name-$version.zip" "$name")
+    echo "built $OUT/$name-$version.zip"
+  fi
 }
 
 build_variant chromium "VelocityDM Download Manager"
 build_variant edge "VelocityDM Download Manager"
 build_variant opera "VelocityDM Download Manager"
 build_variant firefox "VelocityDM Download Manager"
+build_variant safari "VelocityDM Download Manager"
 
-ls -la "$OUT"/*.zip
+ls -la "$OUT"
+ls "$OUT"/*.zip
