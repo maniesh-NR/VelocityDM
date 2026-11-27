@@ -1618,3 +1618,36 @@ session reads this file first, then `ROADMAP.md`.
   went to S8-W1's full arc (gate + Rust + Android + docs + backup +
   two CI flake arbitrations + the Android/Gradle toolchain
   re-provision); nothing was silently dropped.
+
+## 2026-11-27 (session 23) — owner decision round 5 recorded (D6:B split trains; D5x/D4x/S10x deferred)
+
+- Owner asked "Are there any decisions for me to make?" Reconcile first
+  (fifth proof of the standing lesson): origin/main was ~50 commits
+  ahead of the stale local snapshot (parallel sessions had closed S5,
+  S6 DASH, S7 SAMPLE-AES/EXT-X-MAP, S12-lin3 Qt gate 0017, S8-W1 LAN
+  mode gate 0018 + Android remote control, CI 14/14 at fb18a108).
+  Fast-forwarded to 0a72084; tree clean.
+- Round-5 menu re-presented the four owner-gated items + the one
+  never-answered menu code (D6) as a structured in-chat menu; ALL FOUR
+  answered in one pass:
+  - **D6:B** — split trains: v1.1.0 = shared core + engine +
+    extensions (promotable on CI evidence alone); the per-surface
+    native-frontend promotions (Win32/Slint/AppKit/SwiftUI/GTK3/Qt/
+    Android) land in a separate v1.2.0 train, each still gated on the
+    owner's D5:A runtime verification.
+  - **D5x defer** — promotions stay owner-gated exactly as bound in
+    round 1; NO CI-only substitution authorized; gate policy
+    unchanged; autonomous queue continues meanwhile.
+  - **D4x defer** — re-affirms D4:B; T1/T3 observation protocol keeps
+    waiting for an owner-provisioned Windows VM.
+  - **S10x defer** — Flathub stays PENDING (owner-owned verified
+    account is the hard precondition).
+- Ledger `harness/DECISIONS.md` Round 5 + ROADMAP release-train-shape
+  note committed this session. No code, CI, release.yml, or frozen-
+  asset contact; D6:B binds release/packaging planning only (the
+  `v1.1.0 - roadmap` GitHub milestone stays the tracking device).
+- Next standing queue: **S9 (Safari app extension — Xcode-conversion
+  gate; CI macos-latest is the only compile witness class)**, then
+  S8-W2 (NDK/JNI unification, own gate). Owner-gated items now all
+  have recorded dispositions (defer or binding) — nothing waits
+  silently on the owner.

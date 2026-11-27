@@ -43,6 +43,14 @@ Each stage transition is gated by the adversarial consensus protocol
   `End-to-end smoke`.
 - **S4–S10**: tracked as GitHub issues on the `v1.1.0 - roadmap`
   milestone; each gets a fresh assessment record when activated.
+- **Release-train shape (owner D6:B, round 5, 2026-11-27 —
+  `harness/DECISIONS.md`)**: split trains — v1.1.0 carries the shared
+  core + engine + extensions (promotable on CI evidence alone); the
+  per-surface native-frontend promotions land in a separate v1.2.0
+  train, each still gated on the owner's D5:A runtime verification
+  (D5x: deferred by the owner 2026-11-27; no CI-only substitution).
+  S10 (Flathub) and T1/T3 (Windows VM) stay deferred per the same
+  round.
 - **S11**: Competitive study of the reference product this project
   re-creates, owner-directed. **Artifact pinned:**
   `idman643build18.exe` (IDM 6.43 build 18, official distribution URL

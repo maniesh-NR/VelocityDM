@@ -78,3 +78,22 @@ Future rounds: the owner may answer by code ("D1:C, rest default");
 unanswered items keep the menu's marked defaults. This ledger is the
 source of truth after context loss; the chat menu is the interface.
 
+## Round 5 — answered via structured in-chat menu 2026-11-27 (session 23): "D6:B; D5:A defer; T1/T3 defer; S10 defer"
+
+The owner asked "Are there any decisions for me to make?" — the durable
+state named four owner-gated items plus one never-answered menu code
+(D6). All four were re-presented as a structured menu; the owner
+answered every item. Nothing blocks the autonomous queue (S9 next,
+then S8-W2); each answer below either defers an owner-gated item or
+binds a release-train shape.
+
+| ID | Decision | Answer | Binding |
+| --- | --- | --- | --- |
+| D6 | v1.1.0 milestone shape (re-presented; default A had been running since round 1) | **B** | **Split trains.** v1.1.0 carries the shared core + engine + extensions (everything promotable on CI evidence alone); the **per-surface native-frontend promotions** (Win32/D2D, Slint, Swift/AppKit, SwiftUI, GTK3, Qt, Android Views) land in a separate **v1.2.0 train**, each still gated on the owner's D5:A runtime verification. The GitHub `v1.1.0 - roadmap` milestone stays the tracking device for roadmap issues; the split binds release/packaging planning (release.yml trains, CHANGELOG grouping, tag sequencing), not issue tracking. |
+| D5x | D5:A owner runtime-verification timing (the unblocked moment from round 1) | **defer** | The owner defers hands-on verification. Per-surface promotions stay gated on the owner exactly as bound in round 1; **no CI-only substitution is authorized** (the promotion-gate policy is unchanged); the autonomous queue continues meanwhile (S9, then S8-W2). |
+| D4x | T1/T3 Windows-VM provisioning timing | **defer (re-affirms D4:B)** | The prepared observation protocol (`docs/T1-T3-OBSERVATION-PROTOCOL.md`) keeps waiting for an owner-provisioned VM; T1/T3 remain the only open S11 study items; no agent-side substitute is commissioned. |
+| S10x | S10 Flathub submission timing | **defer** | S10 stays PENDING — an owner-owned verified Flathub account is a hard precondition and remains un-provisioned; the queue keeps S9 + S8-W2 ahead of it. |
+
+Future rounds: the owner may answer by code ("D1:C, rest default");
+unanswered items keep the menu's marked defaults. This ledger is the
+source of truth after context loss; the chat menu is the interface.
