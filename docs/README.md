@@ -3,7 +3,7 @@
 A clean-room, open-source (GPL-3.0-or-later) download manager in the spirit of
 classic multi-segment download managers. Rust engine, Material Design 3
 interfaces, browser extension integration for Chrome/Edge/Opera/Firefox (plus a
-Safari conversion guide), and an Android 8+ client.
+Safari converter preview), and an Android 8+ client.
 
 Version 1.0.0. English UI. No emoji in any user-facing surface. No DRM
 circumvention logic of any kind.
@@ -16,7 +16,7 @@ circumvention logic of any kind.
 | `vdm-rpc` | `crates/vdm-rpc` | HTTP JSON-RPC 2.0 + SSE on one loopback address (see docs/RPC.md) |
 | `velocitydm` | `crates/velocitydm` | Daemon + CLI (and the `gui` feature for desktop builds) |
 | `velocitydm-nmh` | `crates/velocitydm-nmh` | Native messaging host for browser extensions |
-| Browser extension | `extensions/` | One MV3 codebase packaged for Chrome/Edge/Opera/Firefox (+ Safari guide) |
+| Browser extension | `extensions/` | One MV3 codebase packaged for Chrome/Edge/Opera/Firefox (+ Safari converter preview) |
 | Android client | `android/` | Kotlin + Compose, Material You dynamic color on 12+ |
 | Packaging | `packaging/` | Linux, Flatpak, Windows, macOS, portable |
 | `win7/` | `win7/` | Windows 7 headless workspace (daemon + CLI + NMH) |

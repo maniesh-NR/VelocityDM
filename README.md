@@ -22,7 +22,7 @@ VelocityDM 1.0.0
 | Networking | HTTP CONNECT + SOCKS5 proxies (with auth), global + per-download speed limits |
 | Recover | crash-safe `.part`/`.vdmctl` state, **Refresh link** revives expired URLs |
 | UI | egui GUI (Material You: dynamic color seeds, light + dark), CLI, JSON-RPC 2.0 + SSE on 127.0.0.1:36990 |
-| Browsers | Chrome/Edge/Opera/Firefox extensions (video sniffing, download takeover, magnet), Safari conversion guide |
+| Browsers | Chrome/Edge/Opera/Firefox extensions (video sniffing, download takeover, magnet); Safari: converter preview — CI build witness only, no signed distribution (docs/EXTENSIONS.md §Safari) |
 
 The scheduling choices follow the parallel-download research literature
 (Rodriguez; Koo; guided self-scheduling; Padhye's TCP model) — see
@@ -73,7 +73,7 @@ crates/
   vdm-rpc/          JSON-RPC 2.0 + SSE transport
   velocitydm/       daemon + CLI + egui GUI
   velocitydm-nmh/   browser native messaging host
-extensions/         Chrome/Edge/Opera/Firefox (+ Safari guide)
+extensions/         Chrome/Edge/Opera/Firefox (+ Safari converter preview)
 android/            Kotlin Views+KMP app (MDC Material 3, shared module, sniffer browser)
 packaging/          Inno Setup, Linux install, Flatpak, macOS bundle, portable
 docs/               architecture, algorithms, clean-room notes, coverage

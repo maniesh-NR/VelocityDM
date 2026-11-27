@@ -14,7 +14,8 @@ numbers refer to verified artifacts (tests in-tree, binaries built).
 | Flatpak | Done | `packaging/flatpak/io.github.velocitydm.VelocityDM.yml` |
 | Portable version | Done | `--portable` flag (config beside the binary) + launcher script |
 | Android 8+ armv7/arm64 with 1DM-style features | Done (source) | `android/` — Views app, segmented engine, sniffer browser, takeover, foreground service; APK must be built with the Android SDK (README); remote mode (S8-W1) pairs with a desktop daemon over authenticated TLS + token (LAN) |
-| Browser extensions Chrome/Safari/Edge/Firefox/Opera (MV3) | Done | 4 zips built (`extensions/dist`), Safari conversion guide; MV3 service workers; 64 node assertions |
+| Browser extensions Chrome/Edge/Firefox/Opera (MV3) | Done | 4 zips built (`extensions/dist`); MV3 service worker (Firefox/Safari event-page variant); 253 node assertions |
+| Safari extension | Preview (CI build witness only) | Safari manifest variant (`downloads`/`proxy` stripped — APIs Safari lacks; gate 0019) + converter-driver CI witness (unsigned `xcodebuild` on `macos-latest`); no signed/notarized artifact — distribution is the owner Apple-ID lane (S9-W2); native messaging needs the containing-app `SafariWebExtensionHandler` bridge (W2, own gate) — see `docs/EXTENSIONS.md` §Safari |
 | Video stream sniffing/capture | Done | Extension `webRequest` sniffing with quality labels; HLS engine with AES-128 + SAMPLE-AES (AAC/TS) + EXT-X-MAP init sections; DASH `.mpd` engine (S6: static manifests — SegmentTemplate/SegmentTimeline/SegmentList/SegmentBase+SIDX, DRM loud-fail); Android sniffer browser |
 | Rust engine | Done | `vdm-core` (engine), `vdm-rpc`, `velocitydm`, `velocitydm-nmh` |
 | Material Design 3 GUI | Done | egui Material You theme (dynamic color seeds, light + dark; desktop), MDC Views + wallpaper dynamic color on Android 12+ (Android; S12-e) |
@@ -38,7 +39,7 @@ takeover with cookies.
 | Suite | Count | Result |
 | --- | --- | --- |
 | `cargo test --workspace` (unit + integration + full-stack E2E) | 127 | all pass |
-| `node extensions/tests/run-tests.mjs` | 76 assertions | pass |
+| `node extensions/tests/run-tests.mjs` | 253 assertions | pass |
 | `scripts/e2e.sh` cross-component smoke | 24 checks | all pass |
 | `scripts/e2e-cross.sh` feature-combination suite | 27 checks | all pass |
 | `scripts/bench-perf.sh` A/B performance | 4 runs | pass (byte-identical) |

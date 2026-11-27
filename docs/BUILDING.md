@@ -145,7 +145,7 @@ ports) and the duplication-drift risk of the three copied files.
 - Windows: `packaging/windows/velocitydm.iss` + the payload binaries
   (registers NMH manifests for Chrome/Chromium/Mozilla per-user).
 - Extensions: `./scripts/build-ext.sh` → `extensions/dist/*.zip`
-  (Chrome/Edge/Opera/Firefox; Safari via `extensions/safari/README.md`).
+  (Chrome/Edge/Opera/Firefox; Safari preview: manifest variant + converter driver, buildable on macOS/CI only — see `extensions/safari/README.md`).
 
 ### Native messaging host registration (Linux, per browser)
 

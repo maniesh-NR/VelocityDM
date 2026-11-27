@@ -101,14 +101,30 @@ color is mapped through CIELAB tonal palettes into a full light/dark scheme
 custom color entry; the mode (`auto` / `light` / `dark`) and seed persist in
 `chrome.storage`. Auto mode follows `prefers-color-scheme`.
 
-## Safari
+## Safari (preview — CI build witness only)
 
-Safari ships as a conversion guide (`extensions/safari/README.md`): wrap the
-Chromium package in an Xcode app-extension target and register the same
-NMH manifest.
+Safari is a **preview** stage (S9, gate 0019, `docs/SPECS/S9-SAFARI-XCODE.md`):
+`scripts/build-ext.sh` emits an unpacked `extensions/dist/safari/` variant
+(event-page background — dodges the Safari 15.4–16.3 service-worker
+importScripts breakage; `downloads` and `proxy` permissions stripped because
+Safari implements neither API), and the non-required CI job
+"Safari app extension (Xcode conversion)" converts it with Apple's
+`safari-web-extension-packager` (renamed from converter in Xcode 26) and
+builds the generated app+extension targets unsigned. That is the entire
+honest capability today:
+
+| Capability | Safari status | Consequence |
+| --- | --- | --- |
+| Sniffing (URL/DOM) | works 15.4+; response-header MIME/length detail 18.4+ | below 18.4, URL-extension matching + DOM detection |
+| Sniffed list | 16.4+ (`storage.session`) | below, the list stays empty (documented floor) |
+| Context menus / cookies / tabs / popup UI | supported | parity |
+| Download takeover (`downloads` API) | **absent** | categories off; adds go through menu/popup, not browser intercept |
+| Browser-proxy report (B16) | **absent/unverified** | adds carry no `browserProxy` (designed degradation) |
+| Engine integration (native messaging) | **unavailable in W1** | `sendNativeMessage` routes to the containing app's `SafariWebExtensionHandler` (host name ignored); the Swift bridge is S9-W2, its own gate, and must replicate `velocitydm-nmh`'s input validation |
+| Loading the extension | requires signing | free personal-team/"Sign to Run Locally" + Develop ▸ Allow Unsigned Extensions on the owner's Mac (W2, owner Apple-ID lane); Developer ID + notarization for distribution |
 
 ## Tests
 
 ```sh
-node extensions/tests/run-tests.mjs   # 76 assertions: shared modules + md3 scheme
+node extensions/tests/run-tests.mjs   # 253 assertions: shared modules + md3 scheme + S9 structural tripwires
 ```

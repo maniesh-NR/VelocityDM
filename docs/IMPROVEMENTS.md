@@ -33,7 +33,7 @@ maps each idea to its origin and where it lives in our code.
 | Idea | VelocityDM implementation |
 | --- | --- |
 | Multi-protocol surface (HTTP/HTTPS/BT/magnet) behind one CLI | One daemon + one JSON-RPC surface; `velocitydm add|torrent|magnet|batch|seed` |
-| Browser extension for every desktop browser | Same code base packaged for Chrome/Edge/Opera (MV3 service worker) and Firefox (event page), Safari conversion guide |
+| Browser extension for every desktop browser | Same code base packaged for Chrome/Edge/Opera (MV3 service worker) and Firefox (event page); Safari converter preview (unsigned CI witness; no signed distribution) |
 | Lightweight, fast startup | No Electron, no JVM for the engine: static musl build ~3 MB (CLI trio), 14 MB GUI binary; daemon cold-start < 100 ms |
 | Open, scriptable core | JSON-RPC 2.0 + SSE (`/rpc`, `/events`, `/health`) on loopback only; NMH protocol documented for other clients |
 | Create torrents / share files | `torrent-create` (file or directory, progressive piece size) |
