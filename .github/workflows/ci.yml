@@ -197,11 +197,17 @@ jobs:
             echo "tool=safari-web-extension-converter" >> "$GITHUB_OUTPUT"
           fi
       - name: convert the safari variant headlessly
+        # Evidence-then-fix (run 45996721560): on Xcode 26.6 the packager
+        # derives the APP bundle id from --app-name (observed
+        # com.velocitydm.VelocityDM) while --bundle-identifier set the
+        # EXTENSION base (com.velocitydm.safari.Extension) — the prefix
+        # mismatch failed ValidateEmbeddedBinary. Dropping the flag lets the
+        # tool derive both ids consistently; explicit id control moves to
+        # the W2 owner signing lane.
         run: |
           xcrun "${{ steps.tool.outputs.tool }}" extensions/dist/safari \
             --project-location extensions/safari/build \
             --app-name VelocityDM \
-            --bundle-identifier com.velocitydm.safari \
             --swift --macos-only --copy-resources \
             --no-open --no-prompt --force
       - name: generated-project shape assertions

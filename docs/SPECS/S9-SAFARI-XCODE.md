@@ -63,9 +63,14 @@ converter format across Xcode generations, zero local verify ability).
    `xcrun -f safari-web-extension-converter` (fail only if NEITHER exists)
    → headless convert of `extensions/dist/safari` into
    `extensions/safari/build/` (gitignored; ephemeral — never committed,
-   never diffed) with `--app-name VelocityDM --bundle-identifier
-   com.velocitydm.safari --swift --macos-only --copy-resources --no-open
-   --no-prompt --force` → shape assertions on `xcodebuild -list` (an app
+   never diffed) with `--app-name VelocityDM --swift --macos-only
+   --copy-resources --no-open --no-prompt --force` (NO
+   `--bundle-identifier`: on Xcode 26.6 the packager derives the APP id
+   from `--app-name` — observed `com.velocitydm.VelocityDM` — while the
+   flag set the EXTENSION base (`com.velocitydm.safari.Extension`),
+   failing `ValidateEmbeddedBinary`'s prefix rule in run 45996721560;
+   the tool's own id derivation is internally consistent; explicit id
+   control belongs to the W2 owner signing lane) → shape assertions on `xcodebuild -list` (an app
    scheme and an `Extension` target exist) → unsigned build
    `CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO`,
    destination `generic/platform=macOS` → artifact upload of the built

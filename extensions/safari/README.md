@@ -26,9 +26,15 @@ bash scripts/build-ext.sh          # produces extensions/dist/safari/ (unpacked)
 xcrun safari-web-extension-packager extensions/dist/safari \
     --project-location build/safari \
     --app-name VelocityDM \
-    --bundle-identifier com.velocitydm.safari \
     --swift --macos-only --copy-resources --no-open --no-prompt --force
 ```
+
+(No `--bundle-identifier` here: on Xcode 26.6 the packager derives the app
+id from `--app-name` while the flag drives the extension's base id — mixing
+them fails the embedded-binary prefix validation, as the CI
+evidence-then-fix cycle proved. Pass an explicit id only after verifying
+your Xcode version's flag semantics; that control matters at W2 signing
+time, not for a local build.)
 
 Open the generated project, select a **free personal team** (or "Sign to
 Run Locally") for BOTH targets, build, then in Safari: Settings ▸ Advanced ▸
