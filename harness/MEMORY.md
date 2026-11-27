@@ -1651,3 +1651,80 @@ session reads this file first, then `ROADMAP.md`.
   S8-W2 (NDK/JNI unification, own gate). Owner-gated items now all
   have recorded dispositions (defer or binding) — nothing waits
   silently on the owner.
+
+## 2026-11-27 (session 24) — S9-W1 delivered (gate 0019) + recycle-loss recovery + push-always discipline
+
+- **Recycle incident (the session's first lesson, now a standing rule):** a
+  sandbox recycle between turns restored the repo snapshot to 20a6af4
+  (session-19 close) — the unpushed session-23 commits (S9 C1/C2a/C2b) were
+  destroyed locally; only the PUSHED round-5 commit 0f49b0b survived on
+  origin. origin/sandbox-backup predated the turn, so the commits were
+  unrecoverable from git; everything was re-created byte-equivalent from the
+  session transcript. **Discipline change: push after EVERY commit, never
+  leave work unpushed across a turn boundary.** The C3 docs edits made
+  post-recycle against the stale baseline were rescued to /tmp/c3-rescue,
+  the repo reset --hard to origin/main, and all edits re-applied against
+  the true baseline (the stale snapshot had also fooled a first reading of
+  the ROADMAP stage table — the remote rows were correct all along).
+- **S9-W1 (Safari native app extension, Xcode conversion) delivered under
+  gate 0019:** five roles dispatched in parallel with identical evidence
+  packs; verdicts 4× PROCEED-WITH-CONDITIONS + 1 FALS BLOCK whose enumerated
+  unblock path folded into the spec before any implementing commit. Shape:
+  (b)+(d) hybrid — converter-driver CI witness (ephemeral output) + honest
+  capability matrix + Safari manifest variant; a committed hand-written
+  .xcodeproj was rejected (converter output is not deterministic across
+  Xcode generations).
+- **The gate's headline finding — a UNIVERSAL background crash:** background.js
+  registered chrome.webRequest.onResponseHeaders, an event that exists in NO
+  engine (Chrome documents 9 webRequest events; none of that name) — the
+  top-level .addListener on undefined killed the service worker/event page
+  at evaluation on Chromium/Edge/Opera; Firefox additionally died at the
+  unguarded downloads.onDeterminingFilename (Chromium-only); Safari at
+  downloads entirely (absent). The 240-assertion battery never evaluates
+  background.js, so CI structurally could not see it. A suspected syntax
+  error in the neighboring line (headers[h.name.toLowerCase()]) was
+  DISPROVEN byte-level (od) before any fix — an output-rendering artifact,
+  not code. Fix (116edb5): onHeadersReceived + feature-guarded downloads
+  listeners (applyShelf pattern).
+- **Deliverables:** safari variant in build-ext.sh (event-page background
+  shared with the firefox shape, downloads+proxy permissions stripped per
+  the panel-cited capability matrix, version derived not bumped, UNPACKED
+  dir only — the release glob can never pick it up); 13 new battery
+  tripwires (240→253: node --check on all 16 shipped JS, onResponseHeaders
+  denylist, statement-level downloads-listener denylist, variant derivation
+  rules, NMH gecko-id match, velocitydm-nmh bin guard); make-app.sh NMH
+  allowlist .local→.example (a REAL B24-class Firefox-on-macOS
+  access-denied the gate caught); the NON-required preview CI job "Safari
+  app extension (Xcode conversion)" (macos-latest; packager/converter
+  rename probe; headless flags; xcodebuild -list shape assertions;
+  CODE_SIGNING_ALLOWED=NO build; optional artifact); docs truth (coverage
+  row split with the Safari Preview row, EXTENSIONS §Safari capability
+  matrix, safari README rewritten — the falsified Mozilla-path NMH recipe
+  and the "no code changes required" claim deleted, README/docs-README/
+  BUILDING/IMPROVEMENTS wording rows, ROADMAP S9 → ACTIVE with the W1/W2
+  split). Issue #6 stays open (W2).
+- **CI evidence-then-fix cycle (1 round):** c02eef0 = all 14 pre-existing
+  jobs GREEN + the new safari job red at ValidateEmbeddedBinary — on Xcode
+  26.6 the packager derives the APP bundle id from --app-name (observed
+  com.velocitydm.VelocityDM) while --bundle-identifier set the EXTENSION
+  base (com.velocitydm.safari.Extension); the prefix mismatch failed
+  embedded-binary validation. Fix d157265: drop the flag, let the tool
+  derive consistent ids; explicit id control moves to the W2 owner signing
+  lane (spec rule 4 amended + README example updated). The rename probe
+  worked as designed (safari-web-extension-packager found on Xcode 26.6;
+  macos-14 retired 2026-11-02 confirmed by the runner image).
+- **CI VERDICT: 15/15 ALL-GREEN at d157265** (8 required + 7 preview,
+  including the new Safari job green on its second run; the required set
+  was already green on c02eef0 — the fix touched only the preview job's
+  invocation + docs).
+- Honest boundaries held: zero local Apple verification (CI sole witness,
+  compile+convert only — never "works in Safari"); no release.yml/tag/
+  frozen-asset contact; bench A/B not owed (no engine delta — explicit in
+  the gate record); CLEAN_ROOM row not owed (no S11/T2 linkage); the
+  battery's honest note records that the gate bug PARSED clean (syntax
+  checks are necessary, not sufficient).
+- W2 (owner Apple-ID lane, own future gate, ROADMAP never DONE while open):
+  signed loadable build (free personal team / Sign to Run Locally + Develop
+  ▸ Allow Unsigned Extensions), the SafariWebExtensionHandler Swift bridge
+  (must replicate velocitydm-nmh input validation), NMH UUID pinning, owner
+  runtime verification.
