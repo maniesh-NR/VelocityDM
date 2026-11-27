@@ -90,7 +90,12 @@ async function getVideos() {
 // network sniffing
 // ---------------------------------------------------------------------------
 
-chrome.webRequest.onResponseHeaders.addListener(
+// S9 gate fix (assessment 0019): onResponseHeaders exists in NO WebExtension
+// engine (Chrome lists 9 webRequest events, none of that name) — the original
+// top-level .addListener on undefined killed the service worker/event page at
+// evaluation on every browser. onHeadersReceived with ['responseHeaders']
+// supplies the same details.responseHeaders this handler reads.
+chrome.webRequest.onHeadersReceived.addListener(
   function (details) {
     // media elements, XHR playlists, and direct video requests
     if (details.type === 'main_frame' || details.type === 'sub_frame') return;
@@ -183,9 +188,19 @@ async function handOffDownload(item) {
   return result;
 }
 
-chrome.downloads.onCreated.addListener(function (item) {
-  handOffDownload(item).catch(function () {});
-});
+// S9 gate fix (assessment 0019): feature-guarded like applyShelf below —
+// Firefox has onCreated but no onDeterminingFilename; Safari has no downloads
+// API at all. Where the API is absent the intercept category degrades by
+// omission; the daemon-side add paths (context menu, popup, batch) never
+// depended on it.
+if (typeof chrome !== 'undefined' && chrome.downloads &&
+    typeof chrome.downloads.onCreated === 'object' &&
+    chrome.downloads.onCreated !== null &&
+    typeof chrome.downloads.onCreated.addListener === 'function') {
+  chrome.downloads.onCreated.addListener(function (item) {
+    handOffDownload(item).catch(function () {});
+  });
+}
 
 // Shelf suppression (Chromium-only, feature-detected; Firefox no-ops):
 // while takeover is enabled in settings the shelf is off for ALL
@@ -205,12 +220,21 @@ function applyShelf() {
 // Filename participation: suggest our filename ONCE, on our takeover
 // (the browser item matches the engine's naming); downloads we are not
 // taking over are untouched (never fighting a user rename).
-chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
-  if (!item || !takeoverPendingIds.has(item.id)) return;
-  takeoverPendingIds.delete(item.id);
-  var name = VDMTAKEOVER.filenameFor(item, EXT_FOR_MIME);
-  if (name) suggest({ filename: name, conflictAction: 'uniquify' });
-});
+// S9 gate fix (assessment 0019): this event is Chromium-only (Firefox and
+// Safari both lack it) — the old comment claimed feature detection that the
+// code never performed, and the bare .addListener killed Firefox's background
+// at load. Guard matches applyShelf's pattern.
+if (typeof chrome !== 'undefined' && chrome.downloads &&
+    typeof chrome.downloads.onDeterminingFilename === 'object' &&
+    chrome.downloads.onDeterminingFilename !== null &&
+    typeof chrome.downloads.onDeterminingFilename.addListener === 'function') {
+  chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
+    if (!item || !takeoverPendingIds.has(item.id)) return;
+    takeoverPendingIds.delete(item.id);
+    var name = VDMTAKEOVER.filenameFor(item, EXT_FOR_MIME);
+    if (name) suggest({ filename: name, conflictAction: 'uniquify' });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // cookie jar (S11-i B5): every add path with an http(s) URL forwards the
